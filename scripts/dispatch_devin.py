@@ -164,7 +164,14 @@ def _get_pr_url(payload: dict) -> str:
 
 
 def _is_terminal(status: str) -> bool:
-    return status in {"finished", "blocked", "expired", "failed", "canceled", "cancelled"}
+    return status in {
+        "finished",
+        "blocked",
+        "expired",
+        "failed",
+        "canceled",
+        "cancelled",
+    }
 
 
 def poll_sessions(
@@ -178,7 +185,9 @@ def poll_sessions(
     outcomes: list[dict] = []
 
     deadline = time.time() + timeout_sec
-    pending = [s for s in sessions if s.get("session_id") and s.get("status") == "created"]
+    pending = [
+        s for s in sessions if s.get("session_id") and s.get("status") == "created"
+    ]
     while pending and time.time() < deadline:
         next_pending: list[dict] = []
         for s in pending:
@@ -374,7 +383,9 @@ def main() -> None:
         finished = [o for o in outcomes if o["status"] == "finished"]
         with_pr = [o for o in outcomes if o.get("pr_url")]  # regardless of status
         # proxy metric: issues addressed only when finished AND PR exists
-        addressed = [o for o in outcomes if o["status"] == "finished" and o.get("pr_url")]
+        addressed = [
+            o for o in outcomes if o["status"] == "finished" and o.get("pr_url")
+        ]
         issues_addressed = sum(o.get("issues", 0) for o in addressed)
 
         outcome_lines = ["\n## Devin Session Outcomes\n"]
@@ -383,7 +394,7 @@ def main() -> None:
         for o in outcomes:
             pr_link = f"[PR]({o['pr_url']})" if o.get("pr_url") else "-"
             outcome_lines.append(
-                f"| {o['batch_id']} | {o['status']} | {pr_link} | {o.get('issues', 0)} | {o.get('cwe_family','')} | {o.get('severity_tier','').upper()} |"
+                f"| {o['batch_id']} | {o['status']} | {pr_link} | {o.get('issues', 0)} | {o.get('cwe_family', '')} | {o.get('severity_tier', '').upper()} |"
             )
         outcome_lines.append("")
         outcome_lines.append(
