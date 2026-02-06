@@ -61,6 +61,21 @@ on:
         required: false
         type: string
         default: "main"
+      wait_for_sessions:
+        description: "Wait for Devin sessions to finish and collect outcomes"
+        required: false
+        type: boolean
+        default: false
+      poll_timeout:
+        description: "Polling timeout in minutes"
+        required: false
+        type: number
+        default: 60
+      poll_interval:
+        description: "Polling interval in seconds"
+        required: false
+        type: number
+        default: 30
 
 permissions:
   contents: read
