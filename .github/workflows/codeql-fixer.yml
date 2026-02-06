@@ -1,0 +1,71 @@
+name: CodeQL Devin Fixer
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_repo:
+        description: "GitHub repository URL to analyze"
+        required: true
+        type: string
+        default: "https://github.com/juice-shop/juice-shop"
+      languages:
+        description: "Comma-separated CodeQL languages (leave empty for auto-detect)"
+        required: false
+        type: string
+        default: ""
+      batch_size:
+        description: "Max issues per Devin session"
+        required: false
+        type: number
+        default: 5
+      max_sessions:
+        description: "Max Devin sessions to create"
+        required: false
+        type: number
+        default: 10
+      severity_threshold:
+        description: "Minimum severity: critical, high, medium, low"
+        required: false
+        type: choice
+        options:
+          - critical
+          - high
+          - medium
+          - low
+        default: "low"
+      dry_run:
+        description: "Generate prompts only (no Devin sessions)"
+        required: false
+        type: boolean
+        default: false
+      default_branch:
+        description: "Default branch of the target repo"
+        required: false
+        type: string
+        default: "main"
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyze-and-fix:
+    name: Analyze & Dispatch Fixes
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout this action repo
+        uses: actions/checkout@v4
+
+      - name: Run CodeQL Devin Fixer
+        uses: ./
+        with:
+          target_repo: ${{ inputs.target_repo }}
+          languages: ${{ inputs.languages }}
+          batch_size: ${{ inputs.batch_size }}
+          max_sessions: ${{ inputs.max_sessions }}
+          severity_threshold: ${{ inputs.severity_threshold }}
+          devin_api_key: ${{ secrets.DEVIN_API_KEY }}
+          dry_run: ${{ inputs.dry_run }}
+          default_branch: ${{ inputs.default_branch }}
