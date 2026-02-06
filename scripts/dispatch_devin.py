@@ -40,31 +40,35 @@ def build_batch_prompt(batch: dict, repo_url: str, default_branch: str) -> str:
             if loc.get("file")
         )
         cwes = ", ".join(issue.get("cwes", [])) or "N/A"
-        prompt_parts.extend([
-            f"### Issue {idx}: {issue['rule_name']} ({issue['rule_id']})",
-            f"- Severity: {issue['severity_tier'].upper()} ({issue['severity_score']})",
-            f"- CWE: {cwes}",
-            f"- Location(s): {locs}",
-            f"- Description: {issue['message'][:300]}",
-        ])
+        prompt_parts.extend(
+            [
+                f"### Issue {idx}: {issue['rule_name']} ({issue['rule_id']})",
+                f"- Severity: {issue['severity_tier'].upper()} ({issue['severity_score']})",
+                f"- CWE: {cwes}",
+                f"- Location(s): {locs}",
+                f"- Description: {issue['message'][:300]}",
+            ]
+        )
         if issue.get("rule_description"):
             prompt_parts.append(f"- Rule: {issue['rule_description'][:200]}")
         if issue.get("rule_help"):
             prompt_parts.append(f"- Guidance: {issue['rule_help'][:300]}")
         prompt_parts.append("")
 
-    prompt_parts.extend([
-        "Instructions:",
-        f"1. Clone {repo_url} and create a new branch from {default_branch}.",
-        "2. Fix ALL the issues listed above.",
-        "3. Ensure fixes don't break existing functionality.",
-        "4. Run existing tests if available to verify.",
-        "5. Create a PR with a clear description of what was fixed and why.",
-        f"6. Title the PR: 'fix: resolve {family} security issues "
-        f"(CodeQL batch {batch[\"batch_id\"]})'",
-        "",
-        "Files to focus on:",
-    ])
+    prompt_parts.extend(
+        [
+            "Instructions:",
+            f"1. Clone {repo_url} and create a new branch from {default_branch}.",
+            "2. Fix ALL the issues listed above.",
+            "3. Ensure fixes don't break existing functionality.",
+            "4. Run existing tests if available to verify.",
+            "5. Create a PR with a clear description of what was fixed and why.",
+            f"6. Title the PR: 'fix: resolve {family} security issues "
+            f"(CodeQL batch {batch['batch_id']})'",
+            "",
+            "Files to focus on:",
+        ]
+    )
     for f in sorted(file_list):
         prompt_parts.append(f"- {f}")
 
@@ -171,12 +175,14 @@ def main() -> None:
 
         if dry_run:
             print(f"  [DRY RUN] Prompt saved to {prompt_path}")
-            sessions.append({
-                "batch_id": batch_id,
-                "session_id": "dry-run",
-                "url": "dry-run",
-                "status": "dry-run",
-            })
+            sessions.append(
+                {
+                    "batch_id": batch_id,
+                    "session_id": "dry-run",
+                    "url": "dry-run",
+                    "status": "dry-run",
+                }
+            )
             continue
 
         try:
@@ -184,21 +190,25 @@ def main() -> None:
             session_id = result["session_id"]
             url = result["url"]
             print(f"  Session created: {url}")
-            sessions.append({
-                "batch_id": batch_id,
-                "session_id": session_id,
-                "url": url,
-                "status": "created",
-            })
+            sessions.append(
+                {
+                    "batch_id": batch_id,
+                    "session_id": session_id,
+                    "url": url,
+                    "status": "created",
+                }
+            )
             time.sleep(2)
         except requests.exceptions.RequestException as e:
             print(f"  ERROR creating session: {e}")
-            sessions.append({
-                "batch_id": batch_id,
-                "session_id": "",
-                "url": "",
-                "status": f"error: {e}",
-            })
+            sessions.append(
+                {
+                    "batch_id": batch_id,
+                    "session_id": "",
+                    "url": "",
+                    "status": f"error: {e}",
+                }
+            )
 
     with open(os.path.join(output_dir, "sessions.json"), "w") as f:
         json.dump(sessions, f, indent=2)
@@ -213,7 +223,9 @@ def main() -> None:
 
     for s in sessions:
         batch = next(b for b in batches if b["batch_id"] == s["batch_id"])
-        link = f"[Open]({s['url']})" if s["url"] and s["url"] != "dry-run" else s["status"]
+        link = (
+            f"[Open]({s['url']})" if s["url"] and s["url"] != "dry-run" else s["status"]
+        )
         summary_lines.append(
             f"| {s['batch_id']} | {batch['cwe_family']} "
             f"| {batch['severity_tier'].upper()} | {link} | {s['status']} |"
@@ -234,7 +246,9 @@ def main() -> None:
                 s["url"] for s in sessions if s["url"] and s["url"] != "dry-run"
             )
             f.write(f"session_urls={session_urls}\n")
-            f.write(f"sessions_created={len([s for s in sessions if s['status'] == 'created'])}\n")
+            f.write(
+                f"sessions_created={len([s for s in sessions if s['status'] == 'created'])}\n"
+            )
 
 
 if __name__ == "__main__":

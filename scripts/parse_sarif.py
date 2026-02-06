@@ -19,8 +19,14 @@ SEVERITY_ORDER = ["critical", "high", "medium", "low", "none"]
 
 CWE_FAMILIES = {
     "injection": [
-        "cwe-78", "cwe-89", "cwe-94", "cwe-95", "cwe-96",
-        "cwe-77", "cwe-917", "cwe-1321",
+        "cwe-78",
+        "cwe-89",
+        "cwe-94",
+        "cwe-95",
+        "cwe-96",
+        "cwe-77",
+        "cwe-917",
+        "cwe-1321",
     ],
     "xss": ["cwe-79", "cwe-80"],
     "path-traversal": ["cwe-22", "cwe-23", "cwe-36"],
@@ -105,31 +111,35 @@ def parse_sarif(sarif_path: str) -> list[dict[str, Any]]:
                 phys = loc.get("physicalLocation", {})
                 artifact = phys.get("artifactLocation", {})
                 region = phys.get("region", {})
-                locations.append({
-                    "file": artifact.get("uri", ""),
-                    "start_line": region.get("startLine", 0),
-                    "end_line": region.get("endLine", region.get("startLine", 0)),
-                    "start_column": region.get("startColumn", 0),
-                })
+                locations.append(
+                    {
+                        "file": artifact.get("uri", ""),
+                        "start_line": region.get("startLine", 0),
+                        "end_line": region.get("endLine", region.get("startLine", 0)),
+                        "start_column": region.get("startColumn", 0),
+                    }
+                )
 
             message = result.get("message", {}).get("text", "")
             rule_desc = rule.get("shortDescription", {}).get("text", "")
             rule_help = rule.get("help", {}).get("text", "")
             rule_name = rule.get("name", rule_id)
 
-            issues.append({
-                "rule_id": rule_id,
-                "rule_name": rule_name,
-                "rule_description": rule_desc,
-                "rule_help": rule_help[:500] if rule_help else "",
-                "message": message,
-                "severity_score": severity_score,
-                "severity_tier": severity_tier,
-                "cwes": cwes,
-                "cwe_family": cwe_family,
-                "locations": locations,
-                "level": result.get("level", "warning"),
-            })
+            issues.append(
+                {
+                    "rule_id": rule_id,
+                    "rule_name": rule_name,
+                    "rule_description": rule_desc,
+                    "rule_help": rule_help[:500] if rule_help else "",
+                    "message": message,
+                    "severity_score": severity_score,
+                    "severity_tier": severity_tier,
+                    "cwes": cwes,
+                    "cwe_family": cwe_family,
+                    "locations": locations,
+                    "level": result.get("level", "warning"),
+                }
+            )
 
     return issues
 
@@ -155,9 +165,7 @@ def batch_issues(
     for family, group in family_groups.items():
         family_severity[family] = max(i["severity_score"] for i in group)
 
-    sorted_families = sorted(
-        family_groups.keys(), key=lambda f: -family_severity[f]
-    )
+    sorted_families = sorted(family_groups.keys(), key=lambda f: -family_severity[f])
 
     batches: list[dict[str, Any]] = []
     for family in sorted_families:
@@ -168,14 +176,16 @@ def batch_issues(
             chunk = group[i : i + batch_size]
             top_severity = max(c["severity_score"] for c in chunk)
             top_tier = classify_severity(top_severity)
-            batches.append({
-                "batch_id": len(batches) + 1,
-                "cwe_family": family,
-                "severity_tier": top_tier,
-                "max_severity_score": top_severity,
-                "issue_count": len(chunk),
-                "issues": chunk,
-            })
+            batches.append(
+                {
+                    "batch_id": len(batches) + 1,
+                    "cwe_family": family,
+                    "severity_tier": top_tier,
+                    "max_severity_score": top_severity,
+                    "issue_count": len(chunk),
+                    "issues": chunk,
+                }
+            )
         if len(batches) >= max_batches:
             break
 
