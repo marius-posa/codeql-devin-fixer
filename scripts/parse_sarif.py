@@ -2,6 +2,7 @@
 """Parse CodeQL SARIF output, prioritize by severity, and group into batches."""
 
 import json
+import re
 import sys
 import os
 from collections import defaultdict
@@ -17,15 +18,18 @@ SEVERITY_TIERS = {
 
 SEVERITY_ORDER = ["critical", "high", "medium", "low", "none"]
 
-CWE_FAMILIES = {
+CWE_FAMILIES: dict[str, list[str]] = {
     "injection": [
+        "cwe-77",
         "cwe-78",
         "cwe-89",
+        "cwe-90",
         "cwe-94",
         "cwe-95",
         "cwe-96",
-        "cwe-77",
+        "cwe-116",
         "cwe-917",
+        "cwe-943",
         "cwe-1321",
     ],
     "xss": ["cwe-79", "cwe-80"],
@@ -40,7 +44,21 @@ CWE_FAMILIES = {
     "csrf": ["cwe-352"],
     "prototype-pollution": ["cwe-1321"],
     "regex-dos": ["cwe-1333", "cwe-730"],
+    "type-confusion": ["cwe-843"],
+    "template-injection": ["cwe-73", "cwe-1336"],
 }
+
+_CWE_FAMILY_INDEX: dict[str, str] = {}
+for _family, _members in CWE_FAMILIES.items():
+    for _cwe in _members:
+        _CWE_FAMILY_INDEX[_cwe] = _family
+
+
+def normalize_cwe(cwe: str) -> str:
+    m = re.match(r"cwe-0*(\d+)", cwe.lower())
+    if m:
+        return f"cwe-{m.group(1)}"
+    return cwe.lower()
 
 
 def classify_severity(score: float) -> str:
@@ -54,19 +72,24 @@ def extract_cwes(tags: list[str]) -> list[str]:
     cwes = []
     for tag in tags:
         if tag.startswith("external/cwe/"):
-            cwes.append(tag.replace("external/cwe/", ""))
+            raw = tag.replace("external/cwe/", "")
+            cwes.append(normalize_cwe(raw))
     return cwes
 
 
 def get_cwe_family(cwes: list[str]) -> str:
-    for family, members in CWE_FAMILIES.items():
-        for cwe in cwes:
-            if cwe.lower() in members:
-                return family
+    for cwe in cwes:
+        family = _CWE_FAMILY_INDEX.get(cwe)
+        if family:
+            return family
     return "other"
 
 
 def parse_sarif(sarif_path: str) -> list[dict[str, Any]]:
+    file_size = os.path.getsize(sarif_path)
+    if file_size > 500 * 1024 * 1024:
+        print(f"WARNING: SARIF file is very large ({file_size / 1024 / 1024:.0f} MB)")
+
     with open(sarif_path) as f:
         sarif = json.load(f)
 
@@ -130,7 +153,7 @@ def parse_sarif(sarif_path: str) -> list[dict[str, Any]]:
                     "rule_id": rule_id,
                     "rule_name": rule_name,
                     "rule_description": rule_desc,
-                    "rule_help": rule_help[:500] if rule_help else "",
+                    "rule_help": rule_help[:1000] if rule_help else "",
                     "message": message,
                     "severity_score": severity_score,
                     "severity_tier": severity_tier,
@@ -142,6 +165,21 @@ def parse_sarif(sarif_path: str) -> list[dict[str, Any]]:
             )
 
     return issues
+
+
+def deduplicate_issues(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    unique: list[dict[str, Any]] = []
+    for issue in issues:
+        locs = tuple(
+            (loc["file"], loc["start_line"]) for loc in issue.get("locations", [])
+        )
+        key = (issue["rule_id"], locs)
+        key_str = str(key)
+        if key_str not in seen:
+            seen.add(key_str)
+            unique.append(issue)
+    return unique
 
 
 def prioritize_issues(
@@ -174,6 +212,11 @@ def batch_issues(
             if len(batches) >= max_batches:
                 break
             chunk = group[i : i + batch_size]
+            files_in_batch = set()
+            for issue in chunk:
+                for loc in issue.get("locations", []):
+                    if loc.get("file"):
+                        files_in_batch.add(loc["file"])
             top_severity = max(c["severity_score"] for c in chunk)
             top_tier = classify_severity(top_severity)
             batches.append(
@@ -183,6 +226,7 @@ def batch_issues(
                     "severity_tier": top_tier,
                     "max_severity_score": top_severity,
                     "issue_count": len(chunk),
+                    "file_count": len(files_in_batch),
                     "issues": chunk,
                 }
             )
@@ -196,9 +240,19 @@ def batch_issues(
 
 
 def generate_summary(
-    issues: list[dict[str, Any]], batches: list[dict[str, Any]]
+    issues: list[dict[str, Any]],
+    batches: list[dict[str, Any]],
+    total_raw: int = 0,
+    dedup_removed: int = 0,
 ) -> str:
     lines = ["# CodeQL Analysis Summary\n"]
+
+    if total_raw > 0:
+        lines.append(
+            f"**Raw issues**: {total_raw} | "
+            f"**Deduplicated**: {dedup_removed} removed | "
+            f"**After filtering**: {len(issues)}\n"
+        )
 
     tier_counts: dict[str, int] = defaultdict(int)
     for issue in issues:
@@ -226,19 +280,24 @@ def generate_summary(
     lines.append("")
 
     lines.append(f"## Batches Created: {len(batches)}\n")
-    lines.append("| Batch | Category | Severity | Issues |")
-    lines.append("|-------|----------|----------|--------|")
+    lines.append("| Batch | Category | Severity | Issues | Files |")
+    lines.append("|-------|----------|----------|--------|-------|")
     for batch in batches:
         lines.append(
             f"| {batch['batch_id']} | {batch['cwe_family']} "
-            f"| {batch['severity_tier'].upper()} | {batch['issue_count']} |"
+            f"| {batch['severity_tier'].upper()} | {batch['issue_count']} "
+            f"| {batch.get('file_count', '?')} |"
         )
 
     return "\n".join(lines)
 
 
 def main() -> None:
-    sarif_path = sys.argv[1] if len(sys.argv) > 1 else "results.sarif"
+    if len(sys.argv) < 2:
+        print("Usage: parse_sarif.py <sarif_path_or_dir> <output_dir>")
+        sys.exit(1)
+
+    sarif_input = sys.argv[1]
     output_dir = sys.argv[2] if len(sys.argv) > 2 else "output"
     batch_size = int(os.environ.get("BATCH_SIZE", "5"))
     max_batches = int(os.environ.get("MAX_SESSIONS", "10"))
@@ -246,11 +305,36 @@ def main() -> None:
 
     os.makedirs(output_dir, exist_ok=True)
 
-    print(f"Parsing SARIF file: {sarif_path}")
-    issues = parse_sarif(sarif_path)
-    print(f"Found {len(issues)} total issues")
+    sarif_files: list[str] = []
+    if os.path.isdir(sarif_input):
+        for entry in os.listdir(sarif_input):
+            if entry.endswith(".sarif"):
+                sarif_files.append(os.path.join(sarif_input, entry))
+    elif os.path.isfile(sarif_input):
+        sarif_files.append(sarif_input)
+    else:
+        print(f"ERROR: SARIF path not found: {sarif_input}")
+        sys.exit(1)
 
-    prioritized = prioritize_issues(issues, threshold)
+    if not sarif_files:
+        print(f"ERROR: No SARIF files found in {sarif_input}")
+        sys.exit(1)
+
+    all_issues: list[dict[str, Any]] = []
+    for sf in sorted(sarif_files):
+        print(f"Parsing SARIF file: {sf}")
+        all_issues.extend(parse_sarif(sf))
+
+    total_raw = len(all_issues)
+    print(f"Found {total_raw} total issues across {len(sarif_files)} SARIF file(s)")
+
+    all_issues = deduplicate_issues(all_issues)
+    dedup_removed = total_raw - len(all_issues)
+    if dedup_removed > 0:
+        print(f"Removed {dedup_removed} duplicate issues")
+    print(f"Unique issues: {len(all_issues)}")
+
+    prioritized = prioritize_issues(all_issues, threshold)
     print(f"After filtering (threshold={threshold}): {len(prioritized)} issues")
 
     batches = batch_issues(prioritized, batch_size, max_batches)
@@ -262,7 +346,7 @@ def main() -> None:
     with open(os.path.join(output_dir, "batches.json"), "w") as f:
         json.dump(batches, f, indent=2)
 
-    summary = generate_summary(prioritized, batches)
+    summary = generate_summary(prioritized, batches, total_raw, dedup_removed)
     with open(os.path.join(output_dir, "summary.md"), "w") as f:
         f.write(summary)
 
