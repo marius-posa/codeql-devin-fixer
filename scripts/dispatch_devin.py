@@ -66,7 +66,7 @@ def build_batch_prompt(batch: dict, repo_url: str, default_branch: str) -> str:
         if issue.get("rule_description"):
             prompt_parts.append(f"- Rule: {issue['rule_description'][:200]}")
         if issue.get("rule_help"):
-            prompt_parts.append(f"- Guidance: {issue['rule_help'][:300]}")
+            prompt_parts.append(f"- Guidance: {issue['rule_help'][:500]}")
         prompt_parts.append("")
 
     prompt_parts.extend(
