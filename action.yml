@@ -81,7 +81,7 @@ runs:
         GIT_LFS_SKIP_SMUDGE: "1"
       run: |
         TARGET_DIR="${{ runner.temp }}/target-repo"
-        git clone --depth 1 "${{ inputs.target_repo }}" "$TARGET_DIR"
+        git clone --depth 1 --single-branch "${{ inputs.target_repo }}" "$TARGET_DIR"
         echo "TARGET_DIR=$TARGET_DIR" >> "$GITHUB_ENV" 
 
     - name: Detect languages
