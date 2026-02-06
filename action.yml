@@ -83,28 +83,34 @@ runs:
         TARGET_DIR="${{ runner.temp }}/target-repo"
         LANGS=""
 
-        if find "$TARGET_DIR" -name "*.js" -o -name "*.ts" -o -name "*.jsx" -o -name "*.tsx" | head -1 | grep -q .; then
+        has_files() {
+          local result
+          result=$(find "$TARGET_DIR" \( "$@" \) -print -quit 2>/dev/null)
+          [ -n "$result" ]
+        }
+
+        if has_files -name "*.js" -o -name "*.ts" -o -name "*.jsx" -o -name "*.tsx"; then
           LANGS="${LANGS:+$LANGS,}javascript"
         fi
-        if find "$TARGET_DIR" -name "*.py" | head -1 | grep -q .; then
+        if has_files -name "*.py"; then
           LANGS="${LANGS:+$LANGS,}python"
         fi
-        if find "$TARGET_DIR" -name "*.java" | head -1 | grep -q .; then
+        if has_files -name "*.java"; then
           LANGS="${LANGS:+$LANGS,}java"
         fi
-        if find "$TARGET_DIR" -name "*.go" | head -1 | grep -q .; then
+        if has_files -name "*.go"; then
           LANGS="${LANGS:+$LANGS,}go"
         fi
-        if find "$TARGET_DIR" -name "*.rb" | head -1 | grep -q .; then
+        if has_files -name "*.rb"; then
           LANGS="${LANGS:+$LANGS,}ruby"
         fi
-        if find "$TARGET_DIR" -name "*.cs" | head -1 | grep -q .; then
+        if has_files -name "*.cs"; then
           LANGS="${LANGS:+$LANGS,}csharp"
         fi
-        if find "$TARGET_DIR" -name "*.cpp" -o -name "*.c" -o -name "*.h" | head -1 | grep -q .; then
+        if has_files -name "*.cpp" -o -name "*.c" -o -name "*.h"; then
           LANGS="${LANGS:+$LANGS,}cpp"
         fi
-        if find "$TARGET_DIR" -name "*.swift" | head -1 | grep -q .; then
+        if has_files -name "*.swift"; then
           LANGS="${LANGS:+$LANGS,}swift"
         fi
 
