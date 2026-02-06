@@ -65,10 +65,16 @@ jobs:
 | `batch_size` | No | `5` | Max issues per Devin session |
 | `max_sessions` | No | `10` | Max Devin sessions to create |
 | `severity_threshold` | No | `low` | Minimum severity: `critical`, `high`, `medium`, `low` |
+| `queries` | No | `security-extended` | CodeQL query suite (`security-extended`, `security-and-quality`) |
+| `include_paths` | No | `` | Newline/comma-separated globs to include (narrows analysis) |
+| `exclude_paths` | No | `` | Newline/comma-separated globs to exclude |
 | `devin_api_key` | Yes | - | Devin API key (use a repository secret) |
 | `max_acu_per_session` | No | - | ACU limit per Devin session |
 | `dry_run` | No | `false` | Generate prompts without creating sessions |
 | `default_branch` | No | `main` | Default branch of the target repo |
+| `wait_for_sessions` | No | `false` | Wait for Devin sessions to finish and collect outcomes |
+| `poll_timeout` | No | `60` | Polling timeout (minutes) |
+| `poll_interval` | No | `30` | Polling interval (seconds) |
 
 ## Outputs
 
@@ -78,6 +84,9 @@ jobs:
 | `total_batches` | Number of batches created |
 | `sessions_created` | Number of Devin sessions dispatched |
 | `session_urls` | Comma-separated Devin session URLs |
+| `sessions_finished` | Number of Devin sessions that finished (if waited) |
+| `sessions_with_pr` | Number of sessions that produced a PR (if waited) |
+| `issues_addressed` | Proxy: sum of issues in finished sessions that produced a PR (if waited) |
 
 ## Batching Strategy
 
@@ -112,6 +121,11 @@ Highest-severity batches are dispatched first.
     devin_api_key: ${{ secrets.DEVIN_API_KEY }}
 ```
 
+## Notes
+
+- ACU usage is not reported with the public v1 API; enterprise APIs expose ACU via different auth.
+- "Issues addressed" is a proxy: sum of issues in batches where a session finished and produced a PR (does not re-run CodeQL on PRs).
+
 ## Dry Run Mode
 
 Test without creating Devin sessions:
@@ -134,6 +148,7 @@ Every run uploads these artifacts:
 - `batches.json` -- Grouped batches ready for dispatch
 - `summary.md` -- Human-readable analysis summary
 - `sessions.json` -- Created Devin session details
+- `outcomes.json` -- Session outcomes (status, PR URLs) when waiting is enabled
 - `prompt_batch_N.txt` -- The exact prompt sent to each Devin session
 - SARIF results from CodeQL
 
@@ -158,7 +173,7 @@ CodeQL: database create + analyze -> SARIF
 parse_sarif.py: parse -> prioritize -> batch
     |
     v
-dispatch_devin.py: create Devin session per batch
+dispatch_devin.py: create Devin session per batch (optionally wait + collect outcomes)
     |
     v
 Each Devin session: clone repo -> fix issues -> create PR
