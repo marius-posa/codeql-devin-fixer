@@ -9,6 +9,18 @@ inputs:
     description: "Comma-separated CodeQL languages (e.g., javascript,python). Auto-detected if empty."
     required: false
     default: ""
+  queries:
+    description: "CodeQL query suite to run (e.g., security-extended, security-and-quality)"
+    required: false
+    default: "security-extended"
+  include_paths:
+    description: "Optional newline- or comma-separated globs to include (limits analysis scope)"
+    required: false
+    default: ""
+  exclude_paths:
+    description: "Optional newline- or comma-separated globs to exclude from analysis"
+    required: false
+    default: ""
   batch_size:
     description: "Maximum number of issues per Devin session/batch"
     required: false
@@ -35,7 +47,7 @@ inputs:
   default_branch:
     description: "Default branch of the target repo"
     required: false
-    default: "main"
+    default: "main" 
 
 outputs:
   total_issues:
@@ -65,10 +77,12 @@ runs:
 
     - name: Clone target repository
       shell: bash
+      env:
+        GIT_LFS_SKIP_SMUDGE: "1"
       run: |
         TARGET_DIR="${{ runner.temp }}/target-repo"
-        git clone --depth 1 "${{ inputs.target_repo }}" "$TARGET_DIR"
-        echo "TARGET_DIR=$TARGET_DIR" >> "$GITHUB_ENV"
+        git clone --depth 1 --single-branch "${{ inputs.target_repo }}" "$TARGET_DIR"
+        echo "TARGET_DIR=$TARGET_DIR" >> "$GITHUB_ENV" 
 
     - name: Detect languages
       id: detect-lang
@@ -122,11 +136,50 @@ runs:
         echo "languages=$LANGS" >> "$GITHUB_OUTPUT"
         echo "Detected languages: $LANGS"
 
-    - name: Initialize CodeQL
+    - name: Prepare CodeQL config
+      id: prepare-config
+      shell: bash
+      run: |
+        CONFIG="${{ runner.temp }}/codeql-config.yml"
+        INC="${{ inputs.include_paths }}"
+        EXC="${{ inputs.exclude_paths }}"
+        sanitize() {
+          echo "$1" | tr ',' '\n' | sed '/^\s*$/d' | sed 's/^\s*//;s/\s*$//'
+        }
+        has_config=false
+        echo "version: 2" > "$CONFIG"
+        echo "queries: ${{ inputs.queries }}" >> "$CONFIG"
+        INCL=$(sanitize "$INC")
+        EXCL=$(sanitize "$EXC")
+        if [ -n "$INCL" ] || [ -n "$EXCL" ]; then
+          has_config=true
+          echo "paths:" >> "$CONFIG"
+          if [ -n "$INCL" ]; then
+            sanitize "$INC" | sed 's/^/- /' >> "$CONFIG"
+          fi
+          if [ -n "$EXCL" ]; then
+            echo "paths-ignore:" >> "$CONFIG"
+            sanitize "$EXC" | sed 's/^/- /' >> "$CONFIG"
+          fi
+        fi
+        echo "config_path=$CONFIG" >> "$GITHUB_OUTPUT"
+        echo "has_config=$has_config" >> "$GITHUB_OUTPUT"
+
+    - name: Initialize CodeQL (with config)
+      if: steps.prepare-config.outputs.has_config == 'true'
       uses: github/codeql-action/init@v3
       with:
         languages: ${{ steps.detect-lang.outputs.languages }}
         source-root: ${{ runner.temp }}/target-repo
+        config-file: ${{ steps.prepare-config.outputs.config_path }}
+
+    - name: Initialize CodeQL
+      if: steps.prepare-config.outputs.has_config != 'true'
+      uses: github/codeql-action/init@v3
+      with:
+        languages: ${{ steps.detect-lang.outputs.languages }}
+        source-root: ${{ runner.temp }}/target-repo
+        queries: ${{ inputs.queries }}
 
     - name: Build CodeQL database (autobuild)
       uses: github/codeql-action/autobuild@v3
@@ -139,6 +192,8 @@ runs:
       with:
         output: ${{ runner.temp }}/codeql-results
         upload: never
+        upload-database: true
+        wait-for-processing: true
 
     - name: Find SARIF file
       id: find-sarif
@@ -163,7 +218,7 @@ runs:
         SEVERITY_THRESHOLD: ${{ inputs.severity_threshold }}
       run: |
         python "${{ github.action_path }}/scripts/parse_sarif.py" \
-          "${{ steps.find-sarif.outputs.sarif_file }}" \
+          "${{ runner.temp }}/codeql-results" \
           "${{ runner.temp }}/codeql-output"
 
     - name: Dispatch Devin sessions

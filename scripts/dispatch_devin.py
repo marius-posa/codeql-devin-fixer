@@ -3,12 +3,26 @@
 
 import json
 import os
+import re
 import sys
 import time
 import requests
 
 
 DEVIN_API_BASE = "https://api.devin.ai/v1"
+
+MAX_RETRIES = 3
+RETRY_DELAY = 5
+
+
+def validate_repo_url(url: str) -> str:
+    url = url.strip().rstrip("/")
+    if url.endswith(".git"):
+        url = url[:-4]
+    pattern = r"^https://github\.com/[\w.-]+/[\w.-]+$"
+    if not re.match(pattern, url):
+        print(f"WARNING: repo URL may be invalid: {url}")
+    return url
 
 
 def build_batch_prompt(batch: dict, repo_url: str, default_branch: str) -> str:
@@ -52,7 +66,7 @@ def build_batch_prompt(batch: dict, repo_url: str, default_branch: str) -> str:
         if issue.get("rule_description"):
             prompt_parts.append(f"- Rule: {issue['rule_description'][:200]}")
         if issue.get("rule_help"):
-            prompt_parts.append(f"- Guidance: {issue['rule_help'][:300]}")
+            prompt_parts.append(f"- Guidance: {issue['rule_help'][:500]}")
         prompt_parts.append("")
 
     prompt_parts.extend(
@@ -105,14 +119,23 @@ def create_devin_session(
     if max_acu is not None and max_acu > 0:
         payload["max_acu_limit"] = max_acu
 
-    resp = requests.post(
-        f"{DEVIN_API_BASE}/sessions",
-        headers=headers,
-        json=payload,
-        timeout=30,
-    )
-    resp.raise_for_status()
-    return resp.json()
+    last_err = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            resp = requests.post(
+                f"{DEVIN_API_BASE}/sessions",
+                headers=headers,
+                json=payload,
+                timeout=30,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except requests.exceptions.RequestException as e:
+            last_err = e
+            if attempt < MAX_RETRIES:
+                print(f"  Retry {attempt}/{MAX_RETRIES} after error: {e}")
+                time.sleep(RETRY_DELAY * attempt)
+    raise last_err  # type: ignore[misc]
 
 
 def check_session_status(api_key: str, session_id: str) -> dict:
@@ -131,7 +154,7 @@ def main() -> None:
     output_dir = sys.argv[2] if len(sys.argv) > 2 else "output"
 
     api_key = os.environ.get("DEVIN_API_KEY", "")
-    repo_url = os.environ.get("TARGET_REPO", "")
+    repo_url = validate_repo_url(os.environ.get("TARGET_REPO", ""))
     default_branch = os.environ.get("DEFAULT_BRANCH", "main")
     max_acu_str = os.environ.get("MAX_ACU_PER_SESSION", "")
     dry_run = os.environ.get("DRY_RUN", "false").lower() == "true"
