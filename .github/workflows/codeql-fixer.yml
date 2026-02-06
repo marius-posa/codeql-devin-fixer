@@ -13,6 +13,24 @@ on:
         required: false
         type: string
         default: ""
+      queries:
+        description: "CodeQL query suite (security-extended, security-and-quality)"
+        required: false
+        type: choice
+        options:
+          - security-extended
+          - security-and-quality
+        default: security-extended
+      include_paths:
+        description: "Optional newline/comma-separated globs to include"
+        required: false
+        type: string
+        default: ""
+      exclude_paths:
+        description: "Optional newline/comma-separated globs to exclude"
+        required: false
+        type: string
+        default: "" 
       batch_size:
         description: "Max issues per Devin session"
         required: false
