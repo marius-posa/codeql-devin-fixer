@@ -124,6 +124,11 @@ runs:
           [ -n "$result" ]
         }
 
+        PHP_PRESENT=0
+        if has_files -name "*.php"; then
+          PHP_PRESENT=1
+        fi
+
         if has_files -name "*.js" -o -name "*.ts" -o -name "*.jsx" -o -name "*.tsx"; then
           LANGS="${LANGS:+$LANGS,}javascript"
         fi
@@ -150,8 +155,22 @@ runs:
         fi
 
         if [ -z "$LANGS" ]; then
+          if [ "$PHP_PRESENT" -eq 1 ]; then
+            echo "ERROR: Detected PHP-only repository. CodeQL does not support PHP. Supported languages: cpp,csharp,go,java,javascript,python,ruby,swift" >&2
+            if [ -n "$GITHUB_STEP_SUMMARY" ]; then
+              printf "\n**ERROR**: Detected PHP-only repository. CodeQL does not support PHP.\n\nSupported languages: cpp, csharp, go, java, javascript, python, ruby, swift\n" >> "$GITHUB_STEP_SUMMARY"
+            fi
+            exit 1
+          fi
           echo "No supported languages detected, defaulting to javascript"
           LANGS="javascript"
+        fi
+
+        if [ "$PHP_PRESENT" -eq 1 ]; then
+          echo "WARNING: PHP detected. CodeQL does not support PHP; results will exclude PHP issues."
+          if [ -n "$GITHUB_STEP_SUMMARY" ]; then
+            printf "\n**Note**: PHP detected. CodeQL does not support PHP; results will exclude PHP issues.\n" >> "$GITHUB_STEP_SUMMARY"
+          fi
         fi
 
         echo "languages=$LANGS" >> "$GITHUB_OUTPUT"
