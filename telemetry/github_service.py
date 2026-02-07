@@ -4,7 +4,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from config import gh_headers
+from .config import gh_headers as _gh_headers
 
 
 def collect_session_ids(runs: list[dict]) -> set[str]:
@@ -25,8 +25,9 @@ def match_pr_to_session(pr_body: str, session_ids: set[str]) -> str:
     return ""
 
 
-def fetch_prs_from_github(runs: list[dict]) -> list[dict]:
-    token = os.environ.get("GITHUB_TOKEN", "")
+def fetch_prs_from_github(runs: list[dict], token: str = "") -> list[dict]:
+    if not token:
+        token = os.environ.get("GITHUB_TOKEN", "")
     if not token:
         return []
 
@@ -50,7 +51,7 @@ def fetch_prs_from_github(runs: list[dict]) -> list[dict]:
             url = (f"https://api.github.com/repos/{repo_full}/pulls"
                    f"?state=all&per_page=100&page={gh_page}")
             try:
-                resp = requests.get(url, headers=gh_headers(), timeout=30)
+                resp = requests.get(url, headers=_gh_headers(token), timeout=30)
                 if resp.status_code != 200:
                     snippet = (resp.text or "").strip().replace("\n", " ")[:200]
                     print(f"WARNING: PRs API returned {resp.status_code} for {repo_full} page {gh_page}: {snippet}")

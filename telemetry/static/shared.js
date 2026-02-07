@@ -1,5 +1,54 @@
 const API = window.location.origin;
 
+function getSecretHeaders() {
+  const h = {};
+  const token = sessionStorage.getItem('gh_token');
+  const key = sessionStorage.getItem('devin_api_key');
+  const repo = sessionStorage.getItem('action_repo');
+  if (token) h['X-GitHub-Token'] = token;
+  if (key) h['X-Devin-API-Key'] = key;
+  if (repo) h['X-Action-Repo'] = repo;
+  return h;
+}
+
+function openSettingsModal() {
+  const modal = document.getElementById('settings-modal');
+  modal.classList.add('active');
+  document.getElementById('s-github-token').value = sessionStorage.getItem('gh_token') || '';
+  document.getElementById('s-devin-api-key').value = sessionStorage.getItem('devin_api_key') || '';
+  document.getElementById('s-action-repo').value = sessionStorage.getItem('action_repo') || '';
+  document.getElementById('settings-status').textContent = '';
+}
+
+function closeSettingsModal() {
+  document.getElementById('settings-modal').classList.remove('active');
+}
+
+function saveSettings() {
+  const token = document.getElementById('s-github-token').value.trim();
+  const key = document.getElementById('s-devin-api-key').value.trim();
+  const repo = document.getElementById('s-action-repo').value.trim();
+  if (token) sessionStorage.setItem('gh_token', token); else sessionStorage.removeItem('gh_token');
+  if (key) sessionStorage.setItem('devin_api_key', key); else sessionStorage.removeItem('devin_api_key');
+  if (repo) sessionStorage.setItem('action_repo', repo); else sessionStorage.removeItem('action_repo');
+  const statusEl = document.getElementById('settings-status');
+  statusEl.textContent = 'Settings saved.';
+  statusEl.className = 'settings-status success';
+  setTimeout(function() { closeSettingsModal(); }, 600);
+}
+
+function clearSettings() {
+  sessionStorage.removeItem('gh_token');
+  sessionStorage.removeItem('devin_api_key');
+  sessionStorage.removeItem('action_repo');
+  document.getElementById('s-github-token').value = '';
+  document.getElementById('s-devin-api-key').value = '';
+  document.getElementById('s-action-repo').value = '';
+  const statusEl = document.getElementById('settings-status');
+  statusEl.textContent = 'All credentials cleared.';
+  statusEl.className = 'settings-status success';
+}
+
 function escapeHtml(str) {
   if (!str) return '';
   const div = document.createElement('div');
@@ -181,7 +230,7 @@ async function fetchAllPages(endpoint) {
   let all = [];
   let page = 1;
   while (true) {
-    const res = await fetch(API + endpoint + '?page=' + page + '&per_page=200');
+    const res = await fetch(API + endpoint + '?page=' + page + '&per_page=200', { headers: getSecretHeaders() });
     if (!res.ok) throw new Error('API returned ' + res.status);
     const data = await res.json();
     all = all.concat(data.items || []);
@@ -213,14 +262,21 @@ function closeDispatchModal() {
 
 document.addEventListener('DOMContentLoaded', function() {
   const modal = document.getElementById('dispatch-modal');
+  const settingsModal = document.getElementById('settings-modal');
   if (modal) {
     modal.addEventListener('click', function(e) {
       if (e.target === this) closeDispatchModal();
     });
   }
+  if (settingsModal) {
+    settingsModal.addEventListener('click', function(e) {
+      if (e.target === this) closeSettingsModal();
+    });
+  }
   document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape' && modal && modal.classList.contains('active')) {
-      closeDispatchModal();
+    if (e.key === 'Escape') {
+      if (modal && modal.classList.contains('active')) closeDispatchModal();
+      if (settingsModal && settingsModal.classList.contains('active')) closeSettingsModal();
     }
   });
 });
@@ -234,7 +290,7 @@ async function checkPreflight() {
   clearTimeout(preflightTimer);
   preflightTimer = setTimeout(async () => {
     try {
-      const res = await fetch(API + '/api/dispatch/preflight?target_repo=' + encodeURIComponent(targetRepo));
+      const res = await fetch(API + '/api/dispatch/preflight?target_repo=' + encodeURIComponent(targetRepo), { headers: getSecretHeaders() });
       const data = await res.json();
       if (data.open_prs > 0) {
         let html = '\u26a0\ufe0f <strong>' + data.open_prs + ' Devin PR' + (data.open_prs > 1 ? 's are' : ' is') +
@@ -286,7 +342,7 @@ async function submitDispatch() {
   try {
     const res = await fetch(API + '/api/dispatch', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: Object.assign({ 'Content-Type': 'application/json' }, getSecretHeaders()),
       body: JSON.stringify(payload),
     });
     const data = await res.json();

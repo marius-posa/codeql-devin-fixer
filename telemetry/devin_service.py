@@ -3,12 +3,13 @@ import os
 
 import requests
 
-from config import DEVIN_API_BASE, RUNS_DIR, devin_headers
+from .config import DEVIN_API_BASE, RUNS_DIR, devin_headers as _devin_headers
 
 
-def poll_devin_sessions(sessions: list[dict]) -> list[dict]:
-    key = os.environ.get("DEVIN_API_KEY", "")
-    if not key:
+def poll_devin_sessions(sessions: list[dict], api_key: str = "") -> list[dict]:
+    if not api_key:
+        api_key = os.environ.get("DEVIN_API_KEY", "")
+    if not api_key:
         return sessions
 
     updated = []
@@ -21,7 +22,7 @@ def poll_devin_sessions(sessions: list[dict]) -> list[dict]:
             clean_sid = sid.replace("devin-", "") if sid.startswith("devin-") else sid
             resp = requests.get(
                 f"{DEVIN_API_BASE}/sessions/{clean_sid}",
-                headers=devin_headers(),
+                headers=_devin_headers(api_key),
                 timeout=15,
             )
             if resp.status_code == 200:

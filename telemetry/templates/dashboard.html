@@ -11,6 +11,7 @@
   <header>
     <h1><span>CodeQL Devin Fixer</span> Telemetry</h1>
     <div class="header-actions">
+      <button class="btn" onclick="openSettingsModal()" id="btn-settings">Settings</button>
       <button class="btn" onclick="refreshData()" id="btn-refresh">Refresh Data</button>
       <button class="btn btn-primary" onclick="pollSessions()" id="btn-poll">Poll Sessions</button>
       <button class="btn btn-primary" onclick="openDispatchModal()" id="btn-dispatch" style="background:#1f6feb;border-color:#388bfd">Trigger Action</button>
@@ -82,6 +83,7 @@
 </div>
 
 {% include 'dispatch_modal.html' %}
+{% include 'settings_modal.html' %}
 
 <script src="/static/shared.js"></script>
 <script>
@@ -266,7 +268,7 @@ async function fetchAll() {
   const settled = await Promise.allSettled(
     endpoints.map(async function(ep) {
       if (ep.single) {
-        const res = await fetch(API + ep.endpoint);
+        const res = await fetch(API + ep.endpoint, { headers: getSecretHeaders() });
         if (!res.ok) throw new Error('API returned ' + res.status);
         results[ep.key] = await res.json();
       } else {
@@ -310,7 +312,7 @@ async function pollSessions() {
   btn.innerHTML = '<span class="spinner"></span> Polling...';
   setStatus('Polling Devin sessions & fetching PRs...');
   try {
-    const res = await fetch(API + '/api/poll', { method: 'POST' });
+    const res = await fetch(API + '/api/poll', { method: 'POST', headers: getSecretHeaders() });
     const data = await res.json();
     setStatus('Polled ' + (data.polled || 0) + ' sessions, found ' + (data.prs_found || 0) + ' PRs');
     await fetchAll();
@@ -327,7 +329,7 @@ async function refreshData() {
   btn.innerHTML = '<span class="spinner"></span> Refreshing...';
   setStatus('Pulling latest telemetry & PRs...');
   try {
-    const res = await fetch(API + '/api/refresh', { method: 'POST' });
+    const res = await fetch(API + '/api/refresh', { method: 'POST', headers: getSecretHeaders() });
     const data = await res.json();
     if (data.error) {
       setStatus('Refresh error: ' + data.error);
@@ -345,7 +347,7 @@ async function refreshData() {
 let configWarning = '';
 async function checkConfig() {
   try {
-    const res = await fetch(API + '/api/config');
+    const res = await fetch(API + '/api/config', { headers: getSecretHeaders() });
     const cfg = await res.json();
     const warnings = [];
     if (!cfg.github_token_set) warnings.push('GITHUB_TOKEN not set in .env \u2014 PR discovery disabled');

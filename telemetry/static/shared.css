@@ -197,6 +197,10 @@ a:hover { text-decoration: underline; }
 .dispatch-result.success { display: block; background: #1a3a1a; border: 1px solid #2ea043; color: var(--accent-green); }
 .dispatch-result.error { display: block; background: #3a1a1a; border: 1px solid #f85149; color: var(--accent-red); }
 
+.settings-status { font-size: 13px; color: var(--text-muted); margin-top: 8px; }
+.settings-status.success { color: var(--accent-green); }
+.settings-status.error { color: var(--accent-red); }
+
 .table-loading {
   display: flex; align-items: center; justify-content: center;
   padding: 40px 20px; color: var(--text-muted); gap: 8px; font-size: 13px;
