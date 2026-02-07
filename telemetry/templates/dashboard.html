@@ -437,7 +437,7 @@ async function pollSessions() {
   btn.innerHTML = '<span class="spinner"></span> Polling...';
   setStatus('Polling Devin sessions & fetching PRs...');
   try {
-    const res = await fetch(API + '/api/poll', { method: 'POST' });
+    const res = await _authedFetch(API + '/api/poll', { method: 'POST' });
     const data = await res.json();
     setStatus('Polled ' + (data.polled || 0) + ' sessions, found ' + (data.prs_found || 0) + ' PRs');
     await fetchAll();
@@ -454,7 +454,7 @@ async function refreshData() {
   btn.innerHTML = '<span class="spinner"></span> Refreshing...';
   setStatus('Pulling latest telemetry & PRs...');
   try {
-    const res = await fetch(API + '/api/refresh', { method: 'POST' });
+    const res = await _authedFetch(API + '/api/refresh', { method: 'POST' });
     const data = await res.json();
     if (data.error) {
       setStatus('Refresh error: ' + data.error);
@@ -477,6 +477,9 @@ async function checkConfig() {
     const warnings = [];
     if (!cfg.github_token_set) warnings.push('GITHUB_TOKEN not set in .env \u2014 PR discovery disabled');
     if (!cfg.devin_api_key_set) warnings.push('DEVIN_API_KEY not set in .env \u2014 session polling disabled');
+    if (cfg.auth_required && !_getApiKey()) {
+      _promptApiKey();
+    }
     if (warnings.length > 0) configWarning = '\u26a0\ufe0f ' + warnings.join(' | ');
   } catch (e) {}
 }

@@ -92,6 +92,7 @@ def run_git_with_retry(
     max_retries: int = MAX_RETRIES,
     base_delay: float = BASE_DELAY,
     timeout: int = 60,
+    env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run a git command with retry logic for push/fetch operations.
 
@@ -107,6 +108,7 @@ def run_git_with_retry(
             capture_output=True,
             text=True,
             timeout=timeout,
+            env=env,
         )
         if result.returncode == 0:
             return result
