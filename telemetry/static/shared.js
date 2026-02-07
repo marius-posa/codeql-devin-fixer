@@ -287,7 +287,7 @@ function _renderIssuesContent(filtered, allIssues, containerId, countId) {
   filtered.forEach(function(i, idx) {
     var firstDate = i.first_seen_date ? formatDate(i.first_seen_date) : 'Run #' + i.first_seen_run;
     var lastDate = i.last_seen_date ? formatDate(i.last_seen_date) : 'Run #' + i.last_seen_run;
-    html += '<tr style="cursor:pointer" onclick="openIssueDrawer(_issuesAllData[' + _issuesAllData.indexOf(i) + '])">';
+    html += '<tr style="cursor:pointer" onclick="_openDrawerByFp(\'' + escapeHtml(i.fingerprint) + '\')">';
     html += '<td onclick="event.stopPropagation()"><input type="checkbox" class="bulk-checkbox issue-row-checkbox" data-fingerprint="' + escapeHtml(i.fingerprint) + '" onchange="_toggleBulkCheckbox(this.dataset.fingerprint)"' + (_bulkSelected.has(i.fingerprint) ? ' checked' : '') + '></td>';
     html += '<td><span class="badge ' + badgeClass(i.status) + '">' + escapeHtml(i.status) + '</span></td>';
     html += '<td style="font-family:monospace;font-size:11px">' + escapeHtml(i.rule_id || i.fingerprint.slice(0,12) + '...') + '</td>';
@@ -529,6 +529,10 @@ function showAllSkeletons() {
 }
 
 var _drawerIssue = null;
+function _openDrawerByFp(fingerprint) {
+  var issue = _issuesAllData.find(function(i) { return i.fingerprint === fingerprint; });
+  if (issue) openIssueDrawer(issue);
+}
 function openIssueDrawer(issue) {
   _drawerIssue = issue;
   var overlay = document.getElementById('drawer-overlay');
