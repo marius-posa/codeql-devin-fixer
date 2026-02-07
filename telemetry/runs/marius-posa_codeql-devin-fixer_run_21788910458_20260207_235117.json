@@ -1,0 +1,40 @@
+{
+  "target_repo": "https://github.com/marius-posa/codeql-devin-fixer",
+  "fork_url": "https://github.com/marius-posa/codeql-devin-fixer",
+  "run_number": 23,
+  "run_id": "21788910458",
+  "run_url": "https://github.com/marius-posa/codeql-devin-fixer/actions/runs/21788910458",
+  "run_label": "run-23-2026-02-07-235100",
+  "timestamp": "2026-02-07T23:51:17.845424+00:00",
+  "issues_found": 1,
+  "severity_breakdown": {
+    "medium": 1
+  },
+  "category_breakdown": {
+    "xss": 1
+  },
+  "batches_created": 1,
+  "sessions": [
+    {
+      "session_id": "devin-ac94f74b7c4b452994a0fa3fff40477d",
+      "session_url": "https://app.devin.ai/sessions/ac94f74b7c4b452994a0fa3fff40477d",
+      "batch_id": 1,
+      "status": "created",
+      "issue_ids": [
+        "CQLF-R23-0001"
+      ]
+    }
+  ],
+  "issue_fingerprints": [
+    {
+      "id": "CQLF-R23-0001",
+      "fingerprint": "386e1204f7f4130b",
+      "rule_id": "py/jinja2/autoescape-false",
+      "severity_tier": "medium",
+      "cwe_family": "xss",
+      "file": "scripts/generate_dashboard.py",
+      "start_line": 51
+    }
+  ],
+  "zero_issue_run": false
+}
