@@ -68,13 +68,19 @@ def validate_repo_url(url: str) -> str:
     return url
 
 
-def build_batch_prompt(batch: dict, repo_url: str, default_branch: str) -> str:
+def build_batch_prompt(
+    batch: dict, repo_url: str, default_branch: str, is_own_repo: bool = False,
+) -> str:
     """Construct a detailed, Markdown-formatted prompt for a Devin session.
 
     The prompt is structured so Devin has all the context it needs to:
     * identify which files and lines to examine,
     * understand the vulnerability category and severity,
     * create a PR with the correct title and body format.
+
+    When *is_own_repo* is True the target repo belongs to the user (not a
+    fork of an upstream project) so the prompt omits the "not the upstream"
+    caveat and tells Devin to work directly on the repo.
     """
     family = batch["cwe_family"]
     tier = batch["severity_tier"]
@@ -127,6 +133,17 @@ def build_batch_prompt(batch: dict, repo_url: str, default_branch: str) -> str:
     ids_tag = ",".join(issue_ids[:6]) if issue_ids else f"batch-{batch['batch_id']}"
     pr_title = f"fix({ids_tag}): resolve {family} security issues"
 
+    if is_own_repo:
+        pr_instruction = (
+            f"5. Create a PR on {repo_url} with a clear description "
+            "listing each issue ID fixed."
+        )
+    else:
+        pr_instruction = (
+            f"5. Create a PR **on the fork repo {repo_url}** (not the "
+            "upstream) with a clear description listing each issue ID fixed."
+        )
+
     prompt_parts.extend(
         [
             "Instructions:",
@@ -134,7 +151,7 @@ def build_batch_prompt(batch: dict, repo_url: str, default_branch: str) -> str:
             "2. Fix ALL the issues listed above. Track which issue IDs you are fixing.",
             "3. Ensure fixes don't break existing functionality.",
             "4. Run existing tests if available to verify.",
-            f"5. Create a PR **on the repo {repo_url}** (not the upstream) with a clear description listing each issue ID fixed.",
+            pr_instruction,
             f"6. Title the PR exactly: '{pr_title}'",
             f"7. In the PR body, list each issue ID ({ids_str}) and describe the fix applied.",
             "",
@@ -211,6 +228,8 @@ def main() -> None:
     default_branch = os.environ.get("DEFAULT_BRANCH", "main")
     max_acu_str = os.environ.get("MAX_ACU_PER_SESSION", "")
     dry_run = os.environ.get("DRY_RUN", "false").lower() == "true"
+    fork_url = os.environ.get("FORK_URL", "")
+    is_own_repo = fork_url == repo_url or not fork_url
 
     max_acu = int(max_acu_str) if max_acu_str else None
 
@@ -237,7 +256,7 @@ def main() -> None:
     sessions: list[dict] = []
 
     for batch in batches:
-        prompt = build_batch_prompt(batch, repo_url, default_branch)
+        prompt = build_batch_prompt(batch, repo_url, default_branch, is_own_repo)
         batch_id = batch["batch_id"]
 
         prompt_path = os.path.join(output_dir, f"prompt_batch_{batch_id}.txt")

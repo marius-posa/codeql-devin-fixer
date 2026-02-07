@@ -199,6 +199,7 @@ def aggregate_stats(runs: list[dict], sessions: list[dict], prs: list[dict]) -> 
     severity_agg: dict[str, int] = {}
     category_agg: dict[str, int] = {}
 
+    latest_by_repo: dict[str, dict] = {}
     for run in runs:
         repo = run.get("target_repo", "")
         if repo:
@@ -208,6 +209,22 @@ def aggregate_stats(runs: list[dict], sessions: list[dict], prs: list[dict]) -> 
             severity_agg[tier] = severity_agg.get(tier, 0) + count
         for cat, count in run.get("category_breakdown", {}).items():
             category_agg[cat] = category_agg.get(cat, 0) + count
+        if repo:
+            ts = run.get("timestamp", "")
+            prev = latest_by_repo.get(repo)
+            if prev is None or ts > prev.get("timestamp", ""):
+                latest_by_repo[repo] = run
+
+    latest_issues = sum(
+        r.get("issues_found", 0) for r in latest_by_repo.values()
+    )
+    latest_severity: dict[str, int] = {}
+    latest_category: dict[str, int] = {}
+    for r in latest_by_repo.values():
+        for tier, count in r.get("severity_breakdown", {}).items():
+            latest_severity[tier] = latest_severity.get(tier, 0) + count
+        for cat, count in r.get("category_breakdown", {}).items():
+            latest_category[cat] = latest_category.get(cat, 0) + count
 
     pr_merged = sum(1 for p in prs if p.get("merged", False))
     pr_open = sum(1 for p in prs if p.get("state") == "open")
@@ -222,6 +239,9 @@ def aggregate_stats(runs: list[dict], sessions: list[dict], prs: list[dict]) -> 
         "repo_list": sorted(repos),
         "total_runs": len(runs),
         "total_issues": total_issues,
+        "latest_issues": latest_issues,
+        "latest_severity": latest_severity,
+        "latest_category": latest_category,
         "sessions_created": sessions_created,
         "sessions_finished": sessions_finished,
         "sessions_with_pr": sessions_with_pr,

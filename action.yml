@@ -32,7 +32,7 @@ inputs:
   max_sessions:
     description: "Maximum number of Devin sessions to create"
     required: false
-    default: "10"
+    default: "25"
   severity_threshold:
     description: "Minimum severity to include: critical, high, medium, low"
     required: false
@@ -287,11 +287,12 @@ runs:
       env:
         DEVIN_API_KEY: ${{ inputs.devin_api_key }}
         TARGET_REPO: ${{ env.SCAN_REPO_URL }}
+        FORK_URL: ${{ steps.fork.outputs.fork_url }}
         DEFAULT_BRANCH: ${{ inputs.default_branch }}
         MAX_ACU_PER_SESSION: ${{ inputs.max_acu_per_session }}
         DRY_RUN: ${{ inputs.dry_run }}
       run: |
-        python "${{ github.action_path }}/scripts/dispatch_devin.py" \
+        python "${{ github.action_path }}/scripts/dispatch_devin.py"\
           "${{ runner.temp }}/codeql-output/batches.json" \
           "${{ runner.temp }}/codeql-output"
 
