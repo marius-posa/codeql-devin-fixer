@@ -121,7 +121,11 @@ function renderPrsTable(prs, containerId, countId) {
     el.innerHTML = '<div class="empty-state">No pull requests found yet.</div>';
     return;
   }
-  var rows = prs.map(function(p) {
+  var sorted = [...prs].sort(function(a, b) {
+    return (b.created_at || '') < (a.created_at || '') ? -1
+      : (b.created_at || '') > (a.created_at || '') ? 1 : 0;
+  });
+  var rows = sorted.map(function(p) {
     var statusLabel = p.merged ? 'merged' : p.state;
     return '<tr>'
       + '<td><a href="'+escapeHtml(p.html_url)+'" target="_blank">#'+p.pr_number+'</a></td>'
@@ -138,41 +142,267 @@ function renderPrsTable(prs, containerId, countId) {
     + '</tr></thead><tbody>' + rows + '</tbody></table>';
 }
 
-function renderIssuesTable(issues, containerId, countId) {
-  const el = document.getElementById(containerId);
-  const countEl = document.getElementById(countId);
-  if (countEl) countEl.textContent = issues.length;
-  if (issues.length === 0) {
-    el.innerHTML = '<div class="empty-state">No issue fingerprints available yet.</div>';
+var _issueFilterState = { status: null, severity: null, repo: null };
+var _allIssuesForFilter = [];
+var _issueContainerId = '';
+var _issueCountId = '';
+
+function _applyIssueFilters() {
+  var filtered = _allIssuesForFilter;
+  if (_issueFilterState.status) {
+    filtered = filtered.filter(function(i) { return i.status === _issueFilterState.status; });
+  }
+  if (_issueFilterState.severity) {
+    filtered = filtered.filter(function(i) { return (i.severity_tier || '').toLowerCase() === _issueFilterState.severity.toLowerCase(); });
+  }
+  if (_issueFilterState.repo) {
+    filtered = filtered.filter(function(i) { return (i.target_repo || '') === _issueFilterState.repo; });
+  }
+  _renderIssuesFiltered(filtered, _allIssuesForFilter, _issueContainerId, _issueCountId);
+}
+
+function _toggleStatusFilter(status) {
+  _issueFilterState.status = (_issueFilterState.status === status) ? null : status;
+  _applyIssueFilters();
+}
+
+function _onSeverityFilterChange(value) {
+  _issueFilterState.severity = value || null;
+  _applyIssueFilters();
+}
+
+function _onRepoFilterChange(value) {
+  _issueFilterState.repo = value || null;
+  _applyIssueFilters();
+}
+
+function _clearAllIssueFilters() {
+  _issueFilterState = { status: null, severity: null, repo: null };
+  var sevSel = document.getElementById('issue-severity-filter');
+  var repoSel = document.getElementById('issue-repo-filter');
+  if (sevSel) sevSel.value = '';
+  if (repoSel) repoSel.value = '';
+  _applyIssueFilters();
+}
+
+function _renderIssuesFiltered(filtered, allIssues, containerId, countId) {
+  var el = document.getElementById(containerId);
+  var countEl = document.getElementById(countId);
+  if (countEl) countEl.textContent = filtered.length + (filtered.length !== allIssues.length ? ' / ' + allIssues.length : '');
+
+  var recurring = allIssues.filter(function(i) { return i.status === 'recurring'; }).length;
+  var newCount = allIssues.filter(function(i) { return i.status === 'new'; }).length;
+  var fixed = allIssues.filter(function(i) { return i.status === 'fixed'; }).length;
+
+  var repos = [], repoSet = {};
+  allIssues.forEach(function(i) {
+    var r = i.target_repo || '';
+    if (r && !repoSet[r]) { repoSet[r] = true; repos.push(r); }
+  });
+  repos.sort();
+
+  var severities = [], sevSet = {};
+  allIssues.forEach(function(i) {
+    var s = (i.severity_tier || '').toLowerCase();
+    if (s && !sevSet[s]) { sevSet[s] = true; severities.push(s); }
+  });
+  var sevOrder = ['critical','high','medium','low'];
+  severities.sort(function(a, b) {
+    var ia = sevOrder.indexOf(a), ib = sevOrder.indexOf(b);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+
+  var hasMultipleRepos = repos.length > 1;
+  var hasAnyFilter = _issueFilterState.status || _issueFilterState.severity || _issueFilterState.repo;
+
+  var html = '<div class="issue-controls">';
+  html += '<div class="issue-summary">';
+  html += '<div class="issue-card' + (_issueFilterState.status === 'recurring' ? ' active' : '') + '" onclick="_toggleStatusFilter(\'recurring\')">' +
+    '<span class="badge badge-recurring">recurring</span> <span class="count">' + recurring + '</span></div>';
+  html += '<div class="issue-card' + (_issueFilterState.status === 'new' ? ' active' : '') + '" onclick="_toggleStatusFilter(\'new\')">' +
+    '<span class="badge badge-new">new</span> <span class="count">' + newCount + '</span></div>';
+  html += '<div class="issue-card' + (_issueFilterState.status === 'fixed' ? ' active' : '') + '" onclick="_toggleStatusFilter(\'fixed\')">' +
+    '<span class="badge badge-fixed">fixed</span> <span class="count">' + fixed + '</span></div>';
+  html += '</div>';
+
+  html += '<div class="issue-filters">';
+  html += '<select id="issue-severity-filter" class="filter-select" onchange="_onSeverityFilterChange(this.value)">';
+  html += '<option value="">All Severities</option>';
+  severities.forEach(function(s) {
+    html += '<option value="' + escapeHtml(s) + '"' + (_issueFilterState.severity === s ? ' selected' : '') + '>' + escapeHtml(s.charAt(0).toUpperCase() + s.slice(1)) + '</option>';
+  });
+  html += '</select>';
+  if (hasMultipleRepos) {
+    html += '<select id="issue-repo-filter" class="filter-select" onchange="_onRepoFilterChange(this.value)">';
+    html += '<option value="">All Repos</option>';
+    repos.forEach(function(r) {
+      html += '<option value="' + escapeHtml(r) + '"' + (_issueFilterState.repo === r ? ' selected' : '') + '>' + escapeHtml(repoShort(r)) + '</option>';
+    });
+    html += '</select>';
+  }
+  if (hasAnyFilter) {
+    html += '<button class="btn filter-clear-btn" onclick="_clearAllIssueFilters()">Clear Filters</button>';
+  }
+  html += '</div></div>';
+
+  if (filtered.length === 0) {
+    html += '<div class="empty-state">No issues match the current filters.</div>';
+    el.innerHTML = html;
     return;
   }
-  const recurring = issues.filter(function(i) { return i.status === 'recurring'; }).length;
-  const newCount = issues.filter(function(i) { return i.status === 'new'; }).length;
-  const fixed = issues.filter(function(i) { return i.status === 'fixed'; }).length;
-  var html = '<div class="issue-summary">'
-    + '<div><span class="badge badge-recurring">recurring</span> <span class="count">' + recurring + '</span></div>'
-    + '<div><span class="badge badge-new">new</span> <span class="count">' + newCount + '</span></div>'
-    + '<div><span class="badge badge-fixed">fixed</span> <span class="count">' + fixed + '</span></div>'
-    + '</div>';
+
   html += '<table><thead><tr>'
     + '<th>Status</th><th>Rule</th><th>Severity</th><th>Category</th>'
+    + (hasMultipleRepos ? '<th>Repo</th>' : '')
     + '<th>File</th><th>Line</th><th>First Seen</th><th>Last Seen</th><th>Runs</th>'
     + '</tr></thead><tbody>'
-    + issues.map(function(i) {
+    + filtered.map(function(i) {
+      var firstSeen = i.first_seen_date ? formatDate(i.first_seen_date) : 'Run #' + i.first_seen_run;
+      var lastSeen = i.last_seen_date ? formatDate(i.last_seen_date) : 'Run #' + i.last_seen_run;
       return '<tr>'
         + '<td><span class="badge '+badgeClass(i.status)+'">'+escapeHtml(i.status)+'</span></td>'
         + '<td style="font-family:monospace;font-size:11px">'+escapeHtml(i.rule_id || i.fingerprint.slice(0,12)+'...')+'</td>'
         + '<td><span class="badge '+badgeClass(i.severity_tier)+'">'+escapeHtml(i.severity_tier || '-')+'</span></td>'
         + '<td>'+escapeHtml(i.cwe_family || '-')+'</td>'
+        + (hasMultipleRepos ? '<td style="font-size:11px">' + escapeHtml(repoShort(i.target_repo)) + '</td>' : '')
         + '<td style="font-family:monospace;font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+escapeHtml(i.file)+'">'+(i.file ? escapeHtml(i.file.split('/').pop()) : '-')+'</td>'
         + '<td>'+(i.start_line || '-')+'</td>'
-        + '<td>Run #'+i.first_seen_run+'</td>'
-        + '<td>Run #'+i.last_seen_run+'</td>'
+        + '<td title="Run #'+i.first_seen_run+'">'+firstSeen+'</td>'
+        + '<td title="Run #'+i.last_seen_run+'">'+lastSeen+'</td>'
         + '<td>'+i.appearances+'x</td>'
         + '</tr>';
     }).join('')
     + '</tbody></table>';
   el.innerHTML = html;
+}
+
+function renderIssuesTable(issues, containerId, countId) {
+  _allIssuesForFilter = issues;
+  _issueContainerId = containerId;
+  _issueCountId = countId;
+  _issueFilterState = { status: null, severity: null, repo: null };
+  var el = document.getElementById(containerId);
+  var countEl = document.getElementById(countId);
+  if (countEl) countEl.textContent = issues.length;
+  if (issues.length === 0) {
+    el.innerHTML = '<div class="empty-state">No issue fingerprints available yet.</div>';
+    return;
+  }
+  _renderIssuesFiltered(issues, issues, containerId, countId);
+}
+
+var _trendMode = 'repo';
+var _trendSeverityHidden = {};
+var _trendContainer = null;
+var _trendRuns = null;
+var TREND_COLORS = ['#58a6ff','#3fb950','#f85149','#d29922','#bc8cff','#39d2c0','#f778ba','#a5d6ff'];
+var SEVERITY_COLORS = { critical: '#f85149', high: '#d29922', medium: '#bc8cff', low: '#58a6ff' };
+
+function _setTrendMode(mode, pageId) {
+  _trendMode = mode;
+  _renderTrendChartInternal(_trendContainer, _trendRuns, pageId);
+}
+
+function _toggleTrendSeverity(sev, pageId) {
+  _trendSeverityHidden[sev] = !_trendSeverityHidden[sev];
+  _renderTrendChartInternal(_trendContainer, _trendRuns, pageId);
+}
+
+function _buildGrid(W, H, PAD_L, PAD_R, PAD_T, PAD_B, plotW, plotH, maxY, yScale) {
+  var g = '';
+  for (var i = 0; i <= 5; i++) {
+    var val = Math.round((maxY / 5) * i), y = yScale(val);
+    g += '<line x1="'+PAD_L+'" y1="'+y+'" x2="'+(W-PAD_R)+'" y2="'+y+'" stroke="#30363d" stroke-dasharray="4,4"/>';
+    g += '<text x="'+(PAD_L-8)+'" y="'+(y+4)+'" fill="#8b949e" font-size="11" text-anchor="end">'+val+'</text>';
+  }
+  return g;
+}
+
+function _buildXLabels(allSorted, W, H, PAD_B, xScale) {
+  var s = '', maxL = Math.min(15, Math.max(5, Math.floor(W/60))), step = Math.max(1, Math.ceil(allSorted.length/maxL));
+  for (var i = 0; i < allSorted.length; i += step) {
+    s += '<text x="'+xScale(allSorted[i])+'" y="'+(H-PAD_B+20)+'" fill="#8b949e" font-size="11" text-anchor="middle">#'+allSorted[i]+'</text>';
+  }
+  return s;
+}
+
+function _buildRepoTrendSvg(runs) {
+  var byRepo = {};
+  for (var ri = 0; ri < runs.length; ri++) {
+    var r = runs[ri], repo = repoShort(r.target_repo || '');
+    if (!repo || repo === '-') continue;
+    if (!byRepo[repo]) byRepo[repo] = [];
+    byRepo[repo].push({ run: r.run_number || 0, issues: r.issues_found || 0 });
+  }
+  var repos = Object.keys(byRepo);
+  if (repos.length === 0) return '<div class="empty-state">No run data available yet</div>';
+  for (var k = 0; k < repos.length; k++) byRepo[repos[k]].sort(function(a, b) { return a.run - b.run; });
+  var allI = [], allR = [];
+  for (var k2 = 0; k2 < repos.length; k2++) for (var j = 0; j < byRepo[repos[k2]].length; j++) { allI.push(byRepo[repos[k2]][j].issues); allR.push(byRepo[repos[k2]][j].run); }
+  var maxY = Math.max.apply(null, allI.concat([1]));
+  var W=800,H=280,PL=55,PR=20,PT=20,PB=50,pW=W-PL-PR,pH=H-PT-PB;
+  var aS = Array.from(new Set(allR)).sort(function(a,b){return a-b;});
+  var xS = aS.length>1 ? function(v){return PL+(aS.indexOf(v)/(aS.length-1))*pW;} : function(){return PL+pW/2;};
+  var yS = function(v){return PT+pH-(v/maxY)*pH;};
+  var gSvg=_buildGrid(W,H,PL,PR,PT,PB,pW,pH,maxY,yS), xL=_buildXLabels(aS,W,H,PB,xS), lines='',dots='';
+  repos.forEach(function(repo,idx){
+    var c=TREND_COLORS[idx%TREND_COLORS.length],pts=byRepo[repo];
+    if(pts.length===1){dots+='<circle cx="'+xS(pts[0].run)+'" cy="'+yS(pts[0].issues)+'" r="5" fill="'+c+'"><title>'+escapeHtml(repo)+' Run #'+pts[0].run+': '+pts[0].issues+' issues</title></circle>';}
+    else{var d=pts.map(function(p,i){return(i===0?'M':'L')+xS(p.run).toFixed(1)+','+yS(p.issues).toFixed(1);}).join(' ');lines+='<path d="'+d+'" fill="none" stroke="'+c+'" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';pts.forEach(function(p){dots+='<circle cx="'+xS(p.run)+'" cy="'+yS(p.issues)+'" r="4" fill="'+c+'" stroke="var(--bg-secondary)" stroke-width="2"><title>'+escapeHtml(repo)+' Run #'+p.run+': '+p.issues+' issues</title></circle>';});}
+  });
+  var leg='';
+  if(repos.length>1) repos.forEach(function(repo,idx){var c=TREND_COLORS[idx%TREND_COLORS.length],x=PL+idx*180;leg+='<rect x="'+x+'" y="'+(H-10)+'" width="12" height="12" rx="2" fill="'+c+'"/><text x="'+(x+16)+'" y="'+H+'" fill="#8b949e" font-size="11">'+(repo.length>20?escapeHtml(repo.slice(0,20))+'...':escapeHtml(repo))+'</text>';});
+  var aLY=PT+pH/2;
+  return '<svg viewBox="0 0 '+W+' '+(H+(repos.length>1?20:0))+'" width="100%" style="max-height:340px" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">'+gSvg+'<line x1="'+PL+'" y1="'+PT+'" x2="'+PL+'" y2="'+(PT+pH)+'" stroke="#30363d"/><line x1="'+PL+'" y1="'+(PT+pH)+'" x2="'+(W-PR)+'" y2="'+(PT+pH)+'" stroke="#30363d"/><text x="'+(PL+pW/2)+'" y="'+(H-PB+38)+'" fill="#6e7681" font-size="12" text-anchor="middle">Action Runs</text><text x="14" y="'+aLY+'" fill="#6e7681" font-size="12" text-anchor="middle" transform="rotate(-90,14,'+aLY+')">Issues Found</text>'+xL+lines+dots+leg+'</svg>';
+}
+
+function _buildSeverityTrendSvg(runs) {
+  var sevs=['critical','high','medium','low'];
+  var active=sevs.filter(function(s){return !_trendSeverityHidden[s];});
+  if(active.length===0) return '<div class="empty-state">All severities hidden. Toggle some on.</div>';
+  var allR=[],bySev={};
+  active.forEach(function(s){bySev[s]={};});
+  for(var ri=0;ri<runs.length;ri++){var run=runs[ri],rn=run.run_number||0;allR.push(rn);var bd=run.severity_breakdown||{};active.forEach(function(s){if(!bySev[s][rn])bySev[s][rn]=0;bySev[s][rn]+=bd[s]||0;});}
+  var aS=Array.from(new Set(allR)).sort(function(a,b){return a-b;});
+  if(aS.length===0) return '<div class="empty-state">No run data available yet</div>';
+  var maxY=1;
+  aS.forEach(function(rn){active.forEach(function(s){var v=bySev[s][rn]||0;if(v>maxY)maxY=v;});});
+  var W=800,H=280,PL=55,PR=20,PT=20,PB=50,pW=W-PL-PR,pH=H-PT-PB;
+  var xS=aS.length>1?function(v){return PL+(aS.indexOf(v)/(aS.length-1))*pW;}:function(){return PL+pW/2;};
+  var yS=function(v){return PT+pH-(v/maxY)*pH;};
+  var gSvg=_buildGrid(W,H,PL,PR,PT,PB,pW,pH,maxY,yS),xL=_buildXLabels(aS,W,H,PB,xS),lines='',dots='';
+  active.forEach(function(sev){var c=SEVERITY_COLORS[sev]||'#8b949e',pts=aS.map(function(rn){return{run:rn,val:bySev[sev][rn]||0};});
+    if(pts.length===1){dots+='<circle cx="'+xS(pts[0].run)+'" cy="'+yS(pts[0].val)+'" r="5" fill="'+c+'"><title>'+sev+' Run #'+pts[0].run+': '+pts[0].val+'</title></circle>';}
+    else{var d=pts.map(function(p,i){return(i===0?'M':'L')+xS(p.run).toFixed(1)+','+yS(p.val).toFixed(1);}).join(' ');lines+='<path d="'+d+'" fill="none" stroke="'+c+'" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';pts.forEach(function(p){dots+='<circle cx="'+xS(p.run)+'" cy="'+yS(p.val)+'" r="4" fill="'+c+'" stroke="var(--bg-secondary)" stroke-width="2"><title>'+sev+' Run #'+p.run+': '+p.val+'</title></circle>';});}
+  });
+  var leg='';active.forEach(function(sev,idx){var c=SEVERITY_COLORS[sev]||'#8b949e',x=PL+idx*120;leg+='<rect x="'+x+'" y="'+(H-10)+'" width="12" height="12" rx="2" fill="'+c+'"/><text x="'+(x+16)+'" y="'+H+'" fill="#8b949e" font-size="11">'+sev.charAt(0).toUpperCase()+sev.slice(1)+'</text>';});
+  var aLY=PT+pH/2;
+  return '<svg viewBox="0 0 '+W+' '+(H+20)+'" width="100%" style="max-height:340px" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">'+gSvg+'<line x1="'+PL+'" y1="'+PT+'" x2="'+PL+'" y2="'+(PT+pH)+'" stroke="#30363d"/><line x1="'+PL+'" y1="'+(PT+pH)+'" x2="'+(W-PR)+'" y2="'+(PT+pH)+'" stroke="#30363d"/><text x="'+(PL+pW/2)+'" y="'+(H-PB+38)+'" fill="#6e7681" font-size="12" text-anchor="middle">Action Runs</text><text x="14" y="'+aLY+'" fill="#6e7681" font-size="12" text-anchor="middle" transform="rotate(-90,14,'+aLY+')">Issues</text>'+xL+lines+dots+leg+'</svg>';
+}
+
+function _renderTrendChartInternal(container, runs, pageId) {
+  if (!runs || runs.length === 0) { container.innerHTML = '<div class="empty-state">No run data available yet</div>'; return; }
+  var h = '<div class="trend-controls"><div class="trend-toggle">'
+    + '<button class="btn trend-btn'+(_trendMode==='repo'?' active':'')+'" onclick="_setTrendMode(\'repo\',\''+pageId+'\')">By Repo</button>'
+    + '<button class="btn trend-btn'+(_trendMode==='severity'?' active':'')+'" onclick="_setTrendMode(\'severity\',\''+pageId+'\')">By Severity</button></div>';
+  if (_trendMode === 'severity') {
+    h += '<div class="trend-severity-toggles">';
+    ['critical','high','medium','low'].forEach(function(sev) {
+      var c = SEVERITY_COLORS[sev]||'#8b949e', hid = _trendSeverityHidden[sev];
+      h += '<button class="btn trend-sev-btn'+(hid?' hidden-sev':'')+'" style="border-color:'+c+';'+(hid?'opacity:0.4;':'color:'+c+';')+'" onclick="_toggleTrendSeverity(\''+sev+'\',\''+pageId+'\')">' + sev.charAt(0).toUpperCase()+sev.slice(1) + '</button>';
+    });
+    h += '</div>';
+  }
+  h += '</div>';
+  container.innerHTML = h + (_trendMode === 'severity' ? _buildSeverityTrendSvg(runs) : _buildRepoTrendSvg(runs));
+}
+
+function renderTrendChart(container, runs, pageId) {
+  _trendContainer = container;
+  _trendRuns = runs;
+  _trendMode = 'repo';
+  _trendSeverityHidden = {};
+  _renderTrendChartInternal(container, runs, pageId || 'dash');
 }
 
 let preflightTimer = null;

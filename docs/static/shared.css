@@ -132,8 +132,38 @@ a:hover { text-decoration: underline; }
   border-radius: 3px; font-size: 11px; font-family: monospace; color: var(--accent-cyan);
   margin: 1px;
 }
-.issue-summary { display: flex; gap: 16px; margin-bottom: 12px; font-size: 13px; }
+.issue-controls { margin-bottom: 12px; }
+.issue-summary { display: flex; gap: 12px; margin-bottom: 10px; font-size: 13px; }
 .issue-summary .count { font-weight: 600; font-size: 16px; }
+.issue-card {
+  display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px;
+  border-radius: 8px; border: 1px solid var(--border); cursor: pointer;
+  background: var(--bg-tertiary); transition: border-color 0.15s, background 0.15s;
+}
+.issue-card:hover { border-color: var(--accent-blue); }
+.issue-card.active { border-color: var(--accent-blue); background: rgba(88,166,255,0.1); }
+.issue-filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.filter-select {
+  padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--bg-tertiary); color: var(--text-primary); font-size: 12px;
+  cursor: pointer;
+}
+.filter-select:focus { outline: none; border-color: var(--accent-blue); }
+.filter-clear-btn { font-size: 11px; padding: 4px 10px; }
+.trend-controls { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.trend-toggle { display: flex; gap: 0; }
+.trend-btn {
+  border-radius: 0; border-right-width: 0; font-size: 12px; padding: 4px 14px;
+}
+.trend-btn:first-child { border-radius: 6px 0 0 6px; }
+.trend-btn:last-child { border-radius: 0 6px 6px 0; border-right-width: 1px; }
+.trend-btn.active { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
+.trend-severity-toggles { display: flex; gap: 6px; }
+.trend-sev-btn {
+  font-size: 11px; padding: 3px 10px; border-width: 2px; background: transparent;
+  transition: opacity 0.15s;
+}
+.trend-sev-btn.hidden-sev { text-decoration: line-through; }
 
 .breadcrumb {
   font-size: 13px; color: var(--text-muted); margin-bottom: 16px;
