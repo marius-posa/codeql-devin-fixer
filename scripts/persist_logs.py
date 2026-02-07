@@ -1,5 +1,38 @@
 #!/usr/bin/env python3
-"""Persist run results to the repository's logs directory."""
+"""Persist run results to the repository's logs directory.
+
+After every action run, the outputs (issues, batches, sessions, prompts) are
+written to a timestamped directory under ``logs/`` in the *target repository*
+(the fork).  This serves two purposes:
+
+1. **Auditability** -- every run's results are committed to git, providing a
+   permanent record of what was found and what sessions were created.
+2. **Dashboard data source** -- ``generate_dashboard.py`` reads these logs
+   to build historical metrics (runs over time, issues found, etc.).
+
+The script copies JSON and text artefacts from the action's temporary output
+directory into the repo's ``logs/run-{label}/`` directory, commits them, and
+pushes to the fork.
+
+Authentication note
+-------------------
+The ``GITHUB_TOKEN`` used here **must** be a PAT with ``repo`` scope.  The
+default ``secrets.GITHUB_TOKEN`` only has permission to push to the repo
+running the workflow (``codeql-devin-fixer``), not the fork.  If the push
+fails the script prints a warning and continues -- the logs will still be
+available as workflow artefacts even if they aren't committed.
+
+Environment variables
+---------------------
+GITHUB_TOKEN : str
+    PAT with ``repo`` scope for pushing to the fork.
+TARGET_REPO : str
+    Full HTTPS URL of the fork repository.
+REPO_DIR : str
+    Local path to the cloned fork.
+RUN_LABEL : str
+    Label for this run (e.g. ``run-11-2025-06-01-120000``).
+"""
 
 import json
 import os
@@ -10,6 +43,7 @@ import sys
 
 
 def run_git(*args: str, cwd: str) -> str:
+    """Run a git command and return stdout.  Prints stderr on failure."""
     result = subprocess.run(
         ["git", *args],
         cwd=cwd,

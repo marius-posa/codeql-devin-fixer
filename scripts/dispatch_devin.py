@@ -1,5 +1,51 @@
 #!/usr/bin/env python3
-"""Create Devin sessions for each batch of CodeQL issues."""
+"""Create Devin sessions for each batch of CodeQL issues.
+
+This script is the bridge between the CodeQL analysis and the Devin AI agent.
+For every batch produced by ``parse_sarif.py`` it:
+
+1. **Builds a prompt** -- a structured, Markdown-formatted instruction set
+   that tells Devin exactly which issues to fix, where they are, and how to
+   name the resulting PR.
+2. **Creates a Devin session** via the ``/v1/sessions`` API with idempotency
+   enabled and retry logic (3 attempts, exponential back-off) so transient
+   network failures don't abort the entire run.
+3. **Optionally polls** for session completion when ``WAIT_FOR_SESSIONS`` is
+   set, collecting outcome data (status, PR URL, issues addressed).
+
+Key design decisions
+--------------------
+* **Prompt references the fork URL** -- instruction #5 in the prompt
+  explicitly tells Devin to create the PR on the fork repo, not upstream.
+  This is critical because the user may not own the upstream repo.
+* **Idempotent sessions** -- ``idempotent: True`` in the API payload
+  prevents duplicate sessions if the action is re-run.
+* **Tags for traceability** -- each session is tagged with the batch ID,
+  severity tier, CWE family, and individual issue IDs so sessions can be
+  filtered and correlated in the Devin dashboard.
+* **PR title convention** -- ``fix({issue_ids}): resolve {family} security
+  issues`` allows the dashboard's ``generate_dashboard.py`` to match PRs
+  by pattern and count them automatically.
+
+Environment variables
+---------------------
+DEVIN_API_KEY : str
+    Bearer token for the Devin API (required unless ``DRY_RUN`` is true).
+TARGET_REPO : str
+    Fork URL passed from ``fork_repo.py`` (via ``SCAN_REPO_URL``).
+DEFAULT_BRANCH : str
+    Branch to base fixes on (default ``main``).
+MAX_ACU_PER_SESSION : str
+    Optional ACU cap per session.
+DRY_RUN : str
+    If ``true``, prompts are generated but no sessions are created.
+WAIT_FOR_SESSIONS : str
+    If ``true``, poll until all sessions reach a terminal state.
+POLL_TIMEOUT : int
+    Maximum polling time in minutes (default 60).
+POLL_INTERVAL : int
+    Polling interval in seconds (default 30).
+"""
 
 import json
 import os
@@ -11,11 +57,14 @@ import requests
 
 DEVIN_API_BASE = "https://api.devin.ai/v1"
 
+# Retry parameters for transient API failures.  Three attempts with
+# linearly increasing back-off (5 s, 10 s, 15 s) covers most blips.
 MAX_RETRIES = 3
 RETRY_DELAY = 5
 
 
 def validate_repo_url(url: str) -> str:
+    """Sanitise and loosely validate a GitHub repository URL."""
     url = url.strip().rstrip("/")
     if url.endswith(".git"):
         url = url[:-4]
@@ -26,6 +75,13 @@ def validate_repo_url(url: str) -> str:
 
 
 def build_batch_prompt(batch: dict, repo_url: str, default_branch: str) -> str:
+    """Construct a detailed, Markdown-formatted prompt for a Devin session.
+
+    The prompt is structured so Devin has all the context it needs to:
+    * identify which files and lines to examine,
+    * understand the vulnerability category and severity,
+    * create a PR with the correct title and body format.
+    """
     family = batch["cwe_family"]
     tier = batch["severity_tier"]
     issues = batch["issues"]
@@ -103,6 +159,7 @@ def create_devin_session(
     batch: dict,
     max_acu: int | None = None,
 ) -> dict:
+    """POST to the Devin API to create a new fix session with retry logic."""
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -152,6 +209,7 @@ def create_devin_session(
 
 
 def check_session_status(api_key: str, session_id: str) -> dict:
+    """Query the Devin API for the current status of a session."""
     headers = {"Authorization": f"Bearer {api_key}"}
     resp = requests.get(
         f"{DEVIN_API_BASE}/sessions/{session_id}",
@@ -163,10 +221,16 @@ def check_session_status(api_key: str, session_id: str) -> dict:
 
 
 def _get_status_enum(payload: dict) -> str:
+    """Extract the session status string, handling API response variations."""
     return str(payload.get("status_enum") or payload.get("status") or "").lower()
 
 
 def _get_pr_url(payload: dict) -> str:
+    """Extract the PR URL from a session status response.
+
+    The Devin API nests the URL in different places depending on the
+    response version; this handles all known variants.
+    """
     pr = payload.get("pull_request")
     if isinstance(pr, dict):
         return str(pr.get("url") or "")
@@ -177,6 +241,7 @@ def _get_pr_url(payload: dict) -> str:
 
 
 def _is_terminal(status: str) -> bool:
+    """Return True if *status* indicates the session will not change further."""
     return status in {
         "finished",
         "blocked",
@@ -194,6 +259,12 @@ def poll_sessions(
     timeout_sec: int,
     interval_sec: int,
 ) -> list[dict]:
+    """Poll Devin sessions until they reach a terminal state or timeout.
+
+    Returns a list of outcome dicts with status, PR URL, and batch metadata.
+    Sessions still running when the deadline is reached are marked
+    ``timed_out``.
+    """
     by_batch = {b["batch_id"]: b for b in batches}
     outcomes: list[dict] = []
 
