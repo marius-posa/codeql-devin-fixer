@@ -171,7 +171,7 @@ a:hover { text-decoration: underline; }
       Repositories Scanned
       <span id="repo-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
     </div>
-    <div class="panel-body" id="repos-list"></div>
+    <div class="panel-body" style="overflow-x:auto;" id="repos-table-container"></div>
   </div>
 
   <div class="panel">
@@ -204,7 +204,9 @@ const API = window.location.origin;
 let allRuns = [];
 let allSessions = [];
 let allPrs = [];
+let allRepos = [];
 let stats = {};
+let selectedRepo = null;
 
 function setStatus(msg) { document.getElementById('status-text').textContent = msg; }
 function setUpdated() {
@@ -290,16 +292,38 @@ function renderBarChart(container, data) {
   `).join('') + '</div>';
 }
 
-function renderRepos(s) {
-  const el = document.getElementById('repos-list');
-  document.getElementById('repo-count').textContent = (s.repo_list || []).length;
-  if (!s.repo_list || s.repo_list.length === 0) {
+function renderReposTable(repos) {
+  const el = document.getElementById('repos-table-container');
+  document.getElementById('repo-count').textContent = repos.length;
+  if (repos.length === 0) {
     el.innerHTML = '<div class="empty-state">No repos scanned yet</div>';
     return;
   }
-  el.innerHTML = (s.repo_list || []).map(r =>
-    '<a class="repo-tag" href="' + r + '" target="_blank">' + repoShort(r) + '</a>'
-  ).join(' ');
+  el.innerHTML = `<table>
+    <thead><tr>
+      <th>Repository</th><th>Runs</th><th>Issues</th><th>Sessions</th>
+      <th>PRs</th><th>Merged</th><th>Open</th><th>Last Run</th><th></th>
+    </tr></thead>
+    <tbody>${repos.map(r => {
+      const active = selectedRepo === r.repo;
+      return `<tr style="${active ? 'background:var(--bg-tertiary);' : ''}">
+        <td><a href="${r.repo}" target="_blank">${repoShort(r.repo)}</a></td>
+        <td>${r.runs}</td>
+        <td>${r.issues_found}</td>
+        <td>${r.sessions_created}${r.sessions_finished ? ' <span style="color:var(--accent-green);font-size:11px">('+r.sessions_finished+' done)</span>' : ''}</td>
+        <td>${r.prs_total}</td>
+        <td>${r.prs_merged}</td>
+        <td>${r.prs_open}</td>
+        <td>${formatDate(r.last_run)}</td>
+        <td><button class="btn" style="padding:2px 10px;font-size:11px" onclick="toggleRepoFilter('${r.repo}')">${active ? 'Clear' : 'Filter'}</button></td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
+}
+
+function toggleRepoFilter(repo) {
+  selectedRepo = selectedRepo === repo ? null : repo;
+  renderAll();
 }
 
 function renderRunsTable(runs) {
@@ -391,16 +415,18 @@ async function fetchAllPages(endpoint) {
 async function fetchAll() {
   setStatus('Loading data...');
   try {
-    const [runsData, sessionsData, statsRes, prsData] = await Promise.all([
+    const [runsData, sessionsData, statsRes, prsData, reposData] = await Promise.all([
       fetchAllPages('/api/runs'),
       fetchAllPages('/api/sessions'),
       fetch(API + '/api/stats').then(r => r.json()),
       fetchAllPages('/api/prs'),
+      fetch(API + '/api/repos').then(r => r.json()),
     ]);
     allRuns = runsData;
     allSessions = sessionsData;
     stats = statsRes;
     allPrs = prsData;
+    allRepos = reposData;
     renderAll();
     setStatus('Ready');
     setUpdated();
@@ -410,13 +436,44 @@ async function fetchAll() {
 }
 
 function renderAll() {
-  renderMetrics(stats);
-  renderBarChart(document.getElementById('severity-chart'), stats.severity_breakdown);
-  renderBarChart(document.getElementById('category-chart'), stats.category_breakdown);
-  renderRepos(stats);
-  renderRunsTable(allRuns);
-  renderSessionsTable(allSessions);
-  renderPrsTable(allPrs);
+  const filteredRuns = selectedRepo ? allRuns.filter(r => r.target_repo === selectedRepo) : allRuns;
+  const filteredSessions = selectedRepo ? allSessions.filter(s => s.target_repo === selectedRepo) : allSessions;
+  const filteredPrs = selectedRepo ? allPrs.filter(p => {
+    const repoInfo = allRepos.find(r => r.repo === selectedRepo);
+    return repoInfo && repoInfo.fork_url && p.repo && repoInfo.fork_url.includes(p.repo);
+  }) : allPrs;
+
+  if (selectedRepo) {
+    const repoInfo = allRepos.find(r => r.repo === selectedRepo);
+    if (repoInfo) {
+      const repoStats = {
+        repos_scanned: 1,
+        repo_list: [selectedRepo],
+        total_runs: repoInfo.runs,
+        total_issues: repoInfo.issues_found,
+        sessions_created: repoInfo.sessions_created,
+        sessions_finished: repoInfo.sessions_finished,
+        prs_total: repoInfo.prs_total,
+        prs_merged: repoInfo.prs_merged,
+        prs_open: repoInfo.prs_open,
+        prs_closed: repoInfo.prs_total - repoInfo.prs_merged - repoInfo.prs_open,
+        fix_rate: repoInfo.prs_total > 0 ? Math.round(repoInfo.prs_merged / repoInfo.prs_total * 1000) / 10 : 0,
+        severity_breakdown: repoInfo.severity_breakdown,
+        category_breakdown: repoInfo.category_breakdown,
+      };
+      renderMetrics(repoStats);
+      renderBarChart(document.getElementById('severity-chart'), repoInfo.severity_breakdown);
+      renderBarChart(document.getElementById('category-chart'), repoInfo.category_breakdown);
+    }
+  } else {
+    renderMetrics(stats);
+    renderBarChart(document.getElementById('severity-chart'), stats.severity_breakdown);
+    renderBarChart(document.getElementById('category-chart'), stats.category_breakdown);
+  }
+  renderReposTable(allRepos);
+  renderRunsTable(filteredRuns);
+  renderSessionsTable(filteredSessions);
+  renderPrsTable(filteredPrs);
 }
 
 async function pollSessions() {

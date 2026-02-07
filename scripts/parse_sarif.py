@@ -76,24 +76,52 @@ CWE_FAMILIES: dict[str, list[str]] = {
         "cwe-95",
         "cwe-96",
         "cwe-116",
+        "cwe-564",
         "cwe-917",
         "cwe-943",
-        "cwe-1321",
     ],
-    "xss": ["cwe-79", "cwe-80"],
-    "path-traversal": ["cwe-22", "cwe-23", "cwe-36"],
+    "xss": ["cwe-79", "cwe-80", "cwe-83", "cwe-87"],
+    "path-traversal": ["cwe-22", "cwe-23", "cwe-36", "cwe-73", "cwe-99"],
     "ssrf": ["cwe-918"],
     "deserialization": ["cwe-502"],
-    "auth": ["cwe-287", "cwe-306", "cwe-862", "cwe-863"],
-    "crypto": ["cwe-327", "cwe-328", "cwe-330", "cwe-338"],
-    "info-disclosure": ["cwe-200", "cwe-209", "cwe-532", "cwe-497"],
+    "auth": [
+        "cwe-287", "cwe-306", "cwe-862", "cwe-863",
+        "cwe-284", "cwe-285", "cwe-269", "cwe-732",
+    ],
+    "crypto": [
+        "cwe-327", "cwe-328", "cwe-330", "cwe-338",
+        "cwe-326", "cwe-261", "cwe-310", "cwe-295",
+        "cwe-347", "cwe-916",
+    ],
+    "info-disclosure": [
+        "cwe-200", "cwe-209", "cwe-532", "cwe-497",
+        "cwe-215", "cwe-538", "cwe-359", "cwe-312",
+        "cwe-319",
+    ],
     "redirect": ["cwe-601"],
-    "xxe": ["cwe-611"],
+    "xxe": ["cwe-611", "cwe-776"],
     "csrf": ["cwe-352"],
     "prototype-pollution": ["cwe-1321"],
-    "regex-dos": ["cwe-1333", "cwe-730"],
-    "type-confusion": ["cwe-843"],
-    "template-injection": ["cwe-73", "cwe-1336"],
+    "regex-dos": ["cwe-1333", "cwe-730", "cwe-400", "cwe-185"],
+    "type-confusion": ["cwe-843", "cwe-704"],
+    "template-injection": ["cwe-1336"],
+    "hardcoded-credentials": [
+        "cwe-798", "cwe-259", "cwe-321", "cwe-547",
+    ],
+    "missing-rate-limiting": ["cwe-770", "cwe-799", "cwe-307"],
+    "logging": ["cwe-117", "cwe-778", "cwe-223"],
+    "zip-slip": ["cwe-59"],
+    "xml-injection": ["cwe-91", "cwe-643"],
+    "nosql-injection": ["cwe-1286"],
+    "session-management": [
+        "cwe-384", "cwe-613", "cwe-614", "cwe-1004",
+    ],
+    "file-upload": ["cwe-434"],
+    "race-condition": ["cwe-362", "cwe-367"],
+    "memory-safety": [
+        "cwe-119", "cwe-120", "cwe-125", "cwe-787",
+        "cwe-416", "cwe-476", "cwe-190",
+    ],
 }
 
 # Reverse index: CWE-ID -> family name for O(1) lookup during parsing.
@@ -404,7 +432,7 @@ def main() -> None:
     sarif_input = sys.argv[1]
     output_dir = sys.argv[2] if len(sys.argv) > 2 else "output"
     batch_size = int(os.environ.get("BATCH_SIZE", "5"))
-    max_batches = int(os.environ.get("MAX_SESSIONS", "10"))
+    max_batches = int(os.environ.get("MAX_SESSIONS", "25"))
     threshold = os.environ.get("SEVERITY_THRESHOLD", "low")
     run_number = os.environ.get("RUN_NUMBER", "")
 

@@ -300,20 +300,36 @@ def poll_devin_sessions(sessions: list[dict]) -> list[dict]:
             updated.append(s)
             continue
         try:
+            clean_sid = sid.replace("devin-", "") if sid.startswith("devin-") else sid
             resp = requests.get(
-                f"{DEVIN_API_BASE}/session/{sid}",
+                f"{DEVIN_API_BASE}/sessions/{clean_sid}",
                 headers=_devin_headers(),
                 timeout=15,
             )
             if resp.status_code == 200:
                 data = resp.json()
-                status_str = data.get("status", data.get("status_enum", "unknown"))
+                status_str = str(
+                    data.get("status_enum")
+                    or data.get("status")
+                    or "unknown"
+                ).lower()
                 if isinstance(status_str, dict):
                     status_str = status_str.get("status", "unknown")
                 s["status"] = status_str
-                pr_url = data.get("structured_output", {}).get("pull_request_url", "")
+                pr_url = ""
+                so = data.get("structured_output")
+                if isinstance(so, dict):
+                    pr_url = so.get("pull_request_url", "")
                 if not pr_url:
-                    pr_url = data.get("result", {}).get("pull_request_url", "")
+                    res = data.get("result")
+                    if isinstance(res, dict):
+                        pr_url = res.get("pull_request_url", "")
+                if not pr_url:
+                    pr_info = data.get("pull_request")
+                    if isinstance(pr_info, dict):
+                        pr_url = pr_info.get("url", "") or pr_info.get("html_url", "")
+                    elif isinstance(pr_info, str):
+                        pr_url = pr_info
                 if pr_url:
                     s["pr_url"] = pr_url
         except requests.RequestException:
@@ -395,6 +411,65 @@ def api_stats():
     return jsonify(aggregate_stats(runs, sessions, prs))
 
 
+@app.route("/api/repos")
+def api_repos():
+    runs = cache.get_runs()
+    sessions = aggregate_sessions(runs)
+    prs = cache.get_prs(runs)
+    repos: dict[str, dict] = {}
+    for run in runs:
+        repo = run.get("target_repo", "")
+        if not repo:
+            continue
+        if repo not in repos:
+            repos[repo] = {
+                "repo": repo,
+                "fork_url": run.get("fork_url", ""),
+                "runs": 0,
+                "issues_found": 0,
+                "sessions_created": 0,
+                "sessions_finished": 0,
+                "prs_total": 0,
+                "prs_merged": 0,
+                "prs_open": 0,
+                "severity_breakdown": {},
+                "category_breakdown": {},
+                "last_run": "",
+            }
+        r = repos[repo]
+        r["runs"] += 1
+        r["issues_found"] += run.get("issues_found", 0)
+        for tier, count in run.get("severity_breakdown", {}).items():
+            r["severity_breakdown"][tier] = r["severity_breakdown"].get(tier, 0) + count
+        for cat, count in run.get("category_breakdown", {}).items():
+            r["category_breakdown"][cat] = r["category_breakdown"].get(cat, 0) + count
+        ts = run.get("timestamp", "")
+        if ts > r["last_run"]:
+            r["last_run"] = ts
+    for s in sessions:
+        repo = s.get("target_repo", "")
+        if repo in repos:
+            repos[repo]["sessions_created"] += 1
+            if s.get("status") in ("finished", "stopped"):
+                repos[repo]["sessions_finished"] += 1
+    for p in prs:
+        fork_full = p.get("repo", "")
+        matched_repo = ""
+        for repo, info in repos.items():
+            fork_url = info.get("fork_url", "")
+            if fork_full and fork_full in fork_url:
+                matched_repo = repo
+                break
+        if matched_repo:
+            repos[matched_repo]["prs_total"] += 1
+            if p.get("merged"):
+                repos[matched_repo]["prs_merged"] += 1
+            elif p.get("state") == "open":
+                repos[matched_repo]["prs_open"] += 1
+    result = sorted(repos.values(), key=lambda r: r["last_run"], reverse=True)
+    return jsonify(result)
+
+
 @app.route("/api/poll", methods=["POST"])
 def api_poll():
     runs = cache.get_runs()
@@ -436,7 +511,8 @@ def api_refresh():
             if not item.get("name", "").endswith(".json"):
                 continue
             local_path = RUNS_DIR / item["name"]
-            if local_path.exists():
+            remote_size = item.get("size", 0)
+            if local_path.exists() and local_path.stat().st_size == remote_size:
                 continue
             dl_resp = requests.get(item["download_url"], timeout=30)
             if dl_resp.status_code == 200:
@@ -451,6 +527,47 @@ def api_refresh():
         "downloaded": downloaded,
         "total_files": len(list(RUNS_DIR.glob("*.json"))),
     })
+
+
+@app.route("/api/backfill", methods=["POST"])
+def api_backfill():
+    runs = cache.get_runs()
+    sessions = aggregate_sessions(runs)
+    prs = cache.get_prs(runs)
+    pr_issue_map: dict[str, str] = {}
+    for p in prs:
+        for iid in p.get("issue_ids", []):
+            if iid:
+                pr_issue_map[iid] = p.get("html_url", "")
+    patched = 0
+    for fp in RUNS_DIR.glob("*.json"):
+        try:
+            with open(fp) as f:
+                run_data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            continue
+        changed = False
+        for s in run_data.get("sessions", []):
+            old_ids = s.get("issue_ids", [])
+            if old_ids and all(iid == "" for iid in old_ids):
+                batch_id = s.get("batch_id")
+                run_num = run_data.get("run_number")
+                if run_num and batch_id is not None:
+                    s["issue_ids"] = []
+                    changed = True
+            if not s.get("pr_url"):
+                for iid in s.get("issue_ids", []):
+                    if iid in pr_issue_map:
+                        s["pr_url"] = pr_issue_map[iid]
+                        changed = True
+                        break
+        if changed:
+            patched += 1
+            with open(fp, "w") as f:
+                json.dump(run_data, f, indent=2)
+    if patched:
+        cache.invalidate_runs()
+    return jsonify({"patched_files": patched})
 
 
 if __name__ == "__main__":
