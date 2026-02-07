@@ -5,6 +5,10 @@ inputs:
   target_repo:
     description: "GitHub repository URL to analyze (e.g., https://github.com/owner/repo)"
     required: true
+  github_token:
+    description: "GitHub token for fork operations, log persistence, and dashboard generation"
+    required: false
+    default: ""
   languages:
     description: "Comma-separated CodeQL languages (e.g., javascript,python). Auto-detected if empty."
     required: false
@@ -60,6 +64,14 @@ inputs:
     description: "Polling interval in seconds"
     required: false
     default: "30"
+  persist_logs:
+    description: "Persist run logs to the repository"
+    required: false
+    default: "true"
+  generate_dashboard:
+    description: "Generate tracking dashboard after the run"
+    required: false
+    default: "true"
 
 outputs:
   total_issues:
@@ -83,6 +95,12 @@ outputs:
   issues_addressed:
     description: "Proxy: sum of issues in finished sessions with PR (if waited)"
     value: ${{ steps.dispatch.outputs.issues_addressed }}
+  fork_url:
+    description: "URL of the fork used for scanning"
+    value: ${{ steps.fork.outputs.fork_url }}
+  run_label:
+    description: "Label for this run's logs"
+    value: ${{ steps.parse.outputs.run_label }}
 
 runs:
   using: "composite"
@@ -96,14 +114,34 @@ runs:
       shell: bash
       run: pip install requests
 
+    - name: Fork or verify target repository
+      id: fork
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        TARGET_REPO: ${{ inputs.target_repo }}
+        DEFAULT_BRANCH: ${{ inputs.default_branch }}
+      run: |
+        if [ -n "$GITHUB_TOKEN" ]; then
+          python "${{ github.action_path }}/scripts/fork_repo.py"
+        else
+          echo "fork_url=${{ inputs.target_repo }}" >> "$GITHUB_OUTPUT"
+          echo "No GITHUB_TOKEN provided; using original repo URL"
+        fi
+
     - name: Clone target repository
       shell: bash
       env:
         GIT_LFS_SKIP_SMUDGE: "1"
       run: |
         TARGET_DIR="${{ runner.temp }}/target-repo"
-        git clone --depth 1 --single-branch "${{ inputs.target_repo }}" "$TARGET_DIR"
-        echo "TARGET_DIR=$TARGET_DIR" >> "$GITHUB_ENV" 
+        REPO_URL="${{ steps.fork.outputs.fork_url }}"
+        if [ -z "$REPO_URL" ]; then
+          REPO_URL="${{ inputs.target_repo }}"
+        fi
+        git clone --depth 1 --single-branch "$REPO_URL" "$TARGET_DIR"
+        echo "TARGET_DIR=$TARGET_DIR" >> "$GITHUB_ENV"
+        echo "SCAN_REPO_URL=$REPO_URL" >> "$GITHUB_ENV"
 
     - name: Detect languages
       id: detect-lang
@@ -256,6 +294,7 @@ runs:
         BATCH_SIZE: ${{ inputs.batch_size }}
         MAX_SESSIONS: ${{ inputs.max_sessions }}
         SEVERITY_THRESHOLD: ${{ inputs.severity_threshold }}
+        RUN_NUMBER: ${{ github.run_number }}
       run: |
         python "${{ github.action_path }}/scripts/parse_sarif.py" \
           "${{ runner.temp }}/codeql-results" \
@@ -266,7 +305,7 @@ runs:
       shell: bash
       env:
         DEVIN_API_KEY: ${{ inputs.devin_api_key }}
-        TARGET_REPO: ${{ inputs.target_repo }}
+        TARGET_REPO: ${{ env.SCAN_REPO_URL }}
         DEFAULT_BRANCH: ${{ inputs.default_branch }}
         MAX_ACU_PER_SESSION: ${{ inputs.max_acu_per_session }}
         DRY_RUN: ${{ inputs.dry_run }}
@@ -277,6 +316,57 @@ runs:
         python "${{ github.action_path }}/scripts/dispatch_devin.py" \
           "${{ runner.temp }}/codeql-output/batches.json" \
           "${{ runner.temp }}/codeql-output"
+
+    - name: Persist run logs
+      if: inputs.persist_logs == 'true' && inputs.github_token != ''
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        TARGET_REPO: ${{ env.SCAN_REPO_URL }}
+        REPO_DIR: ${{ runner.temp }}/target-repo
+        RUN_LABEL: ${{ steps.parse.outputs.run_label }}
+      run: |
+        python "${{ github.action_path }}/scripts/persist_logs.py" \
+          "${{ runner.temp }}/codeql-output"
+
+    - name: Generate dashboard
+      if: inputs.generate_dashboard == 'true'
+      id: dashboard
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        TARGET_REPO: ${{ env.SCAN_REPO_URL }}
+        LOGS_DIR: ${{ runner.temp }}/target-repo/logs
+        DASHBOARD_OUTPUT_DIR: ${{ runner.temp }}/codeql-output/dashboard
+      run: |
+        python "${{ github.action_path }}/scripts/generate_dashboard.py"
+
+    - name: Commit dashboard to repo
+      if: inputs.generate_dashboard == 'true' && inputs.github_token != ''
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+      run: |
+        REPO_DIR="${{ runner.temp }}/target-repo"
+        DASH_SRC="${{ runner.temp }}/codeql-output/dashboard"
+        DASH_DEST="$REPO_DIR/dashboard"
+        mkdir -p "$DASH_DEST"
+        cp -r "$DASH_SRC"/* "$DASH_DEST/" 2>/dev/null || true
+        cd "$REPO_DIR"
+        git config user.email "codeql-devin-fixer[bot]@users.noreply.github.com"
+        git config user.name "codeql-devin-fixer[bot]"
+        git add dashboard/ || true
+        if git diff --cached --quiet; then
+          echo "No dashboard changes to commit"
+        else
+          git commit -m "chore: update tracking dashboard"
+          REMOTE_URL=$(git remote get-url origin)
+          AUTH_URL=$(echo "$REMOTE_URL" | sed "s|https://github.com/|https://x-access-token:${GITHUB_TOKEN}@github.com/|")
+          git remote set-url origin "$AUTH_URL"
+          BRANCH=$(git rev-parse --abbrev-ref HEAD)
+          git push origin "$BRANCH"
+          echo "Dashboard committed and pushed"
+        fi
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
