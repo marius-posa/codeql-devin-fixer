@@ -6,8 +6,11 @@ import requests
 
 try:
     from .config import gh_headers as _gh_headers
-except ImportError:  # running as top-level script
-    from config import gh_headers as _gh_headers
+except ImportError:  # running without package context
+    try:
+        from config import gh_headers as _gh_headers
+    except ImportError:
+        from telemetry.config import gh_headers as _gh_headers
 
 
 def collect_session_ids(runs: list[dict]) -> set[str]:
