@@ -45,7 +45,7 @@ on:
         description: "Max Devin sessions to create"
         required: false
         type: number
-        default: 10
+        default: 5
       severity_threshold:
         description: "Minimum severity: critical, high, medium, low"
         required: false
