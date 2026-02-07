@@ -9,14 +9,6 @@ makes it easier to apply changes (e.g. adding retry logic) in one place.
 """
 
 import re
-import time
-from typing import Any
-
-import requests
-
-
-MAX_GH_RETRIES = 3
-_GH_RETRY_DELAY = 2
 
 
 def gh_headers(token: str = "") -> dict[str, str]:
@@ -66,43 +58,3 @@ def parse_repo_url(url: str) -> tuple[str, str]:
     if not m:
         raise ValueError(f"Cannot parse repo URL: {url}")
     return m.group(1), m.group(2)
-
-
-def gh_api_request(
-    method: str,
-    url: str,
-    token: str,
-    retries: int = MAX_GH_RETRIES,
-    **kwargs: Any,
-) -> requests.Response:
-    """Make a GitHub API request with retry logic for transient failures.
-
-    Retries on 5xx status codes and network errors using exponential
-    back-off with jitter.
-    """
-    import random
-
-    last_err: Exception | None = None
-    for attempt in range(1, retries + 1):
-        try:
-            resp = requests.request(
-                method,
-                url,
-                headers=gh_headers(token),
-                timeout=kwargs.pop("timeout", 30),
-                **kwargs,
-            )
-            if resp.status_code < 500:
-                return resp
-            last_err = requests.exceptions.HTTPError(
-                f"GitHub API returned {resp.status_code}"
-            )
-        except requests.exceptions.RequestException as e:
-            last_err = e
-
-        if attempt < retries:
-            delay = _GH_RETRY_DELAY * (2 ** (attempt - 1)) + random.uniform(0, 1)
-            print(f"  GitHub API retry {attempt}/{retries} after error: {last_err}")
-            time.sleep(delay)
-
-    raise last_err  # type: ignore[misc]
