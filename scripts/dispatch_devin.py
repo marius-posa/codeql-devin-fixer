@@ -43,34 +43,24 @@ DRY_RUN : str
 
 import json
 import os
-import re
 import sys
 import time
 import requests
 
-from retry_utils import exponential_backoff_delay
-
+try:
+    from github_utils import validate_repo_url
+    from parse_sarif import BATCHES_SCHEMA_VERSION
+    from pipeline_config import PipelineConfig
+    from retry_utils import exponential_backoff_delay
+except ImportError:
+    from scripts.github_utils import validate_repo_url
+    from scripts.parse_sarif import BATCHES_SCHEMA_VERSION
+    from scripts.pipeline_config import PipelineConfig
+    from scripts.retry_utils import exponential_backoff_delay
 
 DEVIN_API_BASE = "https://api.devin.ai/v1"
 
 MAX_RETRIES = 3
-
-
-def validate_repo_url(url: str) -> str:
-    """Sanitise, normalise, and loosely validate a GitHub repository URL.
-
-    Accepts ``owner/repo`` shorthand in addition to full HTTPS URLs.
-    """
-    url = url.strip().rstrip("/")
-    if url.endswith(".git"):
-        url = url[:-4]
-    if not url.startswith("http://") and not url.startswith("https://"):
-        if re.match(r"^[\w.-]+/[\w.-]+$", url):
-            url = f"https://github.com/{url}"
-    pattern = r"^https://github\.com/[\w.-]+/[\w.-]+$"
-    if not re.match(pattern, url):
-        print(f"WARNING: repo URL may be invalid: {url}")
-    return url
 
 
 def build_batch_prompt(
@@ -237,15 +227,14 @@ def main() -> None:
     batches_path = sys.argv[1] if len(sys.argv) > 1 else "output/batches.json"
     output_dir = sys.argv[2] if len(sys.argv) > 2 else "output"
 
-    api_key = os.environ.get("DEVIN_API_KEY", "")
-    repo_url = validate_repo_url(os.environ.get("TARGET_REPO", ""))
-    default_branch = os.environ.get("DEFAULT_BRANCH", "main")
-    max_acu_str = os.environ.get("MAX_ACU_PER_SESSION", "")
-    dry_run = os.environ.get("DRY_RUN", "false").lower() == "true"
-    fork_url = os.environ.get("FORK_URL", "")
+    cfg = PipelineConfig.from_env()
+    api_key = cfg.devin_api_key
+    repo_url = validate_repo_url(cfg.target_repo)
+    default_branch = cfg.default_branch
+    dry_run = cfg.dry_run
+    fork_url = cfg.fork_url
     is_own_repo = fork_url == repo_url or not fork_url
-
-    max_acu = int(max_acu_str) if max_acu_str else None
+    max_acu = cfg.max_acu_per_session
 
     if not api_key and not dry_run:
         print("ERROR: DEVIN_API_KEY is required (set DRY_RUN=true to skip)")
@@ -256,7 +245,18 @@ def main() -> None:
         sys.exit(1)
 
     with open(batches_path) as f:
-        batches = json.load(f)
+        raw = json.load(f)
+
+    if isinstance(raw, dict) and "schema_version" in raw:
+        file_version = raw["schema_version"]
+        if file_version != BATCHES_SCHEMA_VERSION:
+            print(
+                f"WARNING: batches.json schema version '{file_version}' "
+                f"does not match expected '{BATCHES_SCHEMA_VERSION}'"
+            )
+        batches = raw.get("batches", [])
+    else:
+        batches = raw if isinstance(raw, list) else []
 
     if not batches:
         print("No batches to process. Exiting.")
@@ -319,12 +319,18 @@ def main() -> None:
                 }
             )
 
+    sessions_failed = len([s for s in sessions if s["status"].startswith("error")])
+    sessions_created = len([s for s in sessions if s["status"] == "created"])
+
     with open(os.path.join(output_dir, "sessions.json"), "w") as f:
         json.dump(sessions, f, indent=2)
 
     print("\n" + "=" * 60)
     print("Dispatch Summary")
     print("=" * 60)
+
+    if sessions_failed:
+        print(f"WARNING: {sessions_failed}/{len(sessions)} session(s) failed to create")
 
     summary_lines = ["\n## Devin Sessions Created\n"]
     summary_lines.append("| Batch | Category | Severity | Session | Status |")
@@ -355,9 +361,8 @@ def main() -> None:
                 s["url"] for s in sessions if s["url"] and s["url"] != "dry-run"
             )
             f.write(f"session_urls={session_urls}\n")
-            f.write(
-                f"sessions_created={len([s for s in sessions if s['status'] == 'created'])}\n"
-            )
+            f.write(f"sessions_created={sessions_created}\n")
+            f.write(f"sessions_failed={sessions_failed}\n")
 
 
 

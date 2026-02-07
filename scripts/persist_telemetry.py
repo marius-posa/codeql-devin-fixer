@@ -35,14 +35,14 @@ from urllib.parse import urlparse
 
 import requests
 
-from retry_utils import request_with_retry
-
-
-def _gh_headers(token: str) -> dict:
-    return {
-        "Accept": "application/vnd.github+json",
-        "Authorization": f"token {token}",
-    }
+try:
+    from github_utils import gh_headers
+    from parse_sarif import ISSUES_SCHEMA_VERSION
+    from retry_utils import request_with_retry
+except ImportError:
+    from scripts.github_utils import gh_headers
+    from scripts.parse_sarif import ISSUES_SCHEMA_VERSION
+    from scripts.retry_utils import request_with_retry
 
 
 def _repo_short_name(url: str) -> str:
@@ -69,8 +69,16 @@ def build_telemetry_record(output_dir: str) -> dict:
     run_label = os.environ.get("RUN_LABEL", "")
     action_repo = os.environ.get("ACTION_REPO", "")
 
-    issues = load_output_file(output_dir, "issues.json") or []
-    batches = load_output_file(output_dir, "batches.json") or []
+    raw_issues = load_output_file(output_dir, "issues.json") or []
+    if isinstance(raw_issues, dict) and "schema_version" in raw_issues:
+        issues = raw_issues.get("issues", [])
+    else:
+        issues = raw_issues if isinstance(raw_issues, list) else []
+    raw_batches = load_output_file(output_dir, "batches.json") or []
+    if isinstance(raw_batches, dict) and "schema_version" in raw_batches:
+        batches = raw_batches.get("batches", [])
+    else:
+        batches = raw_batches if isinstance(raw_batches, list) else []
     sessions = load_output_file(output_dir, "sessions.json") or []
 
     severity_breakdown: dict[str, int] = {}
@@ -152,7 +160,7 @@ def push_telemetry(token: str, action_repo: str, record: dict) -> bool:
     }
 
     resp = request_with_retry(
-        "PUT", url, headers=_gh_headers(token), json=payload, timeout=30,
+        "PUT", url, headers=gh_headers(token), json=payload, timeout=30,
     )
     if resp.status_code in (200, 201):
         print(f"Telemetry pushed: {path}")

@@ -14,8 +14,8 @@ from scripts.fork_repo import check_fork_exists, parse_repo_url, normalize_repo_
 
 
 class TestCheckForkExists:
-    @patch("scripts.fork_repo.requests.get")
-    def test_fork_found_with_matching_parent(self, mock_get):
+    @patch("scripts.fork_repo.request_with_retry")
+    def test_fork_found_with_matching_parent(self, mock_req):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
@@ -23,87 +23,87 @@ class TestCheckForkExists:
             "parent": {"full_name": "upstream-owner/repo"},
             "html_url": "https://github.com/my-user/repo",
         }
-        mock_get.return_value = mock_resp
+        mock_req.return_value = mock_resp
 
         result = check_fork_exists("token", "upstream-owner", "repo", "my-user")
         assert result is not None
         assert result["fork"] is True
 
-    @patch("scripts.fork_repo.requests.get")
-    def test_fork_found_case_insensitive(self, mock_get):
+    @patch("scripts.fork_repo.request_with_retry")
+    def test_fork_found_case_insensitive(self, mock_req):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
             "fork": True,
             "parent": {"full_name": "Upstream-Owner/Repo"},
         }
-        mock_get.return_value = mock_resp
+        mock_req.return_value = mock_resp
 
         result = check_fork_exists("token", "upstream-owner", "repo", "my-user")
         assert result is not None
 
-    @patch("scripts.fork_repo.requests.get")
-    def test_not_a_fork(self, mock_get):
+    @patch("scripts.fork_repo.request_with_retry")
+    def test_not_a_fork(self, mock_req):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"fork": False}
-        mock_get.return_value = mock_resp
+        mock_req.return_value = mock_resp
 
         result = check_fork_exists("token", "owner", "repo", "my-user")
         assert result is None
 
-    @patch("scripts.fork_repo.requests.get")
-    def test_fork_wrong_parent(self, mock_get):
+    @patch("scripts.fork_repo.request_with_retry")
+    def test_fork_wrong_parent(self, mock_req):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
             "fork": True,
             "parent": {"full_name": "different-owner/repo"},
         }
-        mock_get.return_value = mock_resp
+        mock_req.return_value = mock_resp
 
         result = check_fork_exists("token", "upstream-owner", "repo", "my-user")
         assert result is None
 
-    @patch("scripts.fork_repo.requests.get")
-    def test_fork_no_parent_still_returned(self, mock_get):
+    @patch("scripts.fork_repo.request_with_retry")
+    def test_fork_no_parent_still_returned(self, mock_req):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"fork": True, "parent": {}}
-        mock_get.return_value = mock_resp
+        mock_req.return_value = mock_resp
 
         result = check_fork_exists("token", "owner", "repo", "my-user")
         assert result is not None
 
-    @patch("scripts.fork_repo.requests.get")
-    def test_repo_not_found_404(self, mock_get):
+    @patch("scripts.fork_repo.request_with_retry")
+    def test_repo_not_found_404(self, mock_req):
         mock_resp = MagicMock()
         mock_resp.status_code = 404
-        mock_get.return_value = mock_resp
+        mock_req.return_value = mock_resp
 
         result = check_fork_exists("token", "owner", "repo", "my-user")
         assert result is None
 
-    @patch("scripts.fork_repo.requests.get")
-    def test_no_token_omits_auth_header(self, mock_get):
+    @patch("scripts.fork_repo.request_with_retry")
+    def test_no_token_omits_auth_header(self, mock_req):
         mock_resp = MagicMock()
         mock_resp.status_code = 404
-        mock_get.return_value = mock_resp
+        mock_req.return_value = mock_resp
 
         check_fork_exists("", "owner", "repo", "my-user")
-        call_kwargs = mock_get.call_args
-        headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers")
+        call_kwargs = mock_req.call_args
+        headers = call_kwargs.kwargs.get("headers", {})
         assert "Authorization" not in headers
 
-    @patch("scripts.fork_repo.requests.get")
-    def test_with_token_includes_auth_header(self, mock_get):
+    @patch("scripts.fork_repo.request_with_retry")
+    def test_with_token_includes_auth_header(self, mock_req):
         mock_resp = MagicMock()
         mock_resp.status_code = 404
-        mock_get.return_value = mock_resp
+        mock_req.return_value = mock_resp
 
         check_fork_exists("my-token", "owner", "repo", "my-user")
-        call_kwargs = mock_get.call_args
-        headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers")
+        call_kwargs = mock_req.call_args
+        headers = call_kwargs.kwargs.get("headers", {})
         assert headers["Authorization"] == "token my-token"
 
 
@@ -145,21 +145,21 @@ class TestResolveOwner:
     def test_fallback_used_when_provided(self):
         assert resolve_owner("token", "my-user") == "my-user"
 
-    @patch("scripts.fork_repo.requests.get")
-    def test_api_call_when_no_fallback(self, mock_get):
+    @patch("scripts.fork_repo.request_with_retry")
+    def test_api_call_when_no_fallback(self, mock_req):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"login": "api-user"}
         mock_resp.raise_for_status.return_value = None
-        mock_get.return_value = mock_resp
+        mock_req.return_value = mock_resp
 
         result = resolve_owner("token", "")
         assert result == "api-user"
 
-    @patch("scripts.fork_repo.requests.get")
-    def test_api_failure_returns_empty(self, mock_get):
+    @patch("scripts.fork_repo.request_with_retry")
+    def test_api_failure_returns_empty(self, mock_req):
         import requests
-        mock_get.side_effect = requests.exceptions.ConnectionError("fail")
+        mock_req.side_effect = requests.exceptions.RequestException("fail")
 
         result = resolve_owner("token", "")
         assert result == ""
