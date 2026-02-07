@@ -644,6 +644,93 @@ async function dispatchWorkflow(payload) {
   }
 }
 
+async function triggerPollWorkflow() {
+  const cfg = getConfig();
+  if (!cfg.githubToken) return { error: 'GitHub token not configured. Open Settings to add it.' };
+  if (!cfg.actionRepo) return { error: 'Action repo not configured. Open Settings to add it.' };
+
+  var url = GH_API + '/repos/' + cfg.actionRepo + '/actions/workflows/poll-sessions.yml/dispatches';
+  try {
+    var resp = await fetch(url, {
+      method: 'POST',
+      headers: ghHeaders(),
+      body: JSON.stringify({ ref: 'main' }),
+    });
+    if (resp.status === 204) {
+      return { success: true };
+    }
+    var errMsg = 'GitHub API error (' + resp.status + ')';
+    try {
+      var errData = await resp.json();
+      errMsg += ': ' + (errData.message || resp.statusText);
+    } catch (e) {}
+    return { error: errMsg };
+  } catch (e) {
+    return { error: 'Request failed: ' + e.message };
+  }
+}
+
+async function waitForPollWorkflow(timeoutMs) {
+  var cfg = getConfig();
+  if (!cfg.githubToken || !cfg.actionRepo) return { error: 'Not configured' };
+
+  var maxWait = timeoutMs || 120000;
+  var start = Date.now();
+  var runId = null;
+
+  await new Promise(function(r) { setTimeout(r, 3000); });
+
+  while (Date.now() - start < maxWait) {
+    try {
+      var url = GH_API + '/repos/' + cfg.actionRepo + '/actions/workflows/poll-sessions.yml/runs?per_page=1&status=in_progress';
+      var resp = await fetch(url, { headers: ghHeaders() });
+      if (resp.ok) {
+        var data = await resp.json();
+        if (data.workflow_runs && data.workflow_runs.length > 0) {
+          runId = data.workflow_runs[0].id;
+        } else if (runId) {
+          var checkUrl = GH_API + '/repos/' + cfg.actionRepo + '/actions/runs/' + runId;
+          var checkResp = await fetch(checkUrl, { headers: ghHeaders() });
+          if (checkResp.ok) {
+            var run = await checkResp.json();
+            if (run.status === 'completed') {
+              return { success: true, conclusion: run.conclusion };
+            }
+          }
+        } else {
+          var queuedUrl = GH_API + '/repos/' + cfg.actionRepo + '/actions/workflows/poll-sessions.yml/runs?per_page=1&status=queued';
+          var queuedResp = await fetch(queuedUrl, { headers: ghHeaders() });
+          if (queuedResp.ok) {
+            var queuedData = await queuedResp.json();
+            if (queuedData.workflow_runs && queuedData.workflow_runs.length > 0) {
+              runId = queuedData.workflow_runs[0].id;
+            }
+          }
+          if (!runId) {
+            var recentUrl = GH_API + '/repos/' + cfg.actionRepo + '/actions/workflows/poll-sessions.yml/runs?per_page=1';
+            var recentResp = await fetch(recentUrl, { headers: ghHeaders() });
+            if (recentResp.ok) {
+              var recentData = await recentResp.json();
+              if (recentData.workflow_runs && recentData.workflow_runs.length > 0) {
+                var latest = recentData.workflow_runs[0];
+                var createdAt = new Date(latest.created_at).getTime();
+                if (createdAt > start - 5000) {
+                  if (latest.status === 'completed') {
+                    return { success: true, conclusion: latest.conclusion };
+                  }
+                  runId = latest.id;
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {}
+    await new Promise(function(r) { setTimeout(r, 4000); });
+  }
+  return { error: 'Timed out waiting for poll workflow' };
+}
+
 async function dispatchPreflight(targetRepo, runs, prs, sessions) {
   const openPrs = prs.filter(function(p) { return p.state === 'open' && !p.merged; });
   const repoOpenPrs = [];
