@@ -10,8 +10,8 @@ For every batch produced by ``parse_sarif.py`` it:
 2. **Creates a Devin session** via the ``/v1/sessions`` API with idempotency
    enabled and retry logic (3 attempts, exponential back-off) so transient
    network failures don't abort the entire run.
-3. **Optionally polls** for session completion when ``WAIT_FOR_SESSIONS`` is
-   set, collecting outcome data (status, PR URL, issues addressed).
+3. **Records session metadata** for the centralized telemetry app to poll
+   later (session polling is no longer done within the action itself).
 
 Key design decisions
 --------------------
@@ -24,8 +24,8 @@ Key design decisions
   severity tier, CWE family, and individual issue IDs so sessions can be
   filtered and correlated in the Devin dashboard.
 * **PR title convention** -- ``fix({issue_ids}): resolve {family} security
-  issues`` allows the dashboard's ``generate_dashboard.py`` to match PRs
-  by pattern and count them automatically.
+  issues`` allows the telemetry app to match PRs by pattern and count
+  them automatically.
 
 Environment variables
 ---------------------
@@ -39,12 +39,6 @@ MAX_ACU_PER_SESSION : str
     Optional ACU cap per session.
 DRY_RUN : str
     If ``true``, prompts are generated but no sessions are created.
-WAIT_FOR_SESSIONS : str
-    If ``true``, poll until all sessions reach a terminal state.
-POLL_TIMEOUT : int
-    Maximum polling time in minutes (default 60).
-POLL_INTERVAL : int
-    Polling interval in seconds (default 30).
 """
 
 import json
@@ -208,121 +202,6 @@ def create_devin_session(
     raise last_err  # type: ignore[misc]
 
 
-def check_session_status(api_key: str, session_id: str) -> dict:
-    """Query the Devin API for the current status of a session."""
-    headers = {"Authorization": f"Bearer {api_key}"}
-    resp = requests.get(
-        f"{DEVIN_API_BASE}/sessions/{session_id}",
-        headers=headers,
-        timeout=30,
-    )
-    resp.raise_for_status()
-    return resp.json()
-
-
-def _get_status_enum(payload: dict) -> str:
-    """Extract the session status string, handling API response variations."""
-    return str(payload.get("status_enum") or payload.get("status") or "").lower()
-
-
-def _get_pr_url(payload: dict) -> str:
-    """Extract the PR URL from a session status response.
-
-    The Devin API nests the URL in different places depending on the
-    response version; this handles all known variants.
-    """
-    pr = payload.get("pull_request")
-    if isinstance(pr, dict):
-        return str(pr.get("url") or "")
-    if isinstance(payload.get("pull_request"), str):
-        return str(payload.get("pull_request"))
-    # some responses might expose url at top-level
-    return str(payload.get("pr_url") or payload.get("url") or "")
-
-
-def _is_terminal(status: str) -> bool:
-    """Return True if *status* indicates the session will not change further."""
-    return status in {
-        "finished",
-        "blocked",
-        "expired",
-        "failed",
-        "canceled",
-        "cancelled",
-    }
-
-
-def poll_sessions(
-    api_key: str,
-    sessions: list[dict],
-    batches: list[dict],
-    timeout_sec: int,
-    interval_sec: int,
-) -> list[dict]:
-    """Poll Devin sessions until they reach a terminal state or timeout.
-
-    Returns a list of outcome dicts with status, PR URL, and batch metadata.
-    Sessions still running when the deadline is reached are marked
-    ``timed_out``.
-    """
-    by_batch = {b["batch_id"]: b for b in batches}
-    outcomes: list[dict] = []
-
-    deadline = time.time() + timeout_sec
-    pending = [
-        s for s in sessions if s.get("session_id") and s.get("status") == "created"
-    ]
-    while pending and time.time() < deadline:
-        next_pending: list[dict] = []
-        for s in pending:
-            sid = s["session_id"]
-            batch_id = s["batch_id"]
-            try:
-                data = check_session_status(api_key, sid)
-                status = _get_status_enum(data) or "working"
-                pr_url = _get_pr_url(data)
-                if _is_terminal(status):
-                    b = by_batch.get(batch_id, {})
-                    outcomes.append(
-                        {
-                            "batch_id": batch_id,
-                            "session_id": sid,
-                            "status": status,
-                            "pr_url": pr_url,
-                            "issues": b.get("issue_count", 0),
-                            "cwe_family": b.get("cwe_family", ""),
-                            "severity_tier": b.get("severity_tier", ""),
-                        }
-                    )
-                else:
-                    next_pending.append(s)
-            except requests.exceptions.RequestException as e:
-                # network hiccup: keep pending and try later
-                print(f"  Poll error for {sid}: {e}")
-                next_pending.append(s)
-
-        pending = next_pending
-        if pending:
-            time.sleep(max(1, interval_sec))
-
-    # mark any still-pending as timed_out
-    for s in pending:
-        b = by_batch.get(s["batch_id"], {})
-        outcomes.append(
-            {
-                "batch_id": s["batch_id"],
-                "session_id": s["session_id"],
-                "status": "timed_out",
-                "pr_url": "",
-                "issues": b.get("issue_count", 0),
-                "cwe_family": b.get("cwe_family", ""),
-                "severity_tier": b.get("severity_tier", ""),
-            }
-        )
-
-    return outcomes
-
-
 def main() -> None:
     batches_path = sys.argv[1] if len(sys.argv) > 1 else "output/batches.json"
     output_dir = sys.argv[2] if len(sys.argv) > 2 else "output"
@@ -447,54 +326,6 @@ def main() -> None:
                 f"sessions_created={len([s for s in sessions if s['status'] == 'created'])}\n"
             )
 
-    # Optional: wait for sessions and collect outcomes
-    wait_flag = os.environ.get("WAIT_FOR_SESSIONS", "false").lower() == "true"
-    poll_timeout_min = int(os.environ.get("POLL_TIMEOUT", "60"))
-    poll_interval_sec = int(os.environ.get("POLL_INTERVAL", "30"))
-
-    if not dry_run and wait_flag:
-        print("\nWaiting for sessions to complete...")
-        outcomes = poll_sessions(
-            api_key,
-            [s for s in sessions if s.get("status") == "created"],
-            batches,
-            poll_timeout_min * 60,
-            poll_interval_sec,
-        )
-        with open(os.path.join(output_dir, "outcomes.json"), "w") as f:
-            json.dump(outcomes, f, indent=2)
-
-        finished = [o for o in outcomes if o["status"] == "finished"]
-        with_pr = [o for o in outcomes if o.get("pr_url")]  # regardless of status
-        # proxy metric: issues addressed only when finished AND PR exists
-        addressed = [
-            o for o in outcomes if o["status"] == "finished" and o.get("pr_url")
-        ]
-        issues_addressed = sum(o.get("issues", 0) for o in addressed)
-
-        outcome_lines = ["\n## Devin Session Outcomes\n"]
-        outcome_lines.append("| Batch | Status | PR | Issues | Category | Severity |")
-        outcome_lines.append("|-------|--------|----|--------|----------|----------|")
-        for o in outcomes:
-            pr_link = f"[PR]({o['pr_url']})" if o.get("pr_url") else "-"
-            outcome_lines.append(
-                f"| {o['batch_id']} | {o['status']} | {pr_link} | {o.get('issues', 0)} | {o.get('cwe_family', '')} | {o.get('severity_tier', '').upper()} |"
-            )
-        outcome_lines.append("")
-        outcome_lines.append(
-            f"Sessions finished: {len(finished)} | Sessions with PR: {len(with_pr)} | Issues addressed (proxy): {issues_addressed}\n"
-        )
-        outcome_summary = "\n".join(outcome_lines)
-        print(outcome_summary)
-
-        if github_summary:
-            with open(github_summary, "a") as f:
-                f.write(outcome_summary + "\n")
-        if github_output:
-            with open(github_output, "a") as f:
-                f.write(f"sessions_finished={len(finished)}\n")
-                f.write(f"sessions_with_pr={len(with_pr)}\n")
-                f.write(f"issues_addressed={issues_addressed}\n")
 
 
 if __name__ == "__main__":
