@@ -1,0 +1,78 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "CodeQL",
+          "rules": [
+            {
+              "id": "py/sql-injection",
+              "name": "SqlInjection",
+              "shortDescription": { "text": "SQL injection in Python" },
+              "properties": {
+                "tags": ["external/cwe/cwe-89"],
+                "security-severity": "9.8"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "py/sql-injection",
+          "level": "error",
+          "message": { "text": "SQL injection in Python code." },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "app/db.py" },
+                "region": { "startLine": 55 }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "CodeQL",
+          "rules": []
+        },
+        "extensions": [
+          {
+            "name": "codeql/javascript-queries",
+            "rules": [
+              {
+                "id": "js/xss",
+                "name": "Xss",
+                "shortDescription": { "text": "XSS vulnerability" },
+                "properties": {
+                  "tags": ["external/cwe/cwe-79"],
+                  "security-severity": "7.5"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "results": [
+        {
+          "ruleId": "js/xss",
+          "level": "error",
+          "message": { "text": "Cross-site scripting." },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "frontend/view.js" },
+                "region": { "startLine": 10 }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
