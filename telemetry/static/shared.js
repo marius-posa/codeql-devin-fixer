@@ -1,5 +1,18 @@
 const API = window.location.origin;
 
+(function() {
+  if (window.location.protocol === 'http:' &&
+      window.location.hostname !== 'localhost' &&
+      window.location.hostname !== '127.0.0.1') {
+    document.addEventListener('DOMContentLoaded', function() {
+      var banner = document.createElement('div');
+      banner.style.cssText = 'background:#b91c1c;color:#fff;text-align:center;padding:8px 16px;font-size:13px;position:sticky;top:0;z-index:9999;';
+      banner.textContent = '\u26a0 This dashboard is served over HTTP. API keys are transmitted in cleartext. Use HTTPS in production.';
+      document.body.insertBefore(banner, document.body.firstChild);
+    });
+  }
+})();
+
 function _getApiKey() {
   return sessionStorage.getItem('telemetry_api_key') || '';
 }

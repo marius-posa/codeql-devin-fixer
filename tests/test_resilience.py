@@ -231,7 +231,7 @@ class TestZeroIssueFlagging:
 
 class TestCreateAskpassScript:
     def test_creates_executable_file(self):
-        path = _create_askpass_script("ghp_test123")
+        path = _create_askpass_script()
         try:
             assert os.path.isfile(path)
             mode = os.stat(path).st_mode
@@ -239,22 +239,38 @@ class TestCreateAskpassScript:
         finally:
             os.unlink(path)
 
-    def test_script_echoes_token(self):
-        path = _create_askpass_script("ghp_test123")
+    def test_script_reads_env_var(self):
+        path = _create_askpass_script()
         try:
             with open(path) as f:
                 content = f.read()
             assert "#!/bin/sh" in content
-            assert 'echo "x-access-token:ghp_test123"' in content
+            assert '"$GIT_ASKPASS_TOKEN"' in content
         finally:
             os.unlink(path)
 
     def test_owner_only_permissions(self):
-        path = _create_askpass_script("tok")
+        path = _create_askpass_script()
         try:
             mode = os.stat(path).st_mode
             assert mode & stat.S_IRWXU
             assert not (mode & stat.S_IRWXG)
             assert not (mode & stat.S_IRWXO)
+        finally:
+            os.unlink(path)
+
+    def test_uses_workspace_dir(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _create_askpass_script(workspace_dir=tmpdir)
+            try:
+                assert path.startswith(tmpdir)
+                assert os.path.isfile(path)
+            finally:
+                os.unlink(path)
+
+    def test_falls_back_when_workspace_dir_missing(self):
+        path = _create_askpass_script(workspace_dir="/nonexistent/dir")
+        try:
+            assert os.path.isfile(path)
         finally:
             os.unlink(path)

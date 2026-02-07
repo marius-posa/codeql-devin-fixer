@@ -59,6 +59,15 @@ app = Flask(__name__)
 CORS(app)
 
 
+@app.after_request
+def _set_security_headers(response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    if flask_request.is_secure:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
 def _get_telemetry_api_key() -> str:
     return os.environ.get("TELEMETRY_API_KEY", "")
 
@@ -386,12 +395,24 @@ def api_refresh():
 
 @app.route("/api/config")
 def api_config():
-    return jsonify({
-        "github_token_set": bool(os.environ.get("GITHUB_TOKEN", "")),
-        "devin_api_key_set": bool(os.environ.get("DEVIN_API_KEY", "")),
-        "action_repo": os.environ.get("ACTION_REPO", ""),
-        "auth_required": bool(_get_telemetry_api_key()),
-    })
+    auth_required = bool(_get_telemetry_api_key())
+    response: dict = {"auth_required": auth_required}
+    authenticated = False
+    if auth_required:
+        expected = _get_telemetry_api_key()
+        provided = flask_request.headers.get("X-API-Key", "")
+        if not provided:
+            auth_header = flask_request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                provided = auth_header[7:]
+        authenticated = bool(provided) and hmac.compare_digest(provided, expected)
+    else:
+        authenticated = True
+    if authenticated:
+        response["github_token_set"] = bool(os.environ.get("GITHUB_TOKEN", ""))
+        response["devin_api_key_set"] = bool(os.environ.get("DEVIN_API_KEY", ""))
+        response["action_repo"] = os.environ.get("ACTION_REPO", "")
+    return jsonify(response)
 
 
 @app.route("/api/backfill", methods=["POST"])
@@ -493,6 +514,8 @@ def api_dispatch_preflight():
 @app.route("/api/dispatch", methods=["POST"])
 @require_api_key
 def api_dispatch():
+    if not _get_telemetry_api_key():
+        return jsonify({"error": "TELEMETRY_API_KEY must be configured to use the dispatch endpoint"}), 403
     token = os.environ.get("GITHUB_TOKEN", "")
     action_repo = os.environ.get("ACTION_REPO", "")
     if not token:
