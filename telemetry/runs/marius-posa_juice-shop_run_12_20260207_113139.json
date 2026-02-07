@@ -1,0 +1,38 @@
+{
+  "target_repo": "https://github.com/marius-posa/juice-shop",
+  "fork_url": "https://github.com/marius-posa/juice-shop",
+  "run_number": 12,
+  "run_label": "run-12-2026-02-07-113136",
+  "timestamp": "2026-02-07T11:31:39.163973+00:00",
+  "issues_found": 78,
+  "severity_breakdown": {
+    "critical": 7,
+    "high": 71
+  },
+  "category_breakdown": {
+    "type-confusion": 2,
+    "injection": 9,
+    "template-injection": 2,
+    "ssrf": 1,
+    "csrf": 1,
+    "other": 44,
+    "crypto": 1,
+    "xss": 3,
+    "info-disclosure": 1,
+    "path-traversal": 12,
+    "regex-dos": 2
+  },
+  "batches_created": 1,
+  "sessions": [
+    {
+      "session_id": "devin-43a1a6eab10c447d911b47c7fa925cba",
+      "session_url": "https://app.devin.ai/sessions/43a1a6eab10c447d911b47c7fa925cba",
+      "batch_id": 1,
+      "status": "created",
+      "issue_ids": [
+        "",
+        ""
+      ]
+    }
+  ]
+}
