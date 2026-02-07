@@ -33,8 +33,6 @@ import sys
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
-import requests
-
 try:
     from github_utils import gh_headers
     from parse_sarif import BATCHES_SCHEMA_VERSION, ISSUES_SCHEMA_VERSION

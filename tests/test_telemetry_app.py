@@ -8,12 +8,12 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "telemetry"))
 
 import pytest
-from app import app, _paginate, _Cache, require_api_key, _load_runs_from_disk
+from app import app, _paginate, _Cache, _load_runs_from_disk
 
 
 @pytest.fixture
