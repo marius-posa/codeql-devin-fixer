@@ -498,7 +498,7 @@ def api_dispatch():
                 pass
             return jsonify({"error": f"GitHub API error ({resp.status_code}): {error_body}"}), resp.status_code
     except requests.RequestException as e:
-        return jsonify({"error": f"Request failed: {str(e)}"}), 500
+        return jsonify({"error": "Request failed due to a server error"}), 500
 
 
 if __name__ == "__main__":
@@ -506,4 +506,4 @@ if __name__ == "__main__":
     env_path = pathlib.Path(__file__).parent / ".env"
     if env_path.exists():
         load_dotenv(env_path)
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=False)
