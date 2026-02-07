@@ -2,6 +2,57 @@ const ACTION_REPO_DEFAULT = 'marius-posa/codeql-devin-fixer';
 const DEVIN_API_BASE = 'https://api.devin.ai/v1';
 const GH_API = 'https://api.github.com';
 
+var _encKey = null;
+function _getEncKey() {
+  if (_encKey) return Promise.resolve(_encKey);
+  var raw = localStorage.getItem('_ek');
+  if (raw) {
+    return crypto.subtle.importKey('raw', Uint8Array.from(atob(raw), function(c) { return c.charCodeAt(0); }), 'AES-GCM', false, ['encrypt', 'decrypt']).then(function(k) { _encKey = k; return k; });
+  }
+  return crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']).then(function(k) {
+    _encKey = k;
+    return crypto.subtle.exportKey('raw', k);
+  }).then(function(exported) {
+    var bytes = new Uint8Array(exported);
+    var binary = '';
+    for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    localStorage.setItem('_ek', btoa(binary));
+    return _encKey;
+  });
+}
+
+function _encryptValue(value) {
+  if (!value) return Promise.resolve('');
+  var iv = crypto.getRandomValues(new Uint8Array(12));
+  return _getEncKey().then(function(key) {
+    return crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, new TextEncoder().encode(value));
+  }).then(function(ct) {
+    var buf = new Uint8Array(iv.length + ct.byteLength);
+    buf.set(iv);
+    buf.set(new Uint8Array(ct), iv.length);
+    var binary = '';
+    for (var i = 0; i < buf.length; i++) binary += String.fromCharCode(buf[i]);
+    return btoa(binary);
+  });
+}
+
+function _decryptValue(stored) {
+  if (!stored) return Promise.resolve('');
+  try {
+    var binary = atob(stored);
+    var buf = Uint8Array.from(binary, function(c) { return c.charCodeAt(0); });
+    var iv = buf.slice(0, 12);
+    var ct = buf.slice(12);
+    return _getEncKey().then(function(key) {
+      return crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, key, ct);
+    }).then(function(pt) {
+      return new TextDecoder().decode(pt);
+    });
+  } catch (e) {
+    return Promise.resolve('');
+  }
+}
+
 function getConfig() {
   return {
     githubToken: localStorage.getItem('gh_token') || '',
@@ -10,9 +61,31 @@ function getConfig() {
   };
 }
 
+function getConfigAsync() {
+  var token = _decryptValue(localStorage.getItem('gh_token_enc'));
+  var apiKey = _decryptValue(localStorage.getItem('devin_api_key_enc'));
+  return Promise.all([token, apiKey]).then(function(vals) {
+    return {
+      githubToken: vals[0] || localStorage.getItem('gh_token') || '',
+      devinApiKey: vals[1] || localStorage.getItem('devin_api_key') || '',
+      actionRepo: localStorage.getItem('action_repo') || ACTION_REPO_DEFAULT,
+    };
+  });
+}
+
 function saveConfig(cfg) {
-  if (cfg.githubToken !== undefined) localStorage.setItem('gh_token', cfg.githubToken);
-  if (cfg.devinApiKey !== undefined) localStorage.setItem('devin_api_key', cfg.devinApiKey);
+  if (cfg.githubToken !== undefined) {
+    _encryptValue(cfg.githubToken).then(function(enc) {
+      localStorage.setItem('gh_token_enc', enc);
+      localStorage.removeItem('gh_token');
+    });
+  }
+  if (cfg.devinApiKey !== undefined) {
+    _encryptValue(cfg.devinApiKey).then(function(enc) {
+      localStorage.setItem('devin_api_key_enc', enc);
+      localStorage.removeItem('devin_api_key');
+    });
+  }
   if (cfg.actionRepo !== undefined) localStorage.setItem('action_repo', cfg.actionRepo);
 }
 
