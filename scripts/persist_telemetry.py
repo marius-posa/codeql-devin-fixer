@@ -31,6 +31,7 @@ import json
 import os
 import sys
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 import requests
 
@@ -44,8 +45,9 @@ def _gh_headers(token: str) -> dict:
 
 def _repo_short_name(url: str) -> str:
     name = url.rstrip("/")
-    if "github.com/" in name:
-        name = name.split("github.com/")[1]
+    parsed = urlparse(name)
+    if parsed.hostname == "github.com":
+        name = parsed.path.strip("/")
     return name.replace("/", "_")
 
 
