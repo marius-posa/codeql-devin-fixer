@@ -247,10 +247,15 @@ function barClass(label) {
 
 function renderMetrics(s) {
   const grid = document.getElementById('metrics-grid');
+  const latestIssues = s.latest_issues != null ? s.latest_issues : s.total_issues;
+  const issuesSub = s.total_runs > 1 && s.latest_issues != null
+    ? latestIssues + ' current, ' + (s.total_issues || 0) + ' across all runs'
+    : '';
   const cards = [
     { label: 'Repos Scanned', value: s.repos_scanned || 0, cls: 'blue' },
     { label: 'Total Runs', value: s.total_runs || 0, cls: 'cyan' },
-    { label: 'Issues Found', value: s.total_issues || 0, cls: 'orange' },
+    { label: 'Issues Found', value: latestIssues, cls: 'orange',
+      sub: issuesSub },
     { label: 'Devin Sessions', value: s.sessions_created || 0, cls: 'purple',
       sub: (s.sessions_finished || 0) + ' finished' },
     { label: 'PRs Created', value: s.prs_total || 0, cls: 'blue',
@@ -467,8 +472,8 @@ function renderAll() {
     }
   } else {
     renderMetrics(stats);
-    renderBarChart(document.getElementById('severity-chart'), stats.severity_breakdown);
-    renderBarChart(document.getElementById('category-chart'), stats.category_breakdown);
+    renderBarChart(document.getElementById('severity-chart'), stats.latest_severity || stats.severity_breakdown);
+    renderBarChart(document.getElementById('category-chart'), stats.latest_category || stats.category_breakdown);
   }
   renderReposTable(allRepos);
   renderRunsTable(filteredRuns);
