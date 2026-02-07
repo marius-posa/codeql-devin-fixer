@@ -85,7 +85,7 @@ jobs:
 | `github_token` | No | - | PAT with `repo` scope for fork/push operations |
 | `languages` | No | auto-detect | Comma-separated CodeQL languages (javascript, python, java, go, ruby, csharp, cpp, swift) |
 | `batch_size` | No | `5` | Max issues per Devin session |
-| `max_sessions` | No | `10` | Max Devin sessions to create |
+| `max_sessions` | No | `25` | Max Devin sessions to create |
 | `severity_threshold` | No | `low` | Minimum severity: `critical`, `high`, `medium`, `low` |
 | `queries` | No | `security-extended` | CodeQL query suite (`security-extended`, `security-and-quality`) |
 | `include_paths` | No | `` | Newline/comma-separated globs to include (narrows analysis) |
@@ -94,11 +94,7 @@ jobs:
 | `max_acu_per_session` | No | - | ACU limit per Devin session |
 | `dry_run` | No | `false` | Generate prompts without creating sessions |
 | `default_branch` | No | `main` | Default branch of the target repo |
-| `wait_for_sessions` | No | `false` | Wait for Devin sessions to finish and collect outcomes |
-| `poll_timeout` | No | `60` | Polling timeout (minutes) |
-| `poll_interval` | No | `30` | Polling interval (seconds) |
 | `persist_logs` | No | `true` | Commit run logs to the fork's `logs/` directory |
-| `generate_dashboard` | No | `true` | Generate an HTML dashboard after each run |
 
 ## Outputs
 
@@ -108,9 +104,6 @@ jobs:
 | `total_batches` | Number of batches created |
 | `sessions_created` | Number of Devin sessions dispatched |
 | `session_urls` | Comma-separated Devin session URLs |
-| `sessions_finished` | Number of Devin sessions that finished (if waited) |
-| `sessions_with_pr` | Number of sessions that produced a PR (if waited) |
-| `issues_addressed` | Proxy: sum of issues in finished sessions that produced a PR (if waited) |
 | `fork_url` | URL of the fork used for scanning |
 | `run_label` | Label for this run's logs (e.g. `run-11-2025-06-01-120000`) |
 
@@ -173,6 +166,18 @@ For example, `CQLF-R11-0042` is the 42nd issue found in run #11. These IDs appea
 
 This makes it straightforward to trace a PR back to the exact issues it addresses.
 
+### Cross-Run Issue Fingerprinting
+
+Each issue also receives a stable **fingerprint** based on `rule_id + file + start_line`. This fingerprint persists across runs, allowing the telemetry dashboard to classify each unique issue as:
+
+| Status | Meaning |
+|--------|---------|
+| **Recurring** | Same issue found in multiple runs including the latest |
+| **New** | Issue only appeared in the latest run |
+| **Fixed** | Issue was found in previous runs but not in the latest |
+
+The fingerprint is stored in telemetry records and displayed in the dashboard's Issue Tracking panel.
+
 ## Log Persistence
 
 When `persist_logs` is enabled (default), the action commits run results to `logs/run-{label}/` in the fork repository. Each run directory contains:
@@ -216,10 +221,12 @@ Then open `http://localhost:5000` in your browser.
 - **Metric cards** -- repos scanned, total runs, issues found, Devin sessions (created/finished), PRs (created/merged/open), fix rate
 - **Severity breakdown** -- horizontal bar chart aggregated across all runs
 - **Category breakdown** -- bar chart of issues by CWE family
-- **Repositories** -- list of all repos scanned by the action
+- **Repositories** -- list of all repos scanned, with a dedicated detail page per repo
 - **Run history** -- table with per-run details (target, issues, batches, sessions, timestamp)
 - **Devin sessions** -- table with live status, issue IDs, and PR links (click "Poll Sessions" to refresh)
-- **Pull requests** -- table with status badges, issue IDs, and links
+- **Pull requests** -- table with status badges, issue IDs, and links; PRs are linked to sessions by matching Devin session IDs in the PR body
+- **Issue tracking** -- cross-run fingerprinting to identify recurring, new, and fixed issues
+- **Repo detail page** -- click any repo to see repo-scoped metrics, runs, sessions, and PRs
 
 ### Environment variables
 
