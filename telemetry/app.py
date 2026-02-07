@@ -855,12 +855,12 @@ def api_dispatch_preflight():
         if p.get("state") == "open" and not p.get("merged", False)
     ]
 
+    sessions = aggregate_sessions(runs)
     repo_open_prs = []
     for p in open_prs:
         pr_repo = p.get("repo", "")
         if not pr_repo:
             continue
-        sessions = aggregate_sessions(runs)
         for s in sessions:
             if s.get("target_repo", "") == target_repo and s.get("pr_url", "") == p.get("html_url", ""):
                 repo_open_prs.append(p)
