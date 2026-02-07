@@ -109,7 +109,7 @@ jobs:
           batch_size: ${{ inputs.batch_size }}
           max_sessions: ${{ inputs.max_sessions }}
           severity_threshold: ${{ inputs.severity_threshold }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.GH_PAT }}
           devin_api_key: ${{ secrets.DEVIN_API_KEY }}
           dry_run: ${{ inputs.dry_run }}
           default_branch: ${{ inputs.default_branch }}
