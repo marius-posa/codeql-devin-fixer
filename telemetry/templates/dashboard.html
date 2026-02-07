@@ -14,6 +14,8 @@
       <button class="btn" onclick="refreshData()" id="btn-refresh">Refresh Data</button>
       <button class="btn btn-primary" onclick="pollSessions()" id="btn-poll">Poll Sessions</button>
       <button class="btn btn-primary" onclick="openDispatchModal()" id="btn-dispatch" style="background:#1f6feb;border-color:#388bfd">Trigger Action</button>
+      <button class="density-toggle" id="density-toggle" title="Toggle compact mode">Compact</button>
+      <button class="theme-toggle" id="theme-toggle"></button>
     </div>
   </header>
 
@@ -45,7 +47,7 @@
       Repositories Scanned
       <span id="repo-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
     </div>
-    <div class="panel-body" style="overflow-x:auto;" id="repos-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+    <div class="panel-body table-scroll-wrapper" id="repos-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
   </div>
 
   <div class="panel">
@@ -53,7 +55,7 @@
       Run History
       <span id="runs-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
     </div>
-    <div class="panel-body" style="overflow-x:auto;" id="runs-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+    <div class="panel-body table-scroll-wrapper" id="runs-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
   </div>
 
   <div class="panel">
@@ -61,7 +63,7 @@
       Devin Sessions
       <span id="sessions-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
     </div>
-    <div class="panel-body" style="overflow-x:auto;" id="sessions-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+    <div class="panel-body table-scroll-wrapper" id="sessions-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
   </div>
 
   <div class="panel">
@@ -69,7 +71,7 @@
       Pull Requests
       <span id="prs-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
     </div>
-    <div class="panel-body" style="overflow-x:auto;" id="prs-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+    <div class="panel-body table-scroll-wrapper" id="prs-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
   </div>
 
   <div class="panel">
@@ -77,8 +79,17 @@
       Issue Tracking
       <span id="issues-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
     </div>
-    <div class="panel-body" style="overflow-x:auto;" id="issues-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+    <div class="panel-body table-scroll-wrapper" id="issues-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
   </div>
+</div>
+
+<div class="drawer-overlay" id="drawer-overlay"></div>
+<div class="drawer" id="issue-drawer">
+  <div class="drawer-header">
+    <h3>Issue Details</h3>
+    <button class="btn btn-icon" onclick="closeIssueDrawer()">&times;</button>
+  </div>
+  <div class="drawer-body"></div>
 </div>
 
 {% include 'dispatch_modal.html' %}
@@ -122,7 +133,7 @@ function renderReposTable(repos) {
   const el = document.getElementById('repos-table-container');
   document.getElementById('repo-count').textContent = repos.length;
   if (repos.length === 0) {
-    el.innerHTML = '<div class="empty-state">No repos scanned yet</div>';
+    el.innerHTML = '<div class="empty-state"><span class="empty-state-icon">&#x1F4E6;</span><div class="empty-state-text">No repos scanned yet</div></div>';
     return;
   }
   let rows = '';
@@ -151,7 +162,7 @@ function renderRunsTable(runs) {
   const el = document.getElementById('runs-table-container');
   document.getElementById('runs-count').textContent = runs.length;
   if (runs.length === 0) {
-    el.innerHTML = '<div class="empty-state">No runs recorded yet. Trigger the action to see data here.</div>';
+    el.innerHTML = '<div class="empty-state"><span class="empty-state-icon">&#x1F680;</span><div class="empty-state-text">No runs recorded yet. Trigger the action to see data here.</div></div>';
     return;
   }
   const sorted = [...runs].sort(function(a, b) {
@@ -380,6 +391,7 @@ function renderTrendChart(container, runs) {
 }
 
 async function fetchAll() {
+  showAllSkeletons();
   setStatus('Loading data...');
   const endpoints = [
     { key: 'runs', endpoint: '/api/runs' },
