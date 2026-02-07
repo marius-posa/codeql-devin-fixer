@@ -76,22 +76,28 @@ outputs:
   run_label:
     description: "Label for this run's logs"
     value: ${{ steps.parse.outputs.run_label }}
+  logs_persisted:
+    description: "Whether run logs were successfully pushed to the fork"
+    value: ${{ steps.persist-logs.outputs.logs_persisted }}
 
 runs:
   using: "composite"
   steps:
     - name: Setup Python
       uses: actions/setup-python@v5
+      timeout-minutes: 5
       with:
         python-version: "3.11"
 
     - name: Install Python dependencies
       shell: bash
+      timeout-minutes: 3
       run: pip install requests
 
     - name: Normalize target repo URL
       id: normalize
       shell: bash
+      timeout-minutes: 1
       run: |
         RAW="${{ inputs.target_repo }}"
         RAW=$(echo "$RAW" | sed 's|^[[:space:]]*||;s|[[:space:]]*$||;s|/$||')
@@ -107,6 +113,7 @@ runs:
     - name: Fork or verify target repository
       id: fork
       shell: bash
+      timeout-minutes: 5
       env:
         GITHUB_TOKEN: ${{ inputs.github_token }}
         TARGET_REPO: ${{ steps.normalize.outputs.target_repo }}
@@ -122,6 +129,7 @@ runs:
 
     - name: Clone target repository
       shell: bash
+      timeout-minutes: 10
       env:
         GIT_LFS_SKIP_SMUDGE: "1"
         GITHUB_TOKEN: ${{ inputs.github_token }}
@@ -142,6 +150,7 @@ runs:
     - name: Detect languages
       id: detect-lang
       shell: bash
+      timeout-minutes: 3
       run: |
         if [ -n "${{ inputs.languages }}" ]; then
           echo "languages=${{ inputs.languages }}" >> "$GITHUB_OUTPUT"
@@ -213,6 +222,7 @@ runs:
     - name: Prepare CodeQL config
       id: prepare-config
       shell: bash
+      timeout-minutes: 1
       run: |
         CONFIG="${{ runner.temp }}/codeql-config.yml"
         INC="${{ inputs.include_paths }}"
@@ -242,6 +252,7 @@ runs:
     - name: Initialize CodeQL (with config)
       if: steps.prepare-config.outputs.has_config == 'true'
       uses: github/codeql-action/init@v3
+      timeout-minutes: 10
       with:
         languages: ${{ steps.detect-lang.outputs.languages }}
         source-root: ${{ runner.temp }}/target-repo
@@ -250,6 +261,7 @@ runs:
     - name: Initialize CodeQL
       if: steps.prepare-config.outputs.has_config != 'true'
       uses: github/codeql-action/init@v3
+      timeout-minutes: 10
       with:
         languages: ${{ steps.detect-lang.outputs.languages }}
         source-root: ${{ runner.temp }}/target-repo
@@ -257,12 +269,14 @@ runs:
 
     - name: Build CodeQL database (autobuild)
       uses: github/codeql-action/autobuild@v3
+      timeout-minutes: 30
       env:
         LGTM_SRC: ${{ runner.temp }}/target-repo
 
     - name: Run CodeQL analysis
       uses: github/codeql-action/analyze@v3
       id: codeql-analyze
+      timeout-minutes: 30
       with:
         output: ${{ runner.temp }}/codeql-results
         upload: never
@@ -272,6 +286,7 @@ runs:
     - name: Find SARIF file
       id: find-sarif
       shell: bash
+      timeout-minutes: 1
       run: |
         SARIF_DIR="${{ runner.temp }}/codeql-results"
         SARIF_FILE=$(find "$SARIF_DIR" -name "*.sarif" -type f | head -1)
@@ -286,6 +301,7 @@ runs:
     - name: Parse SARIF and create batches
       id: parse
       shell: bash
+      timeout-minutes: 10
       env:
         BATCH_SIZE: ${{ inputs.batch_size }}
         MAX_SESSIONS: ${{ inputs.max_sessions }}
@@ -299,6 +315,7 @@ runs:
     - name: Dispatch Devin sessions
       id: dispatch
       shell: bash
+      timeout-minutes: 15
       env:
         DEVIN_API_KEY: ${{ inputs.devin_api_key }}
         TARGET_REPO: ${{ env.SCAN_REPO_URL }}
@@ -314,8 +331,10 @@ runs:
           "${{ runner.temp }}/codeql-output"
 
     - name: Persist run logs
+      id: persist-logs
       if: inputs.persist_logs == 'true' && inputs.github_token != ''
       shell: bash
+      timeout-minutes: 5
       env:
         GITHUB_TOKEN: ${{ inputs.github_token }}
         TARGET_REPO: ${{ env.SCAN_REPO_URL }}
@@ -328,6 +347,7 @@ runs:
     - name: Push telemetry to action repo
       if: inputs.github_token != ''
       shell: bash
+      timeout-minutes: 5
       env:
         GITHUB_TOKEN: ${{ inputs.github_token }}
         ACTION_REPO: ${{ github.repository }}

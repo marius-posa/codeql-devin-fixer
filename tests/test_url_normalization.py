@@ -4,6 +4,7 @@ import sys
 import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
 from scripts.fork_repo import normalize_repo_url, parse_repo_url
 from scripts.dispatch_devin import validate_repo_url

@@ -48,13 +48,12 @@ import sys
 import time
 import requests
 
+from retry_utils import exponential_backoff_delay
+
 
 DEVIN_API_BASE = "https://api.devin.ai/v1"
 
-# Retry parameters for transient API failures.  Three attempts with
-# linearly increasing back-off (5 s, 10 s, 15 s) covers most blips.
 MAX_RETRIES = 3
-RETRY_DELAY = 5
 
 
 def validate_repo_url(url: str) -> str:
@@ -227,8 +226,10 @@ def create_devin_session(
         except requests.exceptions.RequestException as e:
             last_err = e
             if attempt < MAX_RETRIES:
-                print(f"  Retry {attempt}/{MAX_RETRIES} after error: {e}")
-                time.sleep(RETRY_DELAY * attempt)
+                delay = exponential_backoff_delay(attempt)
+                print(f"  Retry {attempt}/{MAX_RETRIES} after error: {e} "
+                      f"(waiting {delay:.1f}s)")
+                time.sleep(delay)
     raise last_err  # type: ignore[misc]
 
 
