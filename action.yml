@@ -147,6 +147,7 @@ runs:
           chmod 700 "$ASKPASS_SCRIPT"
           export GIT_ASKPASS="$ASKPASS_SCRIPT"
           export GIT_TERMINAL_PROMPT=0
+          trap 'rm -f "$ASKPASS_SCRIPT"' EXIT
         fi
         git clone --depth 1 --single-branch -- "$REPO_URL" "$TARGET_DIR"
         echo "TARGET_DIR=$TARGET_DIR" >> "$GITHUB_ENV"

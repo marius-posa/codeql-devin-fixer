@@ -126,6 +126,7 @@ def main() -> None:
     branch = run_git("rev-parse", "--abbrev-ref", "HEAD", cwd=repo_dir)
 
     env = os.environ.copy()
+    askpass_script = None
     if github_token:
         askpass_script = _create_askpass_script(github_token)
         env["GIT_ASKPASS"] = askpass_script
@@ -136,7 +137,11 @@ def main() -> None:
             clean_url = f"https://github.com{parsed_remote.path}"
             run_git("remote", "set-url", "origin", clean_url, cwd=repo_dir)
 
-    result = run_git_with_retry("push", "origin", branch, cwd=repo_dir, env=env)
+    try:
+        result = run_git_with_retry("push", "origin", branch, cwd=repo_dir, env=env)
+    finally:
+        if askpass_script and os.path.exists(askpass_script):
+            os.unlink(askpass_script)
     logs_persisted = result.returncode == 0
     if not logs_persisted:
         print(f"WARNING: git push failed after retries: {result.stderr}")
