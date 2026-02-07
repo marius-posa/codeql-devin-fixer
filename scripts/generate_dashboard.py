@@ -31,20 +31,25 @@ DASHBOARD_OUTPUT_DIR : str
 
 import json
 import os
-import re
+import pathlib
 import sys
 from datetime import datetime, timezone
 from typing import Any
 
 import requests
+from jinja2 import Environment, FileSystemLoader
 
-# ---------------------------------------------------------------------------
-# HTML template
-# ---------------------------------------------------------------------------
-# The template uses CSS-only styling (no JavaScript frameworks) so the
-# dashboard can be opened as a standalone file or served from GitHub Pages.
-# Double-braces ``{{`` / ``}}`` are used to escape Python's str.format().
-DASHBOARD_TEMPLATE = """\
+from github_utils import gh_headers, parse_repo_url, validate_repo_url
+
+_TEMPLATE_DIR = pathlib.Path(__file__).parent / "templates"
+_jinja_env = Environment(
+    loader=FileSystemLoader(str(_TEMPLATE_DIR)),
+    autoescape=False,
+)
+DASHBOARD_TEMPLATE_NAME = "dashboard_static.html"
+
+
+_LEGACY_DASHBOARD_TEMPLATE = """\
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -251,14 +256,6 @@ DASHBOARD_TEMPLATE = """\
 # GitHub API helpers
 # ---------------------------------------------------------------------------
 
-def _gh_headers(token: str) -> dict[str, str]:
-    """Return standard GitHub API request headers."""
-    h: dict[str, str] = {"Accept": "application/vnd.github+json"}
-    if token:
-        h["Authorization"] = f"token {token}"
-    return h
-
-
 def fetch_workflow_runs(token: str, owner: str, repo: str) -> list[dict[str, Any]]:
     """Fetch recent workflow runs from the GitHub Actions API.
 
@@ -270,7 +267,7 @@ def fetch_workflow_runs(token: str, owner: str, repo: str) -> list[dict[str, Any
     url = f"https://api.github.com/repos/{owner}/{repo}/actions/runs"
     params: dict[str, Any] = {"per_page": 50}
     try:
-        resp = requests.get(url, headers=_gh_headers(token), params=params, timeout=30)
+        resp = requests.get(url, headers=gh_headers(token), params=params, timeout=30)
         if resp.status_code == 200:
             for r in resp.json().get("workflow_runs", []):
                 runs.append({
@@ -297,7 +294,7 @@ def fetch_codeql_prs(token: str, owner: str, repo: str) -> list[dict[str, Any]]:
     are included -- unrelated Devin PRs on the same repo are excluded.
     """
     prs: list[dict[str, Any]] = []
-    headers = _gh_headers(token)
+    headers = gh_headers(token)
     for state in ("open", "closed"):
         url = f"https://api.github.com/repos/{owner}/{repo}/pulls"
         params: dict[str, Any] = {
@@ -600,17 +597,12 @@ def main() -> None:
         print("ERROR: TARGET_REPO is required")
         sys.exit(1)
 
-    target_repo = target_repo.strip().rstrip("/")
-    if target_repo.endswith(".git"):
-        target_repo = target_repo[:-4]
-    if not target_repo.startswith("http://") and not target_repo.startswith("https://"):
-        if re.match(r"^[\w.-]+/[\w.-]+$", target_repo):
-            target_repo = f"https://github.com/{target_repo}"
-    m = re.match(r"https://github\.com/([\w.-]+)/([\w.-]+)", target_repo)
-    if not m:
-        print(f"ERROR: cannot parse repo URL: {target_repo}")
+    target_repo = validate_repo_url(target_repo)
+    try:
+        owner, repo = parse_repo_url(target_repo)
+    except ValueError as e:
+        print(f"ERROR: {e}")
         sys.exit(1)
-    owner, repo = m.group(1), m.group(2)
     repo_name = f"{owner}/{repo}"
 
     # -- Collect data -------------------------------------------------------
@@ -648,7 +640,7 @@ def main() -> None:
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     # -- Render HTML --------------------------------------------------------
-    html = DASHBOARD_TEMPLATE.format(
+    template_vars = dict(
         generated_at=generated_at,
         repo_name=repo_name,
         action_repo=action_repo_env or repo_name,
@@ -666,6 +658,12 @@ def main() -> None:
         sessions_table=sessions_table,
         prs_table=prs_table,
     )
+
+    try:
+        template = _jinja_env.get_template(DASHBOARD_TEMPLATE_NAME)
+        html = template.render(**template_vars)
+    except Exception:
+        html = _LEGACY_DASHBOARD_TEMPLATE.format(**template_vars)
 
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, "index.html")

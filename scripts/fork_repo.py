@@ -38,40 +38,11 @@ fork_repo : str
 """
 
 import os
-import re
 import sys
 import time
 import requests
 
-
-def normalize_repo_url(url: str) -> str:
-    """Normalise a repository reference to a full ``https://github.com/…`` URL.
-
-    Accepts ``owner/repo`` shorthand, full HTTPS URLs, and URLs with a
-    trailing ``.git`` suffix.  Returns a canonical URL without trailing
-    slashes or ``.git``.
-    """
-    url = url.strip().rstrip("/")
-    if url.endswith(".git"):
-        url = url[:-4]
-    if not url.startswith("http://") and not url.startswith("https://"):
-        if re.match(r"^[\w.-]+/[\w.-]+$", url):
-            url = f"https://github.com/{url}"
-    return url
-
-
-def parse_repo_url(url: str) -> tuple[str, str]:
-    """Extract ``(owner, repo)`` from a GitHub HTTPS URL or ``owner/repo`` shorthand.
-
-    Handles trailing slashes, ``.git`` suffixes, and ``owner/repo`` shorthand
-    so callers can pass URLs in any common format.
-    """
-    url = normalize_repo_url(url)
-    m = re.match(r"https://github\.com/([\w.-]+)/([\w.-]+)", url)
-    if not m:
-        print(f"ERROR: cannot parse repo URL: {url}")
-        sys.exit(1)
-    return m.group(1), m.group(2)
+from github_utils import gh_headers, normalize_repo_url, parse_repo_url  # noqa: F401
 
 
 def resolve_owner(token: str, fallback: str) -> str:
@@ -105,12 +76,9 @@ def check_fork_exists(token: str, owner: str, repo: str, my_user: str) -> dict |
     returned repository is actually a fork whose parent matches the target.
     Returns the repo JSON dict if a valid fork is found, otherwise ``None``.
     """
-    headers = {"Accept": "application/vnd.github+json"}
-    if token:
-        headers["Authorization"] = f"token {token}"
     resp = requests.get(
         f"https://api.github.com/repos/{my_user}/{repo}",
-        headers=headers,
+        headers=gh_headers(token),
         timeout=30,
     )
     if resp.status_code == 200:

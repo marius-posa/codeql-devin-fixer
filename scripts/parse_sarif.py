@@ -50,6 +50,9 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
+BATCHES_SCHEMA_VERSION = "1.0"
+ISSUES_SCHEMA_VERSION = "1.0"
+
 # Severity tiers map CVSS v3 score ranges to human-readable labels.
 # These thresholds follow the NVD / GitHub Advisory severity scale so that
 # results are consistent with what developers see on github.com.
@@ -174,6 +177,39 @@ def get_cwe_family(cwes: list[str]) -> str:
     return "other"
 
 
+def validate_sarif(sarif: dict[str, Any], path: str) -> None:
+    """Lightweight validation of a SARIF document's required top-level keys.
+
+    Checks that the document has the expected ``version`` and ``$schema``
+    fields, and that at least one ``runs`` entry exists.  This catches
+    malformed files early instead of silently producing an empty issues
+    list.
+
+    Raises
+    ------
+    ValueError
+        If a required key is missing or has an unexpected value.
+    """
+    if not isinstance(sarif, dict):
+        raise ValueError(f"{path}: SARIF root must be a JSON object, got {type(sarif).__name__}")
+
+    version = sarif.get("version")
+    if version is None:
+        raise ValueError(f"{path}: missing required 'version' field")
+    if not version.startswith("2.1"):
+        print(f"WARNING: {path}: unexpected SARIF version '{version}' (expected 2.1.x)")
+
+    schema = sarif.get("$schema", "")
+    if schema and "sarif" not in schema.lower():
+        print(f"WARNING: {path}: '$schema' does not reference a SARIF schema: {schema}")
+
+    runs = sarif.get("runs")
+    if runs is None:
+        raise ValueError(f"{path}: missing required 'runs' array")
+    if not isinstance(runs, list):
+        raise ValueError(f"{path}: 'runs' must be a JSON array, got {type(runs).__name__}")
+
+
 def parse_sarif(sarif_path: str) -> list[dict[str, Any]]:
     """Extract security issues from a single SARIF file.
 
@@ -190,6 +226,8 @@ def parse_sarif(sarif_path: str) -> list[dict[str, Any]]:
 
     with open(sarif_path) as f:
         sarif = json.load(f)
+
+    validate_sarif(sarif, sarif_path)
 
     issues: list[dict[str, Any]] = []
 
@@ -517,11 +555,19 @@ def main() -> None:
     batches = batch_issues(prioritized, batch_size, max_batches)
     print(f"Created {len(batches)} batches")
 
+    issues_envelope = {
+        "schema_version": ISSUES_SCHEMA_VERSION,
+        "issues": prioritized,
+    }
     with open(os.path.join(output_dir, "issues.json"), "w") as f:
-        json.dump(prioritized, f, indent=2)
+        json.dump(issues_envelope, f, indent=2)
 
+    batches_envelope = {
+        "schema_version": BATCHES_SCHEMA_VERSION,
+        "batches": batches,
+    }
     with open(os.path.join(output_dir, "batches.json"), "w") as f:
-        json.dump(batches, f, indent=2)
+        json.dump(batches_envelope, f, indent=2)
 
     summary = generate_summary(prioritized, batches, total_raw, dedup_removed)
     with open(os.path.join(output_dir, "summary.md"), "w") as f:

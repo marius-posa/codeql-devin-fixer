@@ -43,35 +43,19 @@ DRY_RUN : str
 
 import json
 import os
-import re
+import random
 import sys
 import time
 import requests
 
+from github_utils import validate_repo_url
+from parse_sarif import BATCHES_SCHEMA_VERSION
+
 
 DEVIN_API_BASE = "https://api.devin.ai/v1"
 
-# Retry parameters for transient API failures.  Three attempts with
-# linearly increasing back-off (5 s, 10 s, 15 s) covers most blips.
 MAX_RETRIES = 3
 RETRY_DELAY = 5
-
-
-def validate_repo_url(url: str) -> str:
-    """Sanitise, normalise, and loosely validate a GitHub repository URL.
-
-    Accepts ``owner/repo`` shorthand in addition to full HTTPS URLs.
-    """
-    url = url.strip().rstrip("/")
-    if url.endswith(".git"):
-        url = url[:-4]
-    if not url.startswith("http://") and not url.startswith("https://"):
-        if re.match(r"^[\w.-]+/[\w.-]+$", url):
-            url = f"https://github.com/{url}"
-    pattern = r"^https://github\.com/[\w.-]+/[\w.-]+$"
-    if not re.match(pattern, url):
-        print(f"WARNING: repo URL may be invalid: {url}")
-    return url
 
 
 def build_batch_prompt(
@@ -227,8 +211,9 @@ def create_devin_session(
         except requests.exceptions.RequestException as e:
             last_err = e
             if attempt < MAX_RETRIES:
+                delay = RETRY_DELAY * (2 ** (attempt - 1)) + random.uniform(0, 1)
                 print(f"  Retry {attempt}/{MAX_RETRIES} after error: {e}")
-                time.sleep(RETRY_DELAY * attempt)
+                time.sleep(delay)
     raise last_err  # type: ignore[misc]
 
 
@@ -255,7 +240,18 @@ def main() -> None:
         sys.exit(1)
 
     with open(batches_path) as f:
-        batches = json.load(f)
+        raw = json.load(f)
+
+    if isinstance(raw, dict) and "schema_version" in raw:
+        file_version = raw["schema_version"]
+        if file_version != BATCHES_SCHEMA_VERSION:
+            print(
+                f"WARNING: batches.json schema version '{file_version}' "
+                f"does not match expected '{BATCHES_SCHEMA_VERSION}'"
+            )
+        batches = raw.get("batches", [])
+    else:
+        batches = raw if isinstance(raw, list) else []
 
     if not batches:
         print("No batches to process. Exiting.")
@@ -318,12 +314,18 @@ def main() -> None:
                 }
             )
 
+    sessions_failed = len([s for s in sessions if s["status"].startswith("error")])
+    sessions_created = len([s for s in sessions if s["status"] == "created"])
+
     with open(os.path.join(output_dir, "sessions.json"), "w") as f:
         json.dump(sessions, f, indent=2)
 
     print("\n" + "=" * 60)
     print("Dispatch Summary")
     print("=" * 60)
+
+    if sessions_failed:
+        print(f"WARNING: {sessions_failed}/{len(sessions)} session(s) failed to create")
 
     summary_lines = ["\n## Devin Sessions Created\n"]
     summary_lines.append("| Batch | Category | Severity | Session | Status |")
@@ -354,9 +356,8 @@ def main() -> None:
                 s["url"] for s in sessions if s["url"] and s["url"] != "dry-run"
             )
             f.write(f"session_urls={session_urls}\n")
-            f.write(
-                f"sessions_created={len([s for s in sessions if s['status'] == 'created'])}\n"
-            )
+            f.write(f"sessions_created={sessions_created}\n")
+            f.write(f"sessions_failed={sessions_failed}\n")
 
 
 

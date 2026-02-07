@@ -67,6 +67,9 @@ outputs:
   sessions_created:
     description: "Number of Devin sessions created"
     value: ${{ steps.dispatch.outputs.sessions_created }}
+  sessions_failed:
+    description: "Number of Devin sessions that failed to create"
+    value: ${{ steps.dispatch.outputs.sessions_failed }}
   session_urls:
     description: "Comma-separated list of Devin session URLs"
     value: ${{ steps.dispatch.outputs.session_urls }}
@@ -158,33 +161,43 @@ runs:
           [ -n "$result" ]
         }
 
+        has_manifest() {
+          local f
+          for f in "$@"; do
+            if [ -f "$TARGET_DIR/$f" ]; then
+              return 0
+            fi
+          done
+          return 1
+        }
+
         PHP_PRESENT=0
-        if has_files -name "*.php"; then
+        if has_manifest composer.json || has_files -name "*.php"; then
           PHP_PRESENT=1
         fi
 
-        if has_files -name "*.js" -o -name "*.ts" -o -name "*.jsx" -o -name "*.tsx"; then
+        if has_manifest package.json tsconfig.json || has_files -name "*.js" -o -name "*.ts" -o -name "*.jsx" -o -name "*.tsx"; then
           LANGS="${LANGS:+$LANGS,}javascript"
         fi
-        if has_files -name "*.py"; then
+        if has_manifest setup.py setup.cfg pyproject.toml Pipfile || has_files -name "*.py"; then
           LANGS="${LANGS:+$LANGS,}python"
         fi
-        if has_files -name "*.java"; then
+        if has_manifest pom.xml build.gradle build.gradle.kts || has_files -name "*.java"; then
           LANGS="${LANGS:+$LANGS,}java"
         fi
-        if has_files -name "*.go"; then
+        if has_manifest go.mod || has_files -name "*.go"; then
           LANGS="${LANGS:+$LANGS,}go"
         fi
-        if has_files -name "*.rb"; then
+        if has_manifest Gemfile || has_files -name "*.rb"; then
           LANGS="${LANGS:+$LANGS,}ruby"
         fi
-        if has_files -name "*.cs"; then
+        if has_files -name "*.cs" -o -name "*.csproj" -o -name "*.sln"; then
           LANGS="${LANGS:+$LANGS,}csharp"
         fi
-        if has_files -name "*.cpp" -o -name "*.c" -o -name "*.h"; then
+        if has_manifest CMakeLists.txt Makefile || has_files -name "*.cpp" -o -name "*.c" -o -name "*.h"; then
           LANGS="${LANGS:+$LANGS,}cpp"
         fi
-        if has_files -name "*.swift"; then
+        if has_manifest Package.swift || has_files -name "*.swift"; then
           LANGS="${LANGS:+$LANGS,}swift"
         fi
 
