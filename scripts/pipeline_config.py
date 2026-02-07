@@ -23,7 +23,61 @@ from __future__ import annotations
 
 import os
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from typing import TypedDict
+
+
+class IssueLocation(TypedDict):
+    file: str
+    start_line: int
+    end_line: int
+    start_column: int
+    end_column: int
+
+
+class ParsedIssue(TypedDict):
+    id: str
+    rule_id: str
+    rule_name: str
+    severity_tier: str
+    cvss_score: float
+    cwe_ids: list[str]
+    cwe_family: str
+    message: str
+    locations: list[IssueLocation]
+    fingerprint: str
+
+
+class Batch(TypedDict):
+    batch_id: int
+    cwe_family: str
+    severity_tier: str
+    issues: list[ParsedIssue]
+
+
+class SessionRecord(TypedDict):
+    session_id: str
+    session_url: str
+    batch_id: int
+    status: str
+    issue_ids: list[str]
+
+
+class TelemetryRecord(TypedDict):
+    target_repo: str
+    fork_url: str
+    run_number: int
+    run_id: str
+    run_url: str
+    run_label: str
+    timestamp: str
+    issues_found: int
+    severity_breakdown: dict[str, int]
+    category_breakdown: dict[str, int]
+    batches_created: int
+    sessions: list[SessionRecord]
+    issue_fingerprints: list[dict[str, str | int]]
+    zero_issue_run: bool
 
 
 @dataclass(frozen=True)
@@ -53,6 +107,7 @@ class PipelineConfig:
     dry_run: bool = False
     fork_url: str = ""
     run_id: str = ""
+    max_failure_rate: int = 50
 
     # -- fork_repo.py ---------------------------------------------------------
     fork_owner: str = ""
@@ -91,6 +146,7 @@ class PipelineConfig:
             dry_run=os.environ.get("DRY_RUN", "false").lower() == "true",
             fork_url=os.environ.get("FORK_URL", ""),
             run_id=os.environ.get("RUN_ID", ""),
+            max_failure_rate=int(os.environ.get("MAX_FAILURE_RATE", "50")),
             fork_owner=os.environ.get("FORK_OWNER", ""),
             repo_dir=os.environ.get("REPO_DIR", ""),
             run_label=os.environ.get("RUN_LABEL", ""),

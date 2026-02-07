@@ -308,22 +308,75 @@ function _toggleTrendSeverity(sev, pageId) {
   _renderTrendChartInternal(_trendContainer, _trendRuns, pageId);
 }
 
-function _buildGrid(W, H, PAD_L, PAD_R, PAD_T, PAD_B, plotW, plotH, maxY, yScale) {
-  var g = '';
-  for (var i = 0; i <= 5; i++) {
-    var val = Math.round((maxY / 5) * i), y = yScale(val);
-    g += '<line x1="'+PAD_L+'" y1="'+y+'" x2="'+(W-PAD_R)+'" y2="'+y+'" stroke="#30363d" stroke-dasharray="4,4"/>';
-    g += '<text x="'+(PAD_L-8)+'" y="'+(y+4)+'" fill="#8b949e" font-size="11" text-anchor="end">'+val+'</text>';
-  }
-  return g;
-}
+function _buildTrendSvg(series, options) {
+  var opts = options || {};
+  var yLabel = opts.yLabel || 'Issues';
+  var legendSpacing = opts.legendSpacing || 180;
 
-function _buildXLabels(allSorted, W, H, PAD_B, xScale) {
-  var s = '', maxL = Math.min(15, Math.max(5, Math.floor(W/60))), step = Math.max(1, Math.ceil(allSorted.length/maxL));
-  for (var i = 0; i < allSorted.length; i += step) {
-    s += '<text x="'+xScale(allSorted[i])+'" y="'+(H-PAD_B+20)+'" fill="#8b949e" font-size="11" text-anchor="middle">#'+allSorted[i]+'</text>';
+  if (series.length === 0) return '<div class="empty-state">No run data available yet</div>';
+
+  var allRuns = [], allVals = [];
+  series.forEach(function(s) {
+    s.points.forEach(function(p) { allRuns.push(p.run); allVals.push(p.val); });
+  });
+  var maxY = Math.max.apply(null, allVals.concat([1]));
+  var W = 800, H = 280, PL = 55, PR = 20, PT = 20, PB = 50;
+  var pW = W - PL - PR, pH = H - PT - PB;
+  var aS = Array.from(new Set(allRuns)).sort(function(a, b) { return a - b; });
+  if (aS.length === 0) return '<div class="empty-state">No run data available yet</div>';
+  var xS = aS.length > 1
+    ? function(v) { return PL + (aS.indexOf(v) / (aS.length - 1)) * pW; }
+    : function() { return PL + pW / 2; };
+  var yS = function(v) { return PT + pH - (v / maxY) * pH; };
+
+  var grid = '';
+  for (var i = 0; i <= 5; i++) {
+    var val = Math.round((maxY / 5) * i), y = yS(val);
+    grid += '<line x1="'+PL+'" y1="'+y+'" x2="'+(W-PR)+'" y2="'+y+'" stroke="#30363d" stroke-dasharray="4,4"/>';
+    grid += '<text x="'+(PL-8)+'" y="'+(y+4)+'" fill="#8b949e" font-size="11" text-anchor="end">'+val+'</text>';
   }
-  return s;
+
+  var xLabels = '', maxL = Math.min(15, Math.max(5, Math.floor(W / 60)));
+  var step = Math.max(1, Math.ceil(aS.length / maxL));
+  for (var xi = 0; xi < aS.length; xi += step) {
+    xLabels += '<text x="'+xS(aS[xi])+'" y="'+(H-PB+20)+'" fill="#8b949e" font-size="11" text-anchor="middle">#'+aS[xi]+'</text>';
+  }
+
+  var lines = '', dots = '';
+  series.forEach(function(s) {
+    var c = s.color, pts = s.points;
+    if (pts.length === 1) {
+      dots += '<circle cx="'+xS(pts[0].run)+'" cy="'+yS(pts[0].val)+'" r="5" fill="'+c+'"><title>'+escapeHtml(s.label)+' Run #'+pts[0].run+': '+pts[0].val+'</title></circle>';
+    } else {
+      var d = pts.map(function(p, idx) {
+        return (idx === 0 ? 'M' : 'L') + xS(p.run).toFixed(1) + ',' + yS(p.val).toFixed(1);
+      }).join(' ');
+      lines += '<path d="'+d+'" fill="none" stroke="'+c+'" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+      pts.forEach(function(p) {
+        dots += '<circle cx="'+xS(p.run)+'" cy="'+yS(p.val)+'" r="4" fill="'+c+'" stroke="var(--bg-secondary)" stroke-width="2"><title>'+escapeHtml(s.label)+' Run #'+p.run+': '+p.val+'</title></circle>';
+      });
+    }
+  });
+
+  var showLegend = series.length > 1;
+  var leg = '';
+  if (showLegend) {
+    series.forEach(function(s, idx) {
+      var x = PL + idx * legendSpacing;
+      var displayLabel = s.label.length > 20 ? escapeHtml(s.label.slice(0, 20)) + '...' : escapeHtml(s.label);
+      leg += '<rect x="'+x+'" y="'+(H-10)+'" width="12" height="12" rx="2" fill="'+s.color+'"/>';
+      leg += '<text x="'+(x+16)+'" y="'+H+'" fill="#8b949e" font-size="11">'+displayLabel+'</text>';
+    });
+  }
+
+  var aLY = PT + pH / 2;
+  return '<svg viewBox="0 0 '+W+' '+(H+(showLegend?20:0))+'" width="100%" style="max-height:340px" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">'
+    + grid
+    + '<line x1="'+PL+'" y1="'+PT+'" x2="'+PL+'" y2="'+(PT+pH)+'" stroke="#30363d"/>'
+    + '<line x1="'+PL+'" y1="'+(PT+pH)+'" x2="'+(W-PR)+'" y2="'+(PT+pH)+'" stroke="#30363d"/>'
+    + '<text x="'+(PL+pW/2)+'" y="'+(H-PB+38)+'" fill="#6e7681" font-size="12" text-anchor="middle">Action Runs</text>'
+    + '<text x="14" y="'+aLY+'" fill="#6e7681" font-size="12" text-anchor="middle" transform="rotate(-90,14,'+aLY+')">'+yLabel+'</text>'
+    + xLabels + lines + dots + leg + '</svg>';
 }
 
 function _buildRepoTrendSvg(runs) {
@@ -332,52 +385,43 @@ function _buildRepoTrendSvg(runs) {
     var r = runs[ri], repo = repoShort(r.target_repo || '');
     if (!repo || repo === '-') continue;
     if (!byRepo[repo]) byRepo[repo] = [];
-    byRepo[repo].push({ run: r.run_number || 0, issues: r.issues_found || 0 });
+    byRepo[repo].push({ run: r.run_number || 0, val: r.issues_found || 0 });
   }
   var repos = Object.keys(byRepo);
   if (repos.length === 0) return '<div class="empty-state">No run data available yet</div>';
   for (var k = 0; k < repos.length; k++) byRepo[repos[k]].sort(function(a, b) { return a.run - b.run; });
-  var allI = [], allR = [];
-  for (var k2 = 0; k2 < repos.length; k2++) for (var j = 0; j < byRepo[repos[k2]].length; j++) { allI.push(byRepo[repos[k2]][j].issues); allR.push(byRepo[repos[k2]][j].run); }
-  var maxY = Math.max.apply(null, allI.concat([1]));
-  var W=800,H=280,PL=55,PR=20,PT=20,PB=50,pW=W-PL-PR,pH=H-PT-PB;
-  var aS = Array.from(new Set(allR)).sort(function(a,b){return a-b;});
-  var xS = aS.length>1 ? function(v){return PL+(aS.indexOf(v)/(aS.length-1))*pW;} : function(){return PL+pW/2;};
-  var yS = function(v){return PT+pH-(v/maxY)*pH;};
-  var gSvg=_buildGrid(W,H,PL,PR,PT,PB,pW,pH,maxY,yS), xL=_buildXLabels(aS,W,H,PB,xS), lines='',dots='';
-  repos.forEach(function(repo,idx){
-    var c=TREND_COLORS[idx%TREND_COLORS.length],pts=byRepo[repo];
-    if(pts.length===1){dots+='<circle cx="'+xS(pts[0].run)+'" cy="'+yS(pts[0].issues)+'" r="5" fill="'+c+'"><title>'+escapeHtml(repo)+' Run #'+pts[0].run+': '+pts[0].issues+' issues</title></circle>';}
-    else{var d=pts.map(function(p,i){return(i===0?'M':'L')+xS(p.run).toFixed(1)+','+yS(p.issues).toFixed(1);}).join(' ');lines+='<path d="'+d+'" fill="none" stroke="'+c+'" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';pts.forEach(function(p){dots+='<circle cx="'+xS(p.run)+'" cy="'+yS(p.issues)+'" r="4" fill="'+c+'" stroke="var(--bg-secondary)" stroke-width="2"><title>'+escapeHtml(repo)+' Run #'+p.run+': '+p.issues+' issues</title></circle>';});}
+
+  var series = repos.map(function(repo, idx) {
+    return { label: repo, color: TREND_COLORS[idx % TREND_COLORS.length], points: byRepo[repo] };
   });
-  var leg='';
-  if(repos.length>1) repos.forEach(function(repo,idx){var c=TREND_COLORS[idx%TREND_COLORS.length],x=PL+idx*180;leg+='<rect x="'+x+'" y="'+(H-10)+'" width="12" height="12" rx="2" fill="'+c+'"/><text x="'+(x+16)+'" y="'+H+'" fill="#8b949e" font-size="11">'+(repo.length>20?escapeHtml(repo.slice(0,20))+'...':escapeHtml(repo))+'</text>';});
-  var aLY=PT+pH/2;
-  return '<svg viewBox="0 0 '+W+' '+(H+(repos.length>1?20:0))+'" width="100%" style="max-height:340px" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">'+gSvg+'<line x1="'+PL+'" y1="'+PT+'" x2="'+PL+'" y2="'+(PT+pH)+'" stroke="#30363d"/><line x1="'+PL+'" y1="'+(PT+pH)+'" x2="'+(W-PR)+'" y2="'+(PT+pH)+'" stroke="#30363d"/><text x="'+(PL+pW/2)+'" y="'+(H-PB+38)+'" fill="#6e7681" font-size="12" text-anchor="middle">Action Runs</text><text x="14" y="'+aLY+'" fill="#6e7681" font-size="12" text-anchor="middle" transform="rotate(-90,14,'+aLY+')">Issues Found</text>'+xL+lines+dots+leg+'</svg>';
+  return _buildTrendSvg(series, { yLabel: 'Issues Found', legendSpacing: 180 });
 }
 
 function _buildSeverityTrendSvg(runs) {
-  var sevs=['critical','high','medium','low'];
-  var active=sevs.filter(function(s){return !_trendSeverityHidden[s];});
-  if(active.length===0) return '<div class="empty-state">All severities hidden. Toggle some on.</div>';
-  var allR=[],bySev={};
-  active.forEach(function(s){bySev[s]={};});
-  for(var ri=0;ri<runs.length;ri++){var run=runs[ri],rn=run.run_number||0;allR.push(rn);var bd=run.severity_breakdown||{};active.forEach(function(s){if(!bySev[s][rn])bySev[s][rn]=0;bySev[s][rn]+=bd[s]||0;});}
-  var aS=Array.from(new Set(allR)).sort(function(a,b){return a-b;});
-  if(aS.length===0) return '<div class="empty-state">No run data available yet</div>';
-  var maxY=1;
-  aS.forEach(function(rn){active.forEach(function(s){var v=bySev[s][rn]||0;if(v>maxY)maxY=v;});});
-  var W=800,H=280,PL=55,PR=20,PT=20,PB=50,pW=W-PL-PR,pH=H-PT-PB;
-  var xS=aS.length>1?function(v){return PL+(aS.indexOf(v)/(aS.length-1))*pW;}:function(){return PL+pW/2;};
-  var yS=function(v){return PT+pH-(v/maxY)*pH;};
-  var gSvg=_buildGrid(W,H,PL,PR,PT,PB,pW,pH,maxY,yS),xL=_buildXLabels(aS,W,H,PB,xS),lines='',dots='';
-  active.forEach(function(sev){var c=SEVERITY_COLORS[sev]||'#8b949e',pts=aS.map(function(rn){return{run:rn,val:bySev[sev][rn]||0};});
-    if(pts.length===1){dots+='<circle cx="'+xS(pts[0].run)+'" cy="'+yS(pts[0].val)+'" r="5" fill="'+c+'"><title>'+sev+' Run #'+pts[0].run+': '+pts[0].val+'</title></circle>';}
-    else{var d=pts.map(function(p,i){return(i===0?'M':'L')+xS(p.run).toFixed(1)+','+yS(p.val).toFixed(1);}).join(' ');lines+='<path d="'+d+'" fill="none" stroke="'+c+'" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';pts.forEach(function(p){dots+='<circle cx="'+xS(p.run)+'" cy="'+yS(p.val)+'" r="4" fill="'+c+'" stroke="var(--bg-secondary)" stroke-width="2"><title>'+sev+' Run #'+p.run+': '+p.val+'</title></circle>';});}
+  var sevs = ['critical', 'high', 'medium', 'low'];
+  var active = sevs.filter(function(s) { return !_trendSeverityHidden[s]; });
+  if (active.length === 0) return '<div class="empty-state">All severities hidden. Toggle some on.</div>';
+
+  var bySev = {};
+  active.forEach(function(s) { bySev[s] = {}; });
+  var allR = [];
+  for (var ri = 0; ri < runs.length; ri++) {
+    var run = runs[ri], rn = run.run_number || 0;
+    allR.push(rn);
+    var bd = run.severity_breakdown || {};
+    active.forEach(function(s) {
+      if (!bySev[s][rn]) bySev[s][rn] = 0;
+      bySev[s][rn] += bd[s] || 0;
+    });
+  }
+  var aS = Array.from(new Set(allR)).sort(function(a, b) { return a - b; });
+  if (aS.length === 0) return '<div class="empty-state">No run data available yet</div>';
+
+  var series = active.map(function(sev) {
+    var pts = aS.map(function(rn) { return { run: rn, val: bySev[sev][rn] || 0 }; });
+    return { label: sev.charAt(0).toUpperCase() + sev.slice(1), color: SEVERITY_COLORS[sev] || '#8b949e', points: pts };
   });
-  var leg='';active.forEach(function(sev,idx){var c=SEVERITY_COLORS[sev]||'#8b949e',x=PL+idx*120;leg+='<rect x="'+x+'" y="'+(H-10)+'" width="12" height="12" rx="2" fill="'+c+'"/><text x="'+(x+16)+'" y="'+H+'" fill="#8b949e" font-size="11">'+sev.charAt(0).toUpperCase()+sev.slice(1)+'</text>';});
-  var aLY=PT+pH/2;
-  return '<svg viewBox="0 0 '+W+' '+(H+20)+'" width="100%" style="max-height:340px" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">'+gSvg+'<line x1="'+PL+'" y1="'+PT+'" x2="'+PL+'" y2="'+(PT+pH)+'" stroke="#30363d"/><line x1="'+PL+'" y1="'+(PT+pH)+'" x2="'+(W-PR)+'" y2="'+(PT+pH)+'" stroke="#30363d"/><text x="'+(PL+pW/2)+'" y="'+(H-PB+38)+'" fill="#6e7681" font-size="12" text-anchor="middle">Action Runs</text><text x="14" y="'+aLY+'" fill="#6e7681" font-size="12" text-anchor="middle" transform="rotate(-90,14,'+aLY+')">Issues</text>'+xL+lines+dots+leg+'</svg>';
+  return _buildTrendSvg(series, { yLabel: 'Issues', legendSpacing: 120 });
 }
 
 function _renderTrendChartInternal(container, runs, pageId) {

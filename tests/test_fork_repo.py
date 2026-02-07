@@ -10,7 +10,10 @@ from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from scripts.fork_repo import check_fork_exists, parse_repo_url, normalize_repo_url, resolve_owner
+from scripts.fork_repo import (
+    check_fork_exists, parse_repo_url, normalize_repo_url, resolve_owner,
+    create_fork, sync_fork, _write_outputs,
+)
 
 
 class TestCheckForkExists:
@@ -163,3 +166,99 @@ class TestResolveOwner:
 
         result = resolve_owner("token", "")
         assert result == ""
+
+
+class TestCreateFork:
+    @patch("scripts.fork_repo.time.sleep")
+    @patch("scripts.fork_repo.request_with_retry")
+    def test_creates_fork_and_waits_for_ready(self, mock_req, mock_sleep):
+        fork_resp = MagicMock()
+        fork_resp.status_code = 202
+        fork_resp.json.return_value = {
+            "html_url": "https://github.com/my-user/repo",
+            "url": "https://api.github.com/repos/my-user/repo",
+        }
+        fork_resp.raise_for_status.return_value = None
+
+        check_resp = MagicMock()
+        check_resp.status_code = 200
+        check_resp.json.return_value = {
+            "html_url": "https://github.com/my-user/repo",
+            "size": 100,
+        }
+
+        mock_req.side_effect = [fork_resp, check_resp]
+        result = create_fork("token", "owner", "repo")
+        assert result["html_url"] == "https://github.com/my-user/repo"
+        assert mock_req.call_count == 2
+
+    @patch("scripts.fork_repo.time.sleep")
+    @patch("scripts.fork_repo.request_with_retry")
+    def test_returns_fork_data_after_timeout(self, mock_req, mock_sleep):
+        fork_resp = MagicMock()
+        fork_resp.status_code = 202
+        fork_resp.json.return_value = {
+            "html_url": "https://github.com/my-user/repo",
+            "url": "https://api.github.com/repos/my-user/repo",
+        }
+        fork_resp.raise_for_status.return_value = None
+
+        check_resp = MagicMock()
+        check_resp.status_code = 200
+        check_resp.json.return_value = {"size": 0}
+
+        mock_req.side_effect = [fork_resp] + [check_resp] * 12
+        result = create_fork("token", "owner", "repo")
+        assert result["html_url"] == "https://github.com/my-user/repo"
+
+
+class TestSyncFork:
+    @patch("scripts.fork_repo.request_with_retry")
+    def test_sync_success(self, mock_req):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"message": "Successfully fetched and fast-forwarded"}
+        mock_req.return_value = mock_resp
+
+        sync_fork("token", "my-user", "repo", "main")
+        mock_req.assert_called_once()
+
+    @patch("scripts.fork_repo.request_with_retry")
+    def test_sync_already_up_to_date(self, mock_req):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 409
+        mock_resp.json.return_value = {"message": "already up to date"}
+        mock_req.return_value = mock_resp
+
+        sync_fork("token", "my-user", "repo", "main")
+
+    @patch("scripts.fork_repo.request_with_retry")
+    def test_sync_warning_on_error(self, mock_req, capsys):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 422
+        mock_resp.text = "unprocessable"
+        mock_req.return_value = mock_resp
+
+        sync_fork("token", "my-user", "repo", "main")
+        captured = capsys.readouterr()
+        assert "WARNING" in captured.out
+
+
+class TestWriteOutputs:
+    def test_writes_to_github_output(self, tmp_path):
+        output_file = tmp_path / "output.txt"
+        with patch.dict(os.environ, {"GITHUB_OUTPUT": str(output_file)}):
+            _write_outputs("https://github.com/user/repo", "user", "repo")
+
+        content = output_file.read_text()
+        assert "fork_url=https://github.com/user/repo" in content
+        assert "fork_owner=user" in content
+        assert "fork_repo=repo" in content
+
+    def test_prints_fork_url_without_github_output(self, capsys):
+        with patch.dict(os.environ, {}, clear=False):
+            if "GITHUB_OUTPUT" in os.environ:
+                del os.environ["GITHUB_OUTPUT"]
+            _write_outputs("https://github.com/user/repo", "user", "repo")
+        captured = capsys.readouterr()
+        assert "FORK_URL=https://github.com/user/repo" in captured.out

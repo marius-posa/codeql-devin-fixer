@@ -393,9 +393,11 @@ def main() -> None:
         file_version = raw["schema_version"]
         if file_version != BATCHES_SCHEMA_VERSION:
             print(
-                f"WARNING: batches.json schema version '{file_version}' "
-                f"does not match expected '{BATCHES_SCHEMA_VERSION}'"
+                f"ERROR: batches.json schema version '{file_version}' "
+                f"does not match expected '{BATCHES_SCHEMA_VERSION}'. "
+                "This indicates an incompatible data format."
             )
+            sys.exit(1)
         batches = raw.get("batches", [])
     else:
         batches = raw if isinstance(raw, list) else []
@@ -528,6 +530,16 @@ def main() -> None:
             f.write(f"sessions_created={sessions_created}\n")
             f.write(f"sessions_failed={sessions_failed}\n")
 
+    max_failure_rate = cfg.max_failure_rate
+    if sessions and not dry_run and sessions_failed > 0:
+        actual_rate = (sessions_failed / len(sessions)) * 100
+        if actual_rate > max_failure_rate:
+            print(
+                f"\nERROR: Session failure rate {actual_rate:.0f}% exceeds "
+                f"maximum allowed {max_failure_rate}% "
+                f"({sessions_failed}/{len(sessions)} failed)"
+            )
+            sys.exit(1)
 
 
 if __name__ == "__main__":

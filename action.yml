@@ -56,6 +56,10 @@ inputs:
     description: "Persist run logs to the fork repository"
     required: false
     default: "true"
+  max_failure_rate:
+    description: "Maximum session failure rate (0-100) before the dispatch step exits non-zero"
+    required: false
+    default: "50"
 
 outputs:
   total_issues:
@@ -98,8 +102,10 @@ runs:
     - name: Normalize target repo URL
       id: normalize
       shell: bash
+      env:
+        RAW_INPUT: ${{ inputs.target_repo }}
       run: |
-        RAW="${{ inputs.target_repo }}"
+        RAW="$RAW_INPUT"
         RAW=$(echo "$RAW" | sed 's|^[[:space:]]*||;s|[[:space:]]*$||;s|/$||')
         RAW=$(echo "$RAW" | sed 's|\.git$||')
         if ! echo "$RAW" | grep -qE '^https?://'; then
@@ -168,7 +174,7 @@ runs:
 
         has_files() {
           local result
-          result=$(find "$TARGET_DIR" \( "$@" \) -print -quit 2>/dev/null)
+          result=$(find "$TARGET_DIR" -not -path '*/node_modules/*' -not -path '*/vendor/*' -not -path '*/.bundle/*' -not -path '*/Pods/*' \( "$@" \) -print -quit 2>/dev/null)
           [ -n "$result" ]
         }
 
@@ -183,33 +189,69 @@ runs:
         }
 
         PHP_PRESENT=0
-        if has_manifest composer.json || has_files -name "*.php"; then
+        if has_manifest composer.json; then
           PHP_PRESENT=1
         fi
 
-        if has_manifest package.json tsconfig.json || has_files -name "*.js" -o -name "*.ts" -o -name "*.jsx" -o -name "*.tsx"; then
+        if has_manifest package.json tsconfig.json; then
           LANGS="${LANGS:+$LANGS,}javascript"
         fi
-        if has_manifest setup.py setup.cfg pyproject.toml Pipfile || has_files -name "*.py"; then
+        if has_manifest setup.py setup.cfg pyproject.toml Pipfile requirements.txt; then
           LANGS="${LANGS:+$LANGS,}python"
         fi
-        if has_manifest pom.xml build.gradle build.gradle.kts || has_files -name "*.java"; then
+        if has_manifest pom.xml build.gradle build.gradle.kts; then
           LANGS="${LANGS:+$LANGS,}java"
         fi
-        if has_manifest go.mod || has_files -name "*.go"; then
+        if has_manifest go.mod; then
           LANGS="${LANGS:+$LANGS,}go"
         fi
-        if has_manifest Gemfile || has_files -name "*.rb"; then
+        if has_manifest Gemfile; then
           LANGS="${LANGS:+$LANGS,}ruby"
         fi
-        if has_files -name "*.cs" -o -name "*.csproj" -o -name "*.sln"; then
+        has_csharp_manifest() {
+          local result
+          result=$(find "$TARGET_DIR" -maxdepth 3 -not -path '*/node_modules/*' -not -path '*/vendor/*' \( -name "*.csproj" -o -name "*.sln" \) -print -quit 2>/dev/null)
+          [ -n "$result" ]
+        }
+        if has_csharp_manifest; then
           LANGS="${LANGS:+$LANGS,}csharp"
         fi
-        if has_manifest CMakeLists.txt Makefile || has_files -name "*.cpp" -o -name "*.c" -o -name "*.h"; then
+        if has_manifest CMakeLists.txt Makefile; then
           LANGS="${LANGS:+$LANGS,}cpp"
         fi
-        if has_manifest Package.swift || has_files -name "*.swift"; then
+        if has_manifest Package.swift; then
           LANGS="${LANGS:+$LANGS,}swift"
+        fi
+
+        if [ -z "$LANGS" ]; then
+          echo "No manifest files found; falling back to file-extension scanning"
+          if ! has_manifest composer.json && has_files -name "*.php"; then
+            PHP_PRESENT=1
+          fi
+          if has_files -name "*.js" -o -name "*.ts" -o -name "*.jsx" -o -name "*.tsx"; then
+            LANGS="${LANGS:+$LANGS,}javascript"
+          fi
+          if has_files -name "*.py"; then
+            LANGS="${LANGS:+$LANGS,}python"
+          fi
+          if has_files -name "*.java"; then
+            LANGS="${LANGS:+$LANGS,}java"
+          fi
+          if has_files -name "*.go"; then
+            LANGS="${LANGS:+$LANGS,}go"
+          fi
+          if has_files -name "*.rb"; then
+            LANGS="${LANGS:+$LANGS,}ruby"
+          fi
+          if has_files -name "*.cs"; then
+            LANGS="${LANGS:+$LANGS,}csharp"
+          fi
+          if has_files -name "*.cpp" -o -name "*.c" -o -name "*.h"; then
+            LANGS="${LANGS:+$LANGS,}cpp"
+          fi
+          if has_files -name "*.swift"; then
+            LANGS="${LANGS:+$LANGS,}swift"
+          fi
         fi
 
         if [ -z "$LANGS" ]; then
@@ -359,6 +401,7 @@ runs:
         RUN_ID: ${{ github.run_id }}
         TARGET_DIR: ${{ runner.temp }}/target-repo
         TELEMETRY_DIR: ${{ steps.fetch-telemetry.outputs.telemetry_dir }}
+        MAX_FAILURE_RATE: ${{ inputs.max_failure_rate }}
       run: |
         python "${{ github.action_path }}/scripts/dispatch_devin.py"\
           "${{ runner.temp }}/codeql-output/batches.json" \

@@ -33,15 +33,13 @@ import sys
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
-import requests
-
 try:
     from github_utils import gh_headers
-    from parse_sarif import ISSUES_SCHEMA_VERSION
+    from parse_sarif import BATCHES_SCHEMA_VERSION, ISSUES_SCHEMA_VERSION
     from retry_utils import request_with_retry
 except ImportError:
     from scripts.github_utils import gh_headers
-    from scripts.parse_sarif import ISSUES_SCHEMA_VERSION
+    from scripts.parse_sarif import BATCHES_SCHEMA_VERSION, ISSUES_SCHEMA_VERSION
     from scripts.retry_utils import request_with_retry
 
 
@@ -71,11 +69,25 @@ def build_telemetry_record(output_dir: str) -> dict:
 
     raw_issues = load_output_file(output_dir, "issues.json") or []
     if isinstance(raw_issues, dict) and "schema_version" in raw_issues:
+        v = raw_issues["schema_version"]
+        if v != ISSUES_SCHEMA_VERSION:
+            print(
+                f"ERROR: issues.json schema version '{v}' "
+                f"does not match expected '{ISSUES_SCHEMA_VERSION}'"
+            )
+            sys.exit(1)
         issues = raw_issues.get("issues", [])
     else:
         issues = raw_issues if isinstance(raw_issues, list) else []
     raw_batches = load_output_file(output_dir, "batches.json") or []
     if isinstance(raw_batches, dict) and "schema_version" in raw_batches:
+        v = raw_batches["schema_version"]
+        if v != BATCHES_SCHEMA_VERSION:
+            print(
+                f"ERROR: batches.json schema version '{v}' "
+                f"does not match expected '{BATCHES_SCHEMA_VERSION}'"
+            )
+            sys.exit(1)
         batches = raw_batches.get("batches", [])
     else:
         batches = raw_batches if isinstance(raw_batches, list) else []
@@ -141,6 +153,7 @@ def build_telemetry_record(output_dir: str) -> dict:
         "batches_created": len(batches),
         "sessions": session_records,
         "issue_fingerprints": issue_fingerprints,
+        "zero_issue_run": len(issues) == 0,
     }
 
 
@@ -192,7 +205,6 @@ def main() -> None:
 
     if record["issues_found"] == 0:
         print("No issues found in this run. Flagging telemetry as zero-issue run.")
-        record["zero_issue_run"] = True
 
     push_telemetry(token, action_repo, record)
 
