@@ -44,7 +44,7 @@ When a session creation fails (lines 304-313), the error is appended to the sess
 
 ### 2.1 Retry and Recovery
 
-**`create_devin_session` uses linear backoff, not exponential.** The comment at line 55 says "exponential back-off" but the implementation (`RETRY_DELAY * attempt` = 5s, 10s, 15s) is actually linear. True exponential backoff with jitter (e.g., `RETRY_DELAY * 2^attempt + random`) would be more resilient against rate limiting.
+**`create_devin_session` uses linear backoff.** The retry logic (line 225) uses `RETRY_DELAY * attempt` producing delays of 5s, 10s, 15s. While the comment at line 55 correctly labels this as "linearly increasing back-off," upgrading to true exponential backoff with jitter (e.g., `RETRY_DELAY * 2^attempt + random`) would be more resilient against rate limiting and thundering-herd scenarios.
 
 **No retry logic for GitHub API calls.** `fork_repo.py`, `persist_logs.py`, `persist_telemetry.py`, and `generate_dashboard.py` all make GitHub API calls with zero retry logic. GitHub's API frequently returns 502/503 during high load. The `create_fork` polling loop (lines 131-145) is the only place with any retry-like behavior.
 
