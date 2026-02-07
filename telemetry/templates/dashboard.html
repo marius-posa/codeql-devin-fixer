@@ -800,6 +800,7 @@ async function refreshData() {
   btn.textContent = 'Refresh Data';
 }
 
+function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 let preflightTimer = null;
 function openDispatchModal(targetRepo) {
   const modal = document.getElementById('dispatch-modal');
@@ -837,7 +838,7 @@ async function checkPreflight() {
         if (data.prs && data.prs.length > 0) {
           html += '<ul style="margin:8px 0 0 16px;padding:0;list-style:disc">';
           data.prs.forEach(function(p) {
-            html += '<li><a href="' + p.html_url + '" target="_blank">#' + p.pr_number + '</a> ' + p.title + '</li>';
+            html += '<li><a href="' + escHtml(p.html_url) + '" target="_blank">#' + p.pr_number + '</a> ' + escHtml(p.title) + '</li>';
           });
           html += '</ul>';
         }
