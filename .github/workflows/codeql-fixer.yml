@@ -26,11 +26,6 @@ on:
         required: true
         type: boolean
         default: true
-      generate_dashboard:
-        description: "Generate dashboard of Action results"
-        required: true
-        type: boolean
-        default: true
       include_paths:
         description: "Optional newline/comma-separated globs to include"
         required: false
@@ -71,21 +66,6 @@ on:
         required: false
         type: string
         default: "main"
-      wait_for_sessions:
-        description: "Wait for Devin sessions to finish and collect outcomes"
-        required: false
-        type: boolean
-        default: false
-      poll_timeout:
-        description: "Polling timeout in minutes"
-        required: false
-        type: number
-        default: 60
-      poll_interval:
-        description: "Polling interval in seconds"
-        required: false
-        type: number
-        default: 30
 
 permissions:
   contents: write
@@ -116,8 +96,4 @@ jobs:
           queries: ${{ inputs.queries }}
           include_paths: ${{ inputs.include_paths }}
           exclude_paths: ${{ inputs.exclude_paths }}
-          wait_for_sessions: ${{ inputs.wait_for_sessions }}
-          poll_timeout: ${{ inputs.poll_timeout }}
-          poll_interval: ${{ inputs.poll_interval }}
           persist_logs: ${{ inputs.persist_logs }}
-          generate_dashboard: ${{ inputs.generate_dashboard }}
