@@ -41,6 +41,7 @@ RUN_NUMBER : str
     GitHub Actions run number, used in issue IDs.
 """
 
+import hashlib
 import json
 import re
 import sys
@@ -410,17 +411,35 @@ def generate_summary(
     return "\n".join(lines)
 
 
+def compute_fingerprint(issue: dict[str, Any]) -> str:
+    """Compute a stable fingerprint for an issue across runs.
+
+    The fingerprint is based on ``rule_id`` and the primary source location
+    (file path + start line).  This allows the same vulnerability to be
+    recognised even when it appears in different action runs with different
+    sequential issue IDs.
+    """
+    rule_id = issue.get("rule_id", "")
+    locs = issue.get("locations", [])
+    file_path = locs[0].get("file", "") if locs else ""
+    start_line = str(locs[0].get("start_line", 0)) if locs else "0"
+    raw = f"{rule_id}|{file_path}|{start_line}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
 def assign_issue_ids(
     issues: list[dict[str, Any]], run_number: str = ""
 ) -> list[dict[str, Any]]:
-    """Assign a unique ID to each issue in the format ``CQLF-R{run}-{seq}``.
+    """Assign a unique ID and stable fingerprint to each issue.
 
-    The run number is embedded so IDs remain unique across workflow runs.
-    Sequential numbering starts at 1 and zero-pads to 4 digits.
+    The run-specific ID uses the format ``CQLF-R{run}-{seq}`` so IDs are
+    unique across workflow runs.  The fingerprint is stable across runs
+    so the same vulnerability can be tracked over time.
     """
     prefix = f"R{run_number}-" if run_number else ""
     for idx, issue in enumerate(issues, 1):
         issue["id"] = f"CQLF-{prefix}{idx:04d}"
+        issue["fingerprint"] = compute_fingerprint(issue)
     return issues
 
 

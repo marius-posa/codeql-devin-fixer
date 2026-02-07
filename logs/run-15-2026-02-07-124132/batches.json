@@ -1,0 +1,84 @@
+[
+  {
+    "batch_id": 1,
+    "cwe_family": "other",
+    "severity_tier": "high",
+    "max_severity_score": 7.8,
+    "issue_count": 3,
+    "file_count": 3,
+    "issues": [
+      {
+        "id": "CQLF-R15-0001",
+        "rule_id": "py/incomplete-url-substring-sanitization",
+        "rule_name": "py/incomplete-url-substring-sanitization",
+        "rule_description": "Incomplete URL substring sanitization",
+        "rule_help": "# Incomplete URL substring sanitization\nSanitizing untrusted URLs is a common technique for preventing attacks such as request forgeries and malicious redirections. Usually, this is done by checking that the host of a URL is in a set of allowed hosts.\n\nHowever, treating the URL as a string and checking if one of the allowed hosts is a substring of the URL is very prone to errors. Malicious URLs can bypass such security checks by embedding one of the allowed hosts in an unexpected location.\n\nEven if the substring check is not used in a security-critical context, the incomplete check may still cause undesirable behaviors when the check succeeds accidentally.\n\n\n## Recommendation\nParse a URL before performing a check on its host value, and ensure that the check handles arbitrary subdomain sequences correctly.\n\n\n## Example\nThe following example code checks that a URL redirection will reach the `example.com` domain.\n\n\n```python\nfrom flask import Flask, request, redirect\nfrom urllib.parse imp",
+        "message": "The string [github.com/](1) may be at an arbitrary position in the sanitized URL.",
+        "severity_score": 7.8,
+        "severity_tier": "high",
+        "cwes": [
+          "cwe-20"
+        ],
+        "cwe_family": "other",
+        "locations": [
+          {
+            "file": "telemetry/app.py",
+            "start_line": 284,
+            "end_line": 284,
+            "start_column": 12
+          }
+        ],
+        "level": "warning",
+        "fingerprint": "1fa0efabcb82ac72"
+      },
+      {
+        "id": "CQLF-R15-0002",
+        "rule_id": "py/incomplete-url-substring-sanitization",
+        "rule_name": "py/incomplete-url-substring-sanitization",
+        "rule_description": "Incomplete URL substring sanitization",
+        "rule_help": "# Incomplete URL substring sanitization\nSanitizing untrusted URLs is a common technique for preventing attacks such as request forgeries and malicious redirections. Usually, this is done by checking that the host of a URL is in a set of allowed hosts.\n\nHowever, treating the URL as a string and checking if one of the allowed hosts is a substring of the URL is very prone to errors. Malicious URLs can bypass such security checks by embedding one of the allowed hosts in an unexpected location.\n\nEven if the substring check is not used in a security-critical context, the incomplete check may still cause undesirable behaviors when the check succeeds accidentally.\n\n\n## Recommendation\nParse a URL before performing a check on its host value, and ensure that the check handles arbitrary subdomain sequences correctly.\n\n\n## Example\nThe following example code checks that a URL redirection will reach the `example.com` domain.\n\n\n```python\nfrom flask import Flask, request, redirect\nfrom urllib.parse imp",
+        "message": "The string [github.com/](1) may be at an arbitrary position in the sanitized URL.",
+        "severity_score": 7.8,
+        "severity_tier": "high",
+        "cwes": [
+          "cwe-20"
+        ],
+        "cwe_family": "other",
+        "locations": [
+          {
+            "file": "scripts/persist_telemetry.py",
+            "start_line": 47,
+            "end_line": 47,
+            "start_column": 8
+          }
+        ],
+        "level": "warning",
+        "fingerprint": "9f991bf55d542ae1"
+      },
+      {
+        "id": "CQLF-R15-0003",
+        "rule_id": "py/incomplete-url-substring-sanitization",
+        "rule_name": "py/incomplete-url-substring-sanitization",
+        "rule_description": "Incomplete URL substring sanitization",
+        "rule_help": "# Incomplete URL substring sanitization\nSanitizing untrusted URLs is a common technique for preventing attacks such as request forgeries and malicious redirections. Usually, this is done by checking that the host of a URL is in a set of allowed hosts.\n\nHowever, treating the URL as a string and checking if one of the allowed hosts is a substring of the URL is very prone to errors. Malicious URLs can bypass such security checks by embedding one of the allowed hosts in an unexpected location.\n\nEven if the substring check is not used in a security-critical context, the incomplete check may still cause undesirable behaviors when the check succeeds accidentally.\n\n\n## Recommendation\nParse a URL before performing a check on its host value, and ensure that the check handles arbitrary subdomain sequences correctly.\n\n\n## Example\nThe following example code checks that a URL redirection will reach the `example.com` domain.\n\n\n```python\nfrom flask import Flask, request, redirect\nfrom urllib.parse imp",
+        "message": "The string [github.com](1) may be at an arbitrary position in the sanitized URL.",
+        "severity_score": 7.8,
+        "severity_tier": "high",
+        "cwes": [
+          "cwe-20"
+        ],
+        "cwe_family": "other",
+        "locations": [
+          {
+            "file": "scripts/persist_logs.py",
+            "start_line": 123,
+            "end_line": 123,
+            "start_column": 8
+          }
+        ],
+        "level": "warning",
+        "fingerprint": "35c1a79231a968b7"
+      }
+    ]
+  }
+]

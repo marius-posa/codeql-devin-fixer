@@ -1,0 +1,67 @@
+{
+  "target_repo": "https://github.com/marius-posa/codeql-devin-fixer",
+  "fork_url": "https://github.com/marius-posa/codeql-devin-fixer",
+  "run_number": 15,
+  "run_label": "run-15-2026-02-07-124132",
+  "timestamp": "2026-02-07T12:41:36.302343+00:00",
+  "issues_found": 4,
+  "severity_breakdown": {
+    "high": 4
+  },
+  "category_breakdown": {
+    "other": 3,
+    "info-disclosure": 1
+  },
+  "batches_created": 1,
+  "sessions": [
+    {
+      "session_id": "devin-f3bd41c51f814d6c917b827b7a3fbc2b",
+      "session_url": "https://app.devin.ai/sessions/f3bd41c51f814d6c917b827b7a3fbc2b",
+      "batch_id": 1,
+      "status": "created",
+      "issue_ids": [
+        "CQLF-R15-0001",
+        "CQLF-R15-0002",
+        "CQLF-R15-0003"
+      ]
+    }
+  ],
+  "issue_fingerprints": [
+    {
+      "id": "CQLF-R15-0001",
+      "fingerprint": "1fa0efabcb82ac72",
+      "rule_id": "py/incomplete-url-substring-sanitization",
+      "severity_tier": "high",
+      "cwe_family": "other",
+      "file": "telemetry/app.py",
+      "start_line": 284
+    },
+    {
+      "id": "CQLF-R15-0002",
+      "fingerprint": "9f991bf55d542ae1",
+      "rule_id": "py/incomplete-url-substring-sanitization",
+      "severity_tier": "high",
+      "cwe_family": "other",
+      "file": "scripts/persist_telemetry.py",
+      "start_line": 47
+    },
+    {
+      "id": "CQLF-R15-0003",
+      "fingerprint": "35c1a79231a968b7",
+      "rule_id": "py/incomplete-url-substring-sanitization",
+      "severity_tier": "high",
+      "cwe_family": "other",
+      "file": "scripts/persist_logs.py",
+      "start_line": 123
+    },
+    {
+      "id": "CQLF-R15-0004",
+      "fingerprint": "8359eb775a4bdcbf",
+      "rule_id": "py/flask-debug",
+      "severity_tier": "high",
+      "cwe_family": "info-disclosure",
+      "file": "telemetry/app.py",
+      "start_line": 752
+    }
+  ]
+}
