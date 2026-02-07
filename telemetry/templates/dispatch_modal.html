@@ -1,0 +1,87 @@
+<div class="modal-overlay" id="dispatch-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Trigger CodeQL Fixer Action</h2>
+      <button class="modal-close" onclick="closeDispatchModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="warning-banner" id="dispatch-warning"></div>
+      <div class="form-group">
+        <label for="d-target-repo">Target Repository URL *</label>
+        <input class="form-input" id="d-target-repo" type="text" value="" onchange="checkPreflight()">
+        <div class="hint">GitHub repository URL to analyze</div>
+      </div>
+      <div class="form-group">
+        <label for="d-languages">Languages</label>
+        <input class="form-input" id="d-languages" type="text" value="" placeholder="e.g. javascript,python">
+        <div class="hint">Comma-separated CodeQL languages (leave empty for auto-detect)</div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="d-queries">Query Suite</label>
+          <select class="form-input" id="d-queries">
+            <option value="security-extended" selected>security-extended</option>
+            <option value="security-and-quality">security-and-quality</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="d-severity">Severity Threshold</label>
+          <select class="form-input" id="d-severity">
+            <option value="critical">critical</option>
+            <option value="high">high</option>
+            <option value="medium">medium</option>
+            <option value="low" selected>low</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="d-batch-size">Batch Size</label>
+          <input class="form-input" id="d-batch-size" type="number" value="5" min="1">
+          <div class="hint">Max issues per Devin session</div>
+        </div>
+        <div class="form-group">
+          <label for="d-max-sessions">Max Sessions</label>
+          <input class="form-input" id="d-max-sessions" type="number" value="5" min="1">
+          <div class="hint">Max Devin sessions to create</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="d-default-branch">Default Branch</label>
+        <input class="form-input" id="d-default-branch" type="text" value="main">
+        <div class="hint">Default branch of the target repo</div>
+      </div>
+      <div class="form-group">
+        <label for="d-include-paths">Include Paths</label>
+        <input class="form-input" id="d-include-paths" type="text" value="" placeholder="e.g. src/**,lib/**">
+        <div class="hint">Optional comma-separated globs to include</div>
+      </div>
+      <div class="form-group">
+        <label for="d-exclude-paths">Exclude Paths</label>
+        <input class="form-input" id="d-exclude-paths" type="text" value="" placeholder="e.g. test/**,vendor/**">
+        <div class="hint">Optional comma-separated globs to exclude</div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-check">
+            <input type="checkbox" id="d-persist-logs" checked>
+            <span>Persist Logs</span>
+          </label>
+          <div class="hint">Keep logs in GitHub</div>
+        </div>
+        <div class="form-group">
+          <label class="form-check">
+            <input type="checkbox" id="d-dry-run">
+            <span>Dry Run</span>
+          </label>
+          <div class="hint">Generate prompts only (no Devin sessions)</div>
+        </div>
+      </div>
+      <div class="dispatch-result" id="dispatch-result"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeDispatchModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitDispatch()" id="btn-submit-dispatch">Dispatch Workflow</button>
+    </div>
+  </div>
+</div>
