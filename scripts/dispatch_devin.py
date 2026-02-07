@@ -238,7 +238,7 @@ def main() -> None:
     fork_url = os.environ.get("FORK_URL", "")
     is_own_repo = fork_url == repo_url or not fork_url
 
-    max_acu= int(max_acu_str) if max_acu_str else None
+    max_acu = int(max_acu_str) if max_acu_str else None
 
     if not api_key and not dry_run:
         print("ERROR: DEVIN_API_KEY is required (set DRY_RUN=true to skip)")
