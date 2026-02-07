@@ -22,6 +22,10 @@ from scripts.parse_sarif import (
     batch_issues,
     assign_issue_ids,
     generate_summary,
+    _file_proximity_score,
+    _sort_by_file_proximity,
+    _get_issue_files,
+    _get_issue_dirs,
 )
 
 
@@ -612,6 +616,79 @@ class TestBatchIssues:
         batches = batch_issues(issues, batch_size=10, max_batches=10)
         assert batches[0]["severity_tier"] == "critical"
         assert batches[0]["max_severity_score"] == 9.0
+
+
+class TestFileProximity:
+    def _issue(self, files, score=7.0):
+        return {
+            "cwe_family": "injection",
+            "severity_score": score,
+            "severity_tier": "high",
+            "locations": [{"file": f} for f in files],
+        }
+
+    def test_get_issue_files(self):
+        issue = self._issue(["src/a.js", "src/b.js"])
+        assert _get_issue_files(issue) == {"src/a.js", "src/b.js"}
+
+    def test_get_issue_files_empty_file(self):
+        issue = {"locations": [{"file": ""}]}
+        assert _get_issue_files(issue) == set()
+
+    def test_get_issue_dirs(self):
+        issue = self._issue(["src/a.js", "lib/b.js"])
+        dirs = _get_issue_dirs(issue)
+        assert "src" in dirs
+        assert "lib" in dirs
+
+    def test_proximity_same_file(self):
+        a = self._issue(["src/a.js"])
+        b = self._issue(["src/a.js"])
+        assert _file_proximity_score(a, b) == 1.0
+
+    def test_proximity_same_dir(self):
+        a = self._issue(["src/a.js"])
+        b = self._issue(["src/b.js"])
+        assert _file_proximity_score(a, b) == 0.5
+
+    def test_proximity_different_dir(self):
+        a = self._issue(["src/a.js"])
+        b = self._issue(["lib/b.js"])
+        assert _file_proximity_score(a, b) == 0.0
+
+    def test_sort_empty(self):
+        assert _sort_by_file_proximity([]) == []
+
+    def test_sort_single(self):
+        issue = self._issue(["src/a.js"])
+        assert _sort_by_file_proximity([issue]) == [issue]
+
+    def test_sort_groups_same_file(self):
+        a = self._issue(["src/a.js"], score=5.0)
+        b = self._issue(["lib/x.js"], score=5.0)
+        c = self._issue(["src/a.js"], score=5.0)
+        result = _sort_by_file_proximity([a, b, c])
+        assert result[0] is a
+        assert result[1] is c
+
+    def test_sort_groups_same_dir(self):
+        a = self._issue(["src/a.js"], score=5.0)
+        b = self._issue(["lib/x.js"], score=5.0)
+        c = self._issue(["src/b.js"], score=5.0)
+        result = _sort_by_file_proximity([a, b, c])
+        assert result[0] is a
+        assert result[1] is c
+
+    def test_batch_issues_uses_proximity(self):
+        issues = [
+            self._issue(["src/a.js"], score=7.0),
+            self._issue(["lib/x.js"], score=7.0),
+            self._issue(["src/a.js"], score=7.0),
+        ]
+        batches = batch_issues(issues, batch_size=10, max_batches=10)
+        batch_issues_list = batches[0]["issues"]
+        assert batch_issues_list[0] is issues[0]
+        assert batch_issues_list[1] is issues[2]
 
 
 class TestAssignIssueIds:
