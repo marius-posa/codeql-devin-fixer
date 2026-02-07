@@ -122,12 +122,17 @@ function renderPrsTable(prs, containerId, countId) {
     el.innerHTML = '<div class="empty-state">No pull requests found yet.</div>';
     return;
   }
+  const sorted = [...prs].sort(function(a, b) {
+    var da = a.created_at ? new Date(a.created_at).getTime() : 0;
+    var db = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return db - da;
+  });
   el.innerHTML = `<table>
     <thead><tr>
       <th>PR</th><th>Status</th><th>Title</th><th>Repo</th>
       <th>Issues</th><th>Created</th>
     </tr></thead>
-    <tbody>${prs.map(p => {
+    <tbody>${sorted.map(p => {
       const statusLabel = p.merged ? 'merged' : p.state;
       return `<tr>
         <td><a href="${escapeHtml(p.html_url)}" target="_blank">#${p.pr_number}</a></td>
@@ -141,40 +146,132 @@ function renderPrsTable(prs, containerId, countId) {
   </table>`;
 }
 
+var _issuesFilterState = { status: null, severity: null, repo: null };
+var _issuesAllData = [];
+var _issuesContainerId = '';
+var _issuesCountId = '';
+
+function _applyIssuesFilter() {
+  var filtered = _issuesAllData;
+  if (_issuesFilterState.status) {
+    filtered = filtered.filter(function(i) { return i.status === _issuesFilterState.status; });
+  }
+  if (_issuesFilterState.severity) {
+    filtered = filtered.filter(function(i) { return (i.severity_tier || '').toLowerCase() === _issuesFilterState.severity; });
+  }
+  if (_issuesFilterState.repo) {
+    filtered = filtered.filter(function(i) { return repoShort(i.target_repo) === _issuesFilterState.repo; });
+  }
+  _renderIssuesContent(filtered, _issuesAllData, _issuesContainerId, _issuesCountId);
+}
+
+function _toggleStatusFilter(status) {
+  _issuesFilterState.status = _issuesFilterState.status === status ? null : status;
+  _applyIssuesFilter();
+}
+
+function _renderIssuesContent(filtered, allIssues, containerId, countId) {
+  var el = document.getElementById(containerId);
+  var countEl = document.getElementById(countId);
+  if (countEl) countEl.textContent = filtered.length + ' / ' + allIssues.length;
+
+  var recurring = allIssues.filter(function(i) { return i.status === 'recurring'; }).length;
+  var newCount = allIssues.filter(function(i) { return i.status === 'new'; }).length;
+  var fixed = allIssues.filter(function(i) { return i.status === 'fixed'; }).length;
+
+  var repos = [];
+  var repoSet = {};
+  allIssues.forEach(function(i) {
+    var r = repoShort(i.target_repo);
+    if (r && r !== '-' && !repoSet[r]) { repoSet[r] = true; repos.push(r); }
+  });
+  repos.sort();
+
+  var severities = [];
+  var sevSet = {};
+  allIssues.forEach(function(i) {
+    var s = (i.severity_tier || '').toLowerCase();
+    if (s && !sevSet[s]) { sevSet[s] = true; severities.push(s); }
+  });
+  var sevOrder = ['critical','high','medium','low'];
+  severities.sort(function(a, b) {
+    var ia = sevOrder.indexOf(a), ib = sevOrder.indexOf(b);
+    if (ia === -1) ia = 99;
+    if (ib === -1) ib = 99;
+    return ia - ib;
+  });
+
+  var activeStatus = _issuesFilterState.status;
+  var html = '<div class="issue-summary">';
+  html += '<div class="issue-card' + (activeStatus === 'recurring' ? ' active' : '') + '" onclick="_toggleStatusFilter(\'recurring\')">';
+  html += '<span class="badge badge-recurring">recurring</span> <span class="count">' + recurring + '</span></div>';
+  html += '<div class="issue-card' + (activeStatus === 'new' ? ' active' : '') + '" onclick="_toggleStatusFilter(\'new\')">';
+  html += '<span class="badge badge-new">new</span> <span class="count">' + newCount + '</span></div>';
+  html += '<div class="issue-card' + (activeStatus === 'fixed' ? ' active' : '') + '" onclick="_toggleStatusFilter(\'fixed\')">';
+  html += '<span class="badge badge-fixed">fixed</span> <span class="count">' + fixed + '</span></div>';
+  html += '</div>';
+
+  html += '<div class="issue-filters">';
+  if (severities.length > 0) {
+    html += '<select class="filter-select" onchange="_issuesFilterState.severity = this.value || null; _applyIssuesFilter();">';
+    html += '<option value="">All Severities</option>';
+    severities.forEach(function(s) {
+      html += '<option value="' + escapeHtml(s) + '"' + (_issuesFilterState.severity === s ? ' selected' : '') + '>' + escapeHtml(s) + '</option>';
+    });
+    html += '</select>';
+  }
+  if (repos.length > 1) {
+    html += '<select class="filter-select" onchange="_issuesFilterState.repo = this.value || null; _applyIssuesFilter();">';
+    html += '<option value="">All Repos</option>';
+    repos.forEach(function(r) {
+      html += '<option value="' + escapeHtml(r) + '"' + (_issuesFilterState.repo === r ? ' selected' : '') + '>' + escapeHtml(r) + '</option>';
+    });
+    html += '</select>';
+  }
+  if (_issuesFilterState.status || _issuesFilterState.severity || _issuesFilterState.repo) {
+    html += '<button class="filter-clear" onclick="_issuesFilterState={status:null,severity:null,repo:null}; _applyIssuesFilter();">Clear filters</button>';
+  }
+  html += '</div>';
+
+  var showRepo = repos.length > 1;
+  html += '<table><thead><tr>';
+  html += '<th>Status</th><th>Rule</th><th>Severity</th><th>Category</th>';
+  if (showRepo) html += '<th>Repo</th>';
+  html += '<th>File</th><th>Line</th><th>First Seen</th><th>Last Seen</th><th>Runs</th>';
+  html += '</tr></thead><tbody>';
+  filtered.forEach(function(i) {
+    var firstDate = i.first_seen_date ? formatDate(i.first_seen_date) : 'Run #' + i.first_seen_run;
+    var lastDate = i.last_seen_date ? formatDate(i.last_seen_date) : 'Run #' + i.last_seen_run;
+    html += '<tr>';
+    html += '<td><span class="badge ' + badgeClass(i.status) + '">' + escapeHtml(i.status) + '</span></td>';
+    html += '<td style="font-family:monospace;font-size:11px">' + escapeHtml(i.rule_id || i.fingerprint.slice(0,12) + '...') + '</td>';
+    html += '<td><span class="badge ' + badgeClass(i.severity_tier) + '">' + (escapeHtml(i.severity_tier) || '-') + '</span></td>';
+    html += '<td>' + (escapeHtml(i.cwe_family) || '-') + '</td>';
+    if (showRepo) html += '<td>' + escapeHtml(repoShort(i.target_repo)) + '</td>';
+    html += '<td style="font-family:monospace;font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtml(i.file) + '">' + (i.file ? escapeHtml(i.file.split('/').pop()) : '-') + '</td>';
+    html += '<td>' + (i.start_line || '-') + '</td>';
+    html += '<td title="Run #' + i.first_seen_run + '">' + firstDate + '</td>';
+    html += '<td title="Run #' + i.last_seen_run + '">' + lastDate + '</td>';
+    html += '<td>' + i.appearances + 'x</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
 function renderIssuesTable(issues, containerId, countId) {
-  const el = document.getElementById(containerId);
-  const countEl = document.getElementById(countId);
-  if (countEl) countEl.textContent = issues.length;
+  _issuesAllData = issues;
+  _issuesContainerId = containerId;
+  _issuesCountId = countId;
+  _issuesFilterState = { status: null, severity: null, repo: null };
+  var el = document.getElementById(containerId);
   if (issues.length === 0) {
+    var countEl = document.getElementById(countId);
+    if (countEl) countEl.textContent = 0;
     el.innerHTML = '<div class="empty-state">No issue fingerprints available yet.</div>';
     return;
   }
-  const recurring = issues.filter(i => i.status === 'recurring').length;
-  const newCount = issues.filter(i => i.status === 'new').length;
-  const fixed = issues.filter(i => i.status === 'fixed').length;
-  let html = `<div class="issue-summary">
-    <div><span class="badge badge-recurring">recurring</span> <span class="count">${recurring}</span></div>
-    <div><span class="badge badge-new">new</span> <span class="count">${newCount}</span></div>
-    <div><span class="badge badge-fixed">fixed</span> <span class="count">${fixed}</span></div>
-  </div>`;
-  html += `<table>
-    <thead><tr>
-      <th>Status</th><th>Rule</th><th>Severity</th><th>Category</th>
-      <th>File</th><th>Line</th><th>First Seen</th><th>Last Seen</th><th>Runs</th>
-    </tr></thead>
-    <tbody>${issues.map(i => `<tr>
-      <td><span class="badge ${badgeClass(i.status)}">${escapeHtml(i.status)}</span></td>
-      <td style="font-family:monospace;font-size:11px">${escapeHtml(i.rule_id || i.fingerprint.slice(0,12)+'...')}</td>
-      <td><span class="badge ${badgeClass(i.severity_tier)}">${escapeHtml(i.severity_tier) || '-'}</span></td>
-      <td>${escapeHtml(i.cwe_family) || '-'}</td>
-      <td style="font-family:monospace;font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(i.file)}">${i.file ? escapeHtml(i.file.split('/').pop()) : '-'}</td>
-      <td>${i.start_line || '-'}</td>
-      <td>Run #${i.first_seen_run}</td>
-      <td>Run #${i.last_seen_run}</td>
-      <td>${i.appearances}x</td>
-    </tr>`).join('')}</tbody>
-  </table>`;
-  el.innerHTML = html;
+  _renderIssuesContent(issues, issues, containerId, countId);
 }
 
 async function fetchAllPages(endpoint) {
