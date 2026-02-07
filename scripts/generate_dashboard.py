@@ -38,6 +38,8 @@ from typing import Any
 
 import requests
 
+from retry_utils import request_with_retry
+
 # ---------------------------------------------------------------------------
 # HTML template
 # ---------------------------------------------------------------------------
@@ -270,7 +272,7 @@ def fetch_workflow_runs(token: str, owner: str, repo: str) -> list[dict[str, Any
     url = f"https://api.github.com/repos/{owner}/{repo}/actions/runs"
     params: dict[str, Any] = {"per_page": 50}
     try:
-        resp = requests.get(url, headers=_gh_headers(token), params=params, timeout=30)
+        resp = request_with_retry("GET", url, headers=_gh_headers(token), params=params, timeout=30)
         if resp.status_code == 200:
             for r in resp.json().get("workflow_runs", []):
                 runs.append({
@@ -305,7 +307,7 @@ def fetch_codeql_prs(token: str, owner: str, repo: str) -> list[dict[str, Any]]:
             "sort": "created", "direction": "desc",
         }
         try:
-            resp = requests.get(url, headers=headers, params=params, timeout=30)
+            resp = request_with_retry("GET", url, headers=headers, params=params, timeout=30)
             if resp.status_code == 200:
                 for pr in resp.json():
                     title = pr.get("title", "")

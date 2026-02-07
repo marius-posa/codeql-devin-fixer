@@ -53,6 +53,9 @@ from typing import Any
 # Severity tiers map CVSS v3 score ranges to human-readable labels.
 # These thresholds follow the NVD / GitHub Advisory severity scale so that
 # results are consistent with what developers see on github.com.
+SARIF_MAX_SIZE_MB = 500
+SARIF_MAX_SIZE_BYTES = SARIF_MAX_SIZE_MB * 1024 * 1024
+
 SEVERITY_TIERS = {
     "critical": (9.0, 10.0),
     "high": (7.0, 8.9),
@@ -185,8 +188,11 @@ def parse_sarif(sarif_path: str) -> list[dict[str, Any]]:
     ``error`` -> 7.0 (high), ``warning`` -> 4.0 (medium).
     """
     file_size = os.path.getsize(sarif_path)
-    if file_size > 500 * 1024 * 1024:
-        print(f"WARNING: SARIF file is very large ({file_size / 1024 / 1024:.0f} MB)")
+    if file_size > SARIF_MAX_SIZE_BYTES:
+        raise ValueError(
+            f"SARIF file too large ({file_size / 1024 / 1024:.0f} MB, "
+            f"limit is {SARIF_MAX_SIZE_MB} MB): {sarif_path}"
+        )
 
     with open(sarif_path) as f:
         sarif = json.load(f)

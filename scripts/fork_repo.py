@@ -43,6 +43,8 @@ import sys
 import time
 import requests
 
+from retry_utils import request_with_retry
+
 
 def normalize_repo_url(url: str) -> str:
     """Normalise a repository reference to a full ``https://github.com/…`` URL.
@@ -85,7 +87,8 @@ def resolve_owner(token: str, fallback: str) -> str:
     if fallback:
         return fallback
     try:
-        resp = requests.get(
+        resp = request_with_retry(
+            "GET",
             "https://api.github.com/user",
             headers={"Authorization": f"token {token}", "Accept": "application/vnd.github+json"},
             timeout=30,
@@ -108,7 +111,8 @@ def check_fork_exists(token: str, owner: str, repo: str, my_user: str) -> dict |
     headers = {"Accept": "application/vnd.github+json"}
     if token:
         headers["Authorization"] = f"token {token}"
-    resp = requests.get(
+    resp = request_with_retry(
+        "GET",
         f"https://api.github.com/repos/{my_user}/{repo}",
         headers=headers,
         timeout=30,
@@ -132,7 +136,8 @@ def create_fork(token: str, owner: str, repo: str) -> dict:
     field is non-zero, indicating the copy is complete.
     """
     print(f"Creating fork of {owner}/{repo}...")
-    resp = requests.post(
+    resp = request_with_retry(
+        "POST",
         f"https://api.github.com/repos/{owner}/{repo}/forks",
         headers={"Authorization": f"token {token}", "Accept": "application/vnd.github+json"},
         json={"default_branch_only": False},
@@ -144,7 +149,8 @@ def create_fork(token: str, owner: str, repo: str) -> dict:
 
     for attempt in range(1, 13):
         time.sleep(5)
-        check = requests.get(
+        check = request_with_retry(
+            "GET",
             fork_data["url"],
             headers={"Authorization": f"token {token}", "Accept": "application/vnd.github+json"},
             timeout=30,
@@ -166,7 +172,8 @@ def sync_fork(token: str, my_user: str, repo: str, branch: str) -> None:
     response means the branch is already up to date, which is fine.
     """
     print(f"Syncing fork {my_user}/{repo} with upstream {branch}...")
-    resp = requests.post(
+    resp = request_with_retry(
+        "POST",
         f"https://api.github.com/repos/{my_user}/{repo}/merge-upstream",
         headers={"Authorization": f"token {token}", "Accept": "application/vnd.github+json"},
         json={"branch": branch},
