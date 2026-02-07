@@ -456,6 +456,72 @@ def index():
     return render_template("dashboard.html")
 
 
+@app.route("/repo/<path:repo_url>")
+def repo_page(repo_url):
+    full_url = "https://github.com/" + repo_url
+    return render_template("repo.html", repo_url=full_url, repo_short=repo_url)
+
+
+@app.route("/api/repo/<path:repo_url>")
+def api_repo_detail(repo_url):
+    full_url = "https://github.com/" + repo_url
+    runs = cache.get_runs()
+    sessions = aggregate_sessions(runs)
+    prs = cache.get_prs(runs)
+
+    repo_runs = [r for r in runs if r.get("target_repo", "") == full_url]
+    repo_sessions = [s for s in sessions if s.get("target_repo", "") == full_url]
+
+    repo_info = None
+    all_repos = _build_repos_dict(runs, sessions, prs)
+    for r in all_repos:
+        if r["repo"] == full_url:
+            repo_info = r
+            break
+
+    fork_url = repo_info["fork_url"] if repo_info else ""
+    repo_prs = [p for p in prs if fork_url and p.get("repo", "") and fork_url and p["repo"] in fork_url]
+
+    pr_merged = sum(1 for p in repo_prs if p.get("merged", False))
+    pr_open = sum(1 for p in repo_prs if p.get("state") == "open")
+    pr_closed = sum(1 for p in repo_prs if p.get("state") == "closed" and not p.get("merged", False))
+
+    severity_agg: dict[str, int] = {}
+    category_agg: dict[str, int] = {}
+    for run in repo_runs:
+        for tier, count in run.get("severity_breakdown", {}).items():
+            severity_agg[tier] = severity_agg.get(tier, 0) + count
+        for cat, count in run.get("category_breakdown", {}).items():
+            category_agg[cat] = category_agg.get(cat, 0) + count
+
+    sessions_created = len([s for s in repo_sessions if s.get("session_id")])
+    sessions_finished = len([s for s in repo_sessions if s.get("status") in ("finished", "stopped")])
+
+    stats = {
+        "total_runs": len(repo_runs),
+        "total_issues": sum(r.get("issues_found", 0) for r in repo_runs),
+        "sessions_created": sessions_created,
+        "sessions_finished": sessions_finished,
+        "prs_total": len(repo_prs),
+        "prs_merged": pr_merged,
+        "prs_open": pr_open,
+        "prs_closed": pr_closed,
+        "fix_rate": round(pr_merged / max(len(repo_prs), 1) * 100, 1),
+        "severity_breakdown": severity_agg,
+        "category_breakdown": category_agg,
+    }
+
+    page, per_page = _get_pagination()
+    sorted_runs = sorted(repo_runs, key=lambda r: r.get("run_number", 0), reverse=True)
+
+    return jsonify({
+        "stats": stats,
+        "runs": _paginate(sorted_runs, page, per_page),
+        "sessions": _paginate(repo_sessions, page, per_page),
+        "prs": _paginate(repo_prs, page, per_page),
+    })
+
+
 @app.route("/api/runs")
 def api_runs():
     runs = cache.get_runs()
@@ -490,11 +556,7 @@ def api_stats():
     return jsonify(aggregate_stats(runs, sessions, prs))
 
 
-@app.route("/api/repos")
-def api_repos():
-    runs = cache.get_runs()
-    sessions = aggregate_sessions(runs)
-    prs = cache.get_prs(runs)
+def _build_repos_dict(runs: list[dict], sessions: list[dict], prs: list[dict]) -> list[dict]:
     repos: dict[str, dict] = {}
     for run in runs:
         repo = run.get("target_repo", "")
@@ -545,8 +607,15 @@ def api_repos():
                 repos[matched_repo]["prs_merged"] += 1
             elif p.get("state") == "open":
                 repos[matched_repo]["prs_open"] += 1
-    result = sorted(repos.values(), key=lambda r: r["last_run"], reverse=True)
-    return jsonify(result)
+    return sorted(repos.values(), key=lambda r: r["last_run"], reverse=True)
+
+
+@app.route("/api/repos")
+def api_repos():
+    runs = cache.get_runs()
+    sessions = aggregate_sessions(runs)
+    prs = cache.get_prs(runs)
+    return jsonify(_build_repos_dict(runs, sessions, prs))
 
 
 @app.route("/api/poll", methods=["POST"])
