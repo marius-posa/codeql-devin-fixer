@@ -39,7 +39,10 @@ from typing import Any
 import requests
 from jinja2 import Environment, FileSystemLoader
 
-from github_utils import gh_headers, parse_repo_url, validate_repo_url
+try:
+    from github_utils import gh_headers, parse_repo_url, validate_repo_url
+except ImportError:
+    from scripts.github_utils import gh_headers, parse_repo_url, validate_repo_url
 
 _TEMPLATE_DIR = pathlib.Path(__file__).parent / "templates"
 _jinja_env = Environment(
@@ -662,7 +665,8 @@ def main() -> None:
     try:
         template = _jinja_env.get_template(DASHBOARD_TEMPLATE_NAME)
         html = template.render(**template_vars)
-    except Exception:
+    except Exception as exc:
+        print(f"WARNING: Jinja2 template rendering failed ({exc}); using legacy template")
         html = _LEGACY_DASHBOARD_TEMPLATE.format(**template_vars)
 
     os.makedirs(output_dir, exist_ok=True)

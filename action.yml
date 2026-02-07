@@ -90,7 +90,7 @@ runs:
 
     - name: Install Python dependencies
       shell: bash
-      run: pip install requests
+      run: pip install requests jinja2
 
     - name: Normalize target repo URL
       id: normalize

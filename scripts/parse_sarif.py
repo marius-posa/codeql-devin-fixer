@@ -50,6 +50,11 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
+try:
+    from pipeline_config import PipelineConfig
+except ImportError:
+    from scripts.pipeline_config import PipelineConfig
+
 BATCHES_SCHEMA_VERSION = "1.0"
 ISSUES_SCHEMA_VERSION = "1.0"
 
@@ -511,10 +516,12 @@ def main() -> None:
 
     sarif_input = sys.argv[1]
     output_dir = sys.argv[2] if len(sys.argv) > 2 else "output"
-    batch_size = int(os.environ.get("BATCH_SIZE", "5"))
-    max_batches = int(os.environ.get("MAX_SESSIONS", "25"))
-    threshold = os.environ.get("SEVERITY_THRESHOLD", "low")
-    run_number = os.environ.get("RUN_NUMBER", "")
+
+    cfg = PipelineConfig.from_env()
+    batch_size = cfg.batch_size
+    max_batches = cfg.max_sessions
+    threshold = cfg.severity_threshold
+    run_number = cfg.run_number
 
     os.makedirs(output_dir, exist_ok=True)
 

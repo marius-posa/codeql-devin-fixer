@@ -42,7 +42,10 @@ import sys
 import time
 import requests
 
-from github_utils import gh_headers, normalize_repo_url, parse_repo_url  # noqa: F401
+try:
+    from github_utils import gh_headers, normalize_repo_url, parse_repo_url  # noqa: F401
+except ImportError:
+    from scripts.github_utils import gh_headers, normalize_repo_url, parse_repo_url  # noqa: F401
 
 
 def resolve_owner(token: str, fallback: str) -> str:

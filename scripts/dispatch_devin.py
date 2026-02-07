@@ -48,8 +48,14 @@ import sys
 import time
 import requests
 
-from github_utils import validate_repo_url
-from parse_sarif import BATCHES_SCHEMA_VERSION
+try:
+    from github_utils import validate_repo_url
+    from parse_sarif import BATCHES_SCHEMA_VERSION
+    from pipeline_config import PipelineConfig
+except ImportError:
+    from scripts.github_utils import validate_repo_url
+    from scripts.parse_sarif import BATCHES_SCHEMA_VERSION
+    from scripts.pipeline_config import PipelineConfig
 
 
 DEVIN_API_BASE = "https://api.devin.ai/v1"
@@ -221,15 +227,14 @@ def main() -> None:
     batches_path = sys.argv[1] if len(sys.argv) > 1 else "output/batches.json"
     output_dir = sys.argv[2] if len(sys.argv) > 2 else "output"
 
-    api_key = os.environ.get("DEVIN_API_KEY", "")
-    repo_url = validate_repo_url(os.environ.get("TARGET_REPO", ""))
-    default_branch = os.environ.get("DEFAULT_BRANCH", "main")
-    max_acu_str = os.environ.get("MAX_ACU_PER_SESSION", "")
-    dry_run = os.environ.get("DRY_RUN", "false").lower() == "true"
-    fork_url = os.environ.get("FORK_URL", "")
+    cfg = PipelineConfig.from_env()
+    api_key = cfg.devin_api_key
+    repo_url = validate_repo_url(cfg.target_repo)
+    default_branch = cfg.default_branch
+    dry_run = cfg.dry_run
+    fork_url = cfg.fork_url
     is_own_repo = fork_url == repo_url or not fork_url
-
-    max_acu = int(max_acu_str) if max_acu_str else None
+    max_acu = cfg.max_acu_per_session
 
     if not api_key and not dry_run:
         print("ERROR: DEVIN_API_KEY is required (set DRY_RUN=true to skip)")

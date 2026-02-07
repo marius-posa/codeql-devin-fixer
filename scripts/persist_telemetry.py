@@ -35,8 +35,12 @@ from urllib.parse import urlparse
 
 import requests
 
-from github_utils import gh_headers
-from parse_sarif import ISSUES_SCHEMA_VERSION
+try:
+    from github_utils import gh_headers
+    from parse_sarif import ISSUES_SCHEMA_VERSION
+except ImportError:
+    from scripts.github_utils import gh_headers
+    from scripts.parse_sarif import ISSUES_SCHEMA_VERSION
 
 
 def _repo_short_name(url: str) -> str:
