@@ -6,6 +6,7 @@ import re
 import sys
 import os
 from collections import defaultdict
+from datetime import datetime, timezone
 from typing import Any
 
 SEVERITY_TIERS = {
@@ -150,6 +151,7 @@ def parse_sarif(sarif_path: str) -> list[dict[str, Any]]:
 
             issues.append(
                 {
+                    "id": "",
                     "rule_id": rule_id,
                     "rule_name": rule_name,
                     "rule_description": rule_desc,
@@ -292,6 +294,15 @@ def generate_summary(
     return "\n".join(lines)
 
 
+def assign_issue_ids(
+    issues: list[dict[str, Any]], run_number: str = ""
+) -> list[dict[str, Any]]:
+    prefix = f"R{run_number}-" if run_number else ""
+    for idx, issue in enumerate(issues, 1):
+        issue["id"] = f"CQLF-{prefix}{idx:04d}"
+    return issues
+
+
 def main() -> None:
     if len(sys.argv) < 2:
         print("Usage: parse_sarif.py <sarif_path_or_dir> <output_dir>")
@@ -302,6 +313,7 @@ def main() -> None:
     batch_size = int(os.environ.get("BATCH_SIZE", "5"))
     max_batches = int(os.environ.get("MAX_SESSIONS", "10"))
     threshold = os.environ.get("SEVERITY_THRESHOLD", "low")
+    run_number = os.environ.get("RUN_NUMBER", "")
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -337,6 +349,8 @@ def main() -> None:
     prioritized = prioritize_issues(all_issues, threshold)
     print(f"After filtering (threshold={threshold}): {len(prioritized)} issues")
 
+    prioritized = assign_issue_ids(prioritized, run_number)
+
     batches = batch_issues(prioritized, batch_size, max_batches)
     print(f"Created {len(batches)} batches")
 
@@ -362,6 +376,27 @@ def main() -> None:
     if github_summary:
         with open(github_summary, "a") as f:
             f.write(summary + "\n")
+
+    run_ts = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H%M%S")
+    run_label = f"run-{run_number}-{run_ts}" if run_number else f"run-{run_ts}"
+    run_log = {
+        "run_label": run_label,
+        "run_number": run_number,
+        "timestamp": run_ts,
+        "total_raw": total_raw,
+        "dedup_removed": dedup_removed,
+        "total_filtered": len(prioritized),
+        "total_batches": len(batches),
+        "severity_threshold": threshold,
+        "batch_size": batch_size,
+        "max_batches": max_batches,
+    }
+    with open(os.path.join(output_dir, "run_log.json"), "w") as f:
+        json.dump(run_log, f, indent=2)
+
+    if github_output:
+        with open(github_output, "a") as f:
+            f.write(f"run_label={run_label}\n")
 
 
 if __name__ == "__main__":

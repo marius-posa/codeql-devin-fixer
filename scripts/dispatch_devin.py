@@ -36,10 +36,14 @@ def build_batch_prompt(batch: dict, repo_url: str, default_branch: str) -> str:
             if loc.get("file"):
                 file_list.add(loc["file"])
 
+    issue_ids = [issue.get("id", "") for issue in issues if issue.get("id")]
+    ids_str = ", ".join(issue_ids) if issue_ids else "N/A"
+
     prompt_parts = [
         f"Fix {batch['issue_count']} CodeQL security issue(s) in {repo_url} "
         f"(branch: {default_branch}).",
         "",
+        f"Issue IDs: {ids_str}",
         f"Category: {family} | Severity: {tier.upper()} "
         f"(max CVSS: {batch['max_severity_score']})",
         "",
@@ -48,6 +52,7 @@ def build_batch_prompt(batch: dict, repo_url: str, default_branch: str) -> str:
     ]
 
     for idx, issue in enumerate(issues, 1):
+        issue_id = issue.get("id", f"issue-{idx}")
         locs = ", ".join(
             f"{loc['file']}:{loc['start_line']}"
             for loc in issue.get("locations", [])
@@ -56,7 +61,7 @@ def build_batch_prompt(batch: dict, repo_url: str, default_branch: str) -> str:
         cwes = ", ".join(issue.get("cwes", [])) or "N/A"
         prompt_parts.extend(
             [
-                f"### Issue {idx}: {issue['rule_name']} ({issue['rule_id']})",
+                f"### {issue_id}: {issue['rule_name']} ({issue['rule_id']})",
                 f"- Severity: {issue['severity_tier'].upper()} ({issue['severity_score']})",
                 f"- CWE: {cwes}",
                 f"- Location(s): {locs}",
@@ -69,16 +74,19 @@ def build_batch_prompt(batch: dict, repo_url: str, default_branch: str) -> str:
             prompt_parts.append(f"- Guidance: {issue['rule_help'][:500]}")
         prompt_parts.append("")
 
+    ids_tag = ",".join(issue_ids[:6]) if issue_ids else f"batch-{batch['batch_id']}"
+    pr_title = f"fix({ids_tag}): resolve {family} security issues"
+
     prompt_parts.extend(
         [
             "Instructions:",
             f"1. Clone {repo_url} and create a new branch from {default_branch}.",
-            "2. Fix ALL the issues listed above.",
+            "2. Fix ALL the issues listed above. Track which issue IDs you are fixing.",
             "3. Ensure fixes don't break existing functionality.",
             "4. Run existing tests if available to verify.",
-            "5. Create a PR with a clear description of what was fixed and why.",
-            f"6. Title the PR: 'fix: resolve {family} security issues "
-            f"(CodeQL batch {batch['batch_id']})'",
+            "5. Create a PR with a clear description listing each issue ID fixed.",
+            f"6. Title the PR exactly: '{pr_title}'",
+            f"7. In the PR body, list each issue ID ({ids_str}) and describe the fix applied.",
             "",
             "Files to focus on:",
         ]
@@ -100,20 +108,25 @@ def create_devin_session(
         "Content-Type": "application/json",
     }
 
+    issue_ids = [iss.get("id", "") for iss in batch.get("issues", []) if iss.get("id")]
+    ids_tag = ",".join(issue_ids[:6]) if issue_ids else f"batch-{batch['batch_id']}"
+
     tags = [
         "codeql-fix",
         f"severity-{batch['severity_tier']}",
         f"cwe-{batch['cwe_family']}",
         f"batch-{batch['batch_id']}",
     ]
+    for iid in issue_ids:
+        tags.append(iid)
 
     payload: dict = {
         "prompt": prompt,
         "idempotent": True,
         "tags": tags,
         "title": (
-            f"CodeQL Fix: {batch['cwe_family']} "
-            f"({batch['severity_tier'].upper()}) - Batch {batch['batch_id']}"
+            f"CodeQL Fix ({ids_tag}): {batch['cwe_family']} "
+            f"({batch['severity_tier'].upper()})"
         ),
     }
     if max_acu is not None and max_acu > 0:
