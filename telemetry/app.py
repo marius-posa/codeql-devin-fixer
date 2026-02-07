@@ -841,6 +841,95 @@ def api_issues():
     return jsonify(_paginate(issues, page, per_page))
 
 
+@app.route("/api/dispatch/preflight")
+def api_dispatch_preflight():
+    target_repo = flask_request.args.get("target_repo", "")
+    if not target_repo:
+        return jsonify({"error": "target_repo is required"}), 400
+
+    runs = cache.get_runs()
+    prs = cache.get_prs(runs)
+
+    open_prs = [
+        p for p in prs
+        if p.get("state") == "open" and not p.get("merged", False)
+    ]
+
+    repo_open_prs = []
+    for p in open_prs:
+        pr_repo = p.get("repo", "")
+        if not pr_repo:
+            continue
+        sessions = aggregate_sessions(runs)
+        for s in sessions:
+            if s.get("target_repo", "") == target_repo and s.get("pr_url", "") == p.get("html_url", ""):
+                repo_open_prs.append(p)
+                break
+        else:
+            fork_url = ""
+            for run in runs:
+                if run.get("target_repo", "") == target_repo:
+                    fork_url = run.get("fork_url", "")
+                    break
+            if fork_url and pr_repo in fork_url:
+                repo_open_prs.append(p)
+
+    return jsonify({
+        "target_repo": target_repo,
+        "open_prs": len(repo_open_prs),
+        "prs": [
+            {"pr_number": p.get("pr_number"), "title": p.get("title"), "html_url": p.get("html_url")}
+            for p in repo_open_prs
+        ],
+    })
+
+
+@app.route("/api/dispatch", methods=["POST"])
+def api_dispatch():
+    token = os.environ.get("GITHUB_TOKEN", "")
+    action_repo = os.environ.get("ACTION_REPO", "")
+    if not token:
+        return jsonify({"error": "GITHUB_TOKEN not configured"}), 400
+    if not action_repo:
+        return jsonify({"error": "ACTION_REPO not configured"}), 400
+
+    body = flask_request.get_json(silent=True) or {}
+    target_repo = body.get("target_repo", "")
+    if not target_repo:
+        return jsonify({"error": "target_repo is required"}), 400
+
+    inputs = {
+        "target_repo": target_repo,
+        "languages": body.get("languages", ""),
+        "queries": body.get("queries", "security-extended"),
+        "persist_logs": str(body.get("persist_logs", True)).lower(),
+        "include_paths": body.get("include_paths", ""),
+        "exclude_paths": body.get("exclude_paths", ""),
+        "batch_size": str(body.get("batch_size", 5)),
+        "max_sessions": str(body.get("max_sessions", 5)),
+        "severity_threshold": body.get("severity_threshold", "low"),
+        "dry_run": str(body.get("dry_run", False)).lower(),
+        "default_branch": body.get("default_branch", "main"),
+    }
+
+    url = f"https://api.github.com/repos/{action_repo}/actions/workflows/codeql-fixer.yml/dispatches"
+    payload = {"ref": "main", "inputs": inputs}
+
+    try:
+        resp = requests.post(url, headers=_gh_headers(), json=payload, timeout=30)
+        if resp.status_code == 204:
+            return jsonify({"success": True, "message": "Workflow dispatched successfully"})
+        else:
+            error_body = resp.text
+            try:
+                error_body = resp.json().get("message", resp.text)
+            except Exception:
+                pass
+            return jsonify({"error": f"GitHub API error ({resp.status_code}): {error_body}"}), resp.status_code
+    except requests.RequestException as e:
+        return jsonify({"error": f"Request failed: {str(e)}"}), 500
+
+
 if __name__ == "__main__":
     from dotenv import load_dotenv
     env_path = pathlib.Path(__file__).parent / ".env"
