@@ -3,7 +3,7 @@ import os
 
 import requests
 
-from config import DEVIN_API_BASE, RUNS_DIR, devin_headers as _devin_headers
+from .config import DEVIN_API_BASE, RUNS_DIR, devin_headers as _devin_headers
 
 
 def poll_devin_sessions(sessions: list[dict], api_key: str = "") -> list[dict]:
