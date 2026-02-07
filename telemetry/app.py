@@ -506,4 +506,4 @@ if __name__ == "__main__":
     env_path = pathlib.Path(__file__).parent / ".env"
     if env_path.exists():
         load_dotenv(env_path)
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    app.run(host="0.0.0.0", port=5000, debug=True)
