@@ -1,0 +1,78 @@
+name: Poll Devin Sessions
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  poll:
+    name: Poll & Update Session Statuses
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Poll Devin sessions and update telemetry files
+        working-directory: telemetry
+        env:
+          DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
+        run: |
+          python -c "
+          import sys, os
+          sys.path.insert(0, '.')
+          sys.path.insert(0, os.path.join('..', 'scripts'))
+          from aggregation import aggregate_sessions
+          from devin_service import poll_devin_sessions, save_session_updates
+          from config import RUNS_DIR
+          import json
+
+          runs = []
+          for fp in sorted(RUNS_DIR.glob('*.json')):
+              try:
+                  with open(fp) as f:
+                      data = json.load(f)
+                      data['_file'] = fp.name
+                      runs.append(data)
+              except (json.JSONDecodeError, OSError):
+                  continue
+
+          sessions = aggregate_sessions(runs)
+          updated = poll_devin_sessions(sessions)
+
+          changed = 0
+          for s in updated:
+              for run in runs:
+                  for rs in run.get('sessions', []):
+                      if rs.get('session_id') == s.get('session_id'):
+                          if rs.get('status') != s.get('status') or (s.get('pr_url') and rs.get('pr_url') != s.get('pr_url')):
+                              changed += 1
+
+          if save_session_updates(updated):
+              print(f'Updated {changed} session(s) across telemetry files')
+          else:
+              print('No session status changes detected')
+          "
+
+      - name: Commit and push updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add telemetry/runs/
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: update Devin session statuses via polling"
+            git push
+          fi
