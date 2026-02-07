@@ -1,0 +1,34 @@
+<div class="modal-overlay" id="settings-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Settings</h2>
+      <button class="modal-close" onclick="closeSettingsModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px">
+        Provide your API credentials below. They are stored only in your browser session and sent with each request.
+      </p>
+      <div class="form-group">
+        <label for="s-github-token">GitHub Token (PAT)</label>
+        <input class="form-input" id="s-github-token" type="password" placeholder="ghp_...">
+        <div class="hint">Personal Access Token with <code>repo</code> scope. Used for PR discovery and workflow dispatch.</div>
+      </div>
+      <div class="form-group">
+        <label for="s-devin-api-key">Devin API Key</label>
+        <input class="form-input" id="s-devin-api-key" type="password" placeholder="your-devin-api-key">
+        <div class="hint">Used for polling Devin session statuses.</div>
+      </div>
+      <div class="form-group">
+        <label for="s-action-repo">Action Repository</label>
+        <input class="form-input" id="s-action-repo" type="text" placeholder="owner/repo">
+        <div class="hint">The repository where codeql-devin-fixer is installed (e.g. <code>marius-posa/codeql-devin-fixer</code>).</div>
+      </div>
+      <div class="settings-status" id="settings-status"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="clearSettings()">Clear All</button>
+      <button class="btn" onclick="closeSettingsModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveSettings()">Save</button>
+    </div>
+  </div>
+</div>
