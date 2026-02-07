@@ -72,6 +72,24 @@ def _get_telemetry_api_key() -> str:
     return os.environ.get("TELEMETRY_API_KEY", "")
 
 
+def _is_authenticated() -> bool:
+    """Check whether the current request supplies a valid API key.
+
+    Returns ``True`` when ``TELEMETRY_API_KEY`` is unset (no auth required)
+    or when the caller provides a matching key via ``X-API-Key`` or
+    ``Authorization: Bearer`` header.
+    """
+    expected = _get_telemetry_api_key()
+    if not expected:
+        return True
+    provided = flask_request.headers.get("X-API-Key", "")
+    if not provided:
+        auth = flask_request.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            provided = auth[7:]
+    return bool(provided) and hmac.compare_digest(provided, expected)
+
+
 def require_api_key(fn):
     """Decorator that gates mutating endpoints behind TELEMETRY_API_KEY.
 
@@ -82,15 +100,7 @@ def require_api_key(fn):
     """
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
-        expected = _get_telemetry_api_key()
-        if not expected:
-            return fn(*args, **kwargs)
-        provided = flask_request.headers.get("X-API-Key", "")
-        if not provided:
-            auth = flask_request.headers.get("Authorization", "")
-            if auth.startswith("Bearer "):
-                provided = auth[7:]
-        if not provided or not hmac.compare_digest(provided, expected):
+        if not _is_authenticated():
             return jsonify({"error": "Unauthorized"}), 401
         return fn(*args, **kwargs)
     return wrapper
@@ -397,18 +407,7 @@ def api_refresh():
 def api_config():
     auth_required = bool(_get_telemetry_api_key())
     response: dict = {"auth_required": auth_required}
-    authenticated = False
-    if auth_required:
-        expected = _get_telemetry_api_key()
-        provided = flask_request.headers.get("X-API-Key", "")
-        if not provided:
-            auth_header = flask_request.headers.get("Authorization", "")
-            if auth_header.startswith("Bearer "):
-                provided = auth_header[7:]
-        authenticated = bool(provided) and hmac.compare_digest(provided, expected)
-    else:
-        authenticated = True
-    if authenticated:
+    if _is_authenticated():
         response["github_token_set"] = bool(os.environ.get("GITHUB_TOKEN", ""))
         response["devin_api_key_set"] = bool(os.environ.get("DEVIN_API_KEY", ""))
         response["action_repo"] = os.environ.get("ACTION_REPO", "")
