@@ -338,7 +338,7 @@ function renderSessionsTable(sessions) {
     <tbody>${sessions.map(s => `<tr>
       <td>${s.session_url ? '<a href="'+s.session_url+'" target="_blank">'+s.session_id.slice(0,8)+'...</a>' : s.session_id || '-'}</td>
       <td><span class="badge ${badgeClass(s.status)}">${s.status}</span></td>
-      <td>#${s.run_number || '-'}</td>
+      <td>${s.run_url ? '<a href="'+s.run_url+'" target="_blank">#'+s.run_number+'</a>' : '#'+(s.run_number || '-')}</td>
       <td>${s.batch_id !== undefined ? s.batch_id : '-'}</td>
       <td>${(s.issue_ids || []).map(id => '<span class="issue-id">'+id+'</span>').join(' ') || '-'}</td>
       <td>${s.pr_url ? '<a href="'+s.pr_url+'" target="_blank">View PR</a>' : '-'}</td>
