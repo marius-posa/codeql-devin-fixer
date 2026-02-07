@@ -63,7 +63,9 @@ def build_telemetry_record(output_dir: str) -> dict:
     target_repo = os.environ.get("TARGET_REPO", "")
     fork_url = os.environ.get("FORK_URL", "")
     run_number = os.environ.get("RUN_NUMBER", "0")
+    run_id = os.environ.get("RUN_ID", "")
     run_label = os.environ.get("RUN_LABEL", "")
+    action_repo = os.environ.get("ACTION_REPO", "")
 
     issues = load_output_file(output_dir, "issues.json") or []
     batches = load_output_file(output_dir, "batches.json") or []
@@ -104,10 +106,16 @@ def build_telemetry_record(output_dir: str) -> dict:
                 i.get("id", "") for i in batch.get("issues", [])
             ]
 
+    run_url = ""
+    if action_repo and run_id:
+        run_url = f"https://github.com/{action_repo}/actions/runs/{run_id}"
+
     return {
         "target_repo": target_repo,
         "fork_url": fork_url,
         "run_number": int(run_number),
+        "run_id": run_id,
+        "run_url": run_url,
         "run_label": run_label,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "issues_found": len(issues),
