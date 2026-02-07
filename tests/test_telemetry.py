@@ -10,7 +10,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "telemetry"))
 
 from aggregation import aggregate_sessions, aggregate_stats, build_repos_dict
-from issue_tracking import track_issues_across_runs
+from issue_tracking import track_issues_across_runs, _parse_ts
 
 
 class TestAggregateSessions:
@@ -279,3 +279,67 @@ class TestTrackIssuesEdgeCases:
         runs = [self._run(1, "r", [])]
         result = track_issues_across_runs(runs)
         assert result == []
+
+    def test_new_metadata_fields_default(self):
+        fp = self._fp("aaa")
+        runs = [self._run(1, "r", [fp])]
+        result = track_issues_across_runs(runs)
+        r = result[0]
+        assert r["description"] == ""
+        assert r["resolution"] == ""
+        assert r["code_churn"] == 0
+        assert r["fix_duration_hours"] is None
+
+    def test_new_metadata_fields_populated(self):
+        fp = self._fp("bbb")
+        fp["description"] = "SQL injection via user input"
+        fp["resolution"] = "Use parameterized queries"
+        fp["code_churn"] = 42
+        runs = [self._run(1, "r", [fp])]
+        result = track_issues_across_runs(runs)
+        r = result[0]
+        assert r["description"] == "SQL injection via user input"
+        assert r["resolution"] == "Use parameterized queries"
+        assert r["code_churn"] == 42
+
+    def test_fix_duration_hours_calculated_for_fixed(self):
+        fp = self._fp("ccc")
+        runs = [
+            self._run(1, "r", [fp], "2026-01-01T00:00:00Z"),
+            self._run(2, "r", [fp], "2026-01-01T06:00:00Z"),
+            self._run(3, "r", [], "2026-01-01T12:00:00Z"),
+        ]
+        result = track_issues_across_runs(runs)
+        assert len(result) == 1
+        assert result[0]["status"] == "fixed"
+        assert result[0]["fix_duration_hours"] == 6.0
+
+    def test_fix_duration_hours_none_for_recurring(self):
+        fp = self._fp("ddd")
+        runs = [
+            self._run(1, "r", [fp], "2026-01-01T00:00:00Z"),
+            self._run(2, "r", [fp], "2026-01-02T00:00:00Z"),
+        ]
+        result = track_issues_across_runs(runs)
+        assert result[0]["status"] == "recurring"
+        assert result[0]["fix_duration_hours"] is None
+
+
+class TestParseTs:
+    def test_standard_format(self):
+        dt = _parse_ts("2026-01-15T10:30:00Z")
+        assert dt is not None
+        assert dt.year == 2026
+        assert dt.month == 1
+        assert dt.hour == 10
+
+    def test_fractional_seconds_format(self):
+        dt = _parse_ts("2026-01-15T10:30:00.123456Z")
+        assert dt is not None
+        assert dt.year == 2026
+
+    def test_empty_string(self):
+        assert _parse_ts("") is None
+
+    def test_invalid_string(self):
+        assert _parse_ts("not-a-date") is None
