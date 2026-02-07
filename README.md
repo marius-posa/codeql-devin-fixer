@@ -323,26 +323,3 @@ Dashboard UI at http://localhost:5000
 | Fork not created | `github_token` input not set | Pass `github_token: ${{ secrets.GH_PAT }}` in workflow |
 | Dashboard empty | No logs persisted yet | Enable `persist_logs: "true"` and ensure PAT has push access |
 | `No SARIF file found` | CodeQL analysis found no supported languages | Check `languages` input or verify target repo has supported code |
-
-## Fork and Use This Action (Step-by-step)
-
-1. Fork this repository to your GitHub account.
-2. In your fork, add repository secrets under Settings → Secrets and variables → Actions:
-   - GH_PAT: Personal Access Token with repo scope (used for forking/pushing logs)
-   - DEVIN_API_KEY: Your Devin API key
-3. Go to Actions → CodeQL Devin Fixer → Run workflow.
-4. Provide target_repo and any optional inputs, then Run.
-5. The workflow will fork the target (if needed), analyze with CodeQL, dispatch Devin sessions, create PRs, and persist logs to logs/ in your fork.
-
-## Telemetry Dashboard: UI-based secrets (no .env required)
-
-You can run the dashboard and supply credentials via the in-app Settings (stored only in your browser session):
-
-
-
-Then open http://localhost:5000 and click Settings to enter:
-- GitHub Token (PAT with repo scope)
-- Devin API Key
-- Action Repository (e.g., marius-posa/codeql-devin-fixer)
-
-These values are sent as headers for each request and override environment variables. You can still use a .env file as a fallback.
