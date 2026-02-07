@@ -106,6 +106,11 @@ def build_telemetry_record(output_dir: str) -> dict:
                 i.get("id", "") for i in batch.get("issues", [])
             ]
 
+    if issues and not issue_fingerprints:
+        print(
+            "WARNING: issues.json has entries but none contain a fingerprint. "
+            "Cross-run issue tracking will be degraded for this run."
+        )
     run_url = ""
     if action_repo and run_id:
         run_url = f"https://github.com/{action_repo}/actions/runs/{run_id}"
