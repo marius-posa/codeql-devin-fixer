@@ -44,15 +44,29 @@ import time
 import requests
 
 
-def parse_repo_url(url: str) -> tuple[str, str]:
-    """Extract ``(owner, repo)`` from a GitHub HTTPS URL.
+def normalize_repo_url(url: str) -> str:
+    """Normalise a repository reference to a full ``https://github.com/…`` URL.
 
-    Handles trailing slashes and ``.git`` suffixes so callers can pass URLs
-    in any common format.
+    Accepts ``owner/repo`` shorthand, full HTTPS URLs, and URLs with a
+    trailing ``.git`` suffix.  Returns a canonical URL without trailing
+    slashes or ``.git``.
     """
     url = url.strip().rstrip("/")
     if url.endswith(".git"):
         url = url[:-4]
+    if not url.startswith("http://") and not url.startswith("https://"):
+        if re.match(r"^[\w.-]+/[\w.-]+$", url):
+            url = f"https://github.com/{url}"
+    return url
+
+
+def parse_repo_url(url: str) -> tuple[str, str]:
+    """Extract ``(owner, repo)`` from a GitHub HTTPS URL or ``owner/repo`` shorthand.
+
+    Handles trailing slashes, ``.git`` suffixes, and ``owner/repo`` shorthand
+    so callers can pass URLs in any common format.
+    """
+    url = normalize_repo_url(url)
     m = re.match(r"https://github\.com/([\w.-]+)/([\w.-]+)", url)
     if not m:
         print(f"ERROR: cannot parse repo URL: {url}")

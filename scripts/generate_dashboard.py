@@ -600,10 +600,12 @@ def main() -> None:
         print("ERROR: TARGET_REPO is required")
         sys.exit(1)
 
-    # Parse owner/repo from the full GitHub URL
     target_repo = target_repo.strip().rstrip("/")
     if target_repo.endswith(".git"):
         target_repo = target_repo[:-4]
+    if not target_repo.startswith("http://") and not target_repo.startswith("https://"):
+        if re.match(r"^[\w.-]+/[\w.-]+$", target_repo):
+            target_repo = f"https://github.com/{target_repo}"
     m = re.match(r"https://github\.com/([\w.-]+)/([\w.-]+)", target_repo)
     if not m:
         print(f"ERROR: cannot parse repo URL: {target_repo}")

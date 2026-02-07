@@ -3,7 +3,7 @@ description: "Run CodeQL analysis, prioritize security issues, and dispatch Devi
 
 inputs:
   target_repo:
-    description: "GitHub repository URL to analyze (e.g., https://github.com/owner/repo)"
+    description: "GitHub repository to analyze. Accepts full URL (https://github.com/owner/repo) or owner/repo shorthand."
     required: true
   github_token:
     description: "GitHub token for fork operations, log persistence, and dashboard generation. MUST be a Personal Access Token (PAT) with 'repo' scope for fork creation and push. The default GITHUB_TOKEN cannot fork or push to other repos."
@@ -89,19 +89,34 @@ runs:
       shell: bash
       run: pip install requests
 
+    - name: Normalize target repo URL
+      id: normalize
+      shell: bash
+      run: |
+        RAW="${{ inputs.target_repo }}"
+        RAW=$(echo "$RAW" | sed 's|^[[:space:]]*||;s|[[:space:]]*$||;s|/$||')
+        RAW=$(echo "$RAW" | sed 's|\.git$||')
+        if ! echo "$RAW" | grep -qE '^https?://'; then
+          if echo "$RAW" | grep -qE '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$'; then
+            RAW="https://github.com/$RAW"
+          fi
+        fi
+        echo "target_repo=$RAW" >> "$GITHUB_OUTPUT"
+        echo "Normalized target_repo: $RAW"
+
     - name: Fork or verify target repository
       id: fork
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.github_token }}
-        TARGET_REPO: ${{ inputs.target_repo }}
+        TARGET_REPO: ${{ steps.normalize.outputs.target_repo }}
         DEFAULT_BRANCH: ${{ inputs.default_branch }}
         FORK_OWNER: ${{ github.repository_owner }}
       run: |
         if [ -n "$GITHUB_TOKEN" ]; then
           python "${{ github.action_path }}/scripts/fork_repo.py"
         else
-          echo "fork_url=${{ inputs.target_repo }}" >> "$GITHUB_OUTPUT"
+          echo "fork_url=${{ steps.normalize.outputs.target_repo }}" >> "$GITHUB_OUTPUT"
           echo "No GITHUB_TOKEN provided; using original repo URL"
         fi
 
@@ -114,7 +129,7 @@ runs:
         TARGET_DIR="${{ runner.temp }}/target-repo"
         REPO_URL="${{ steps.fork.outputs.fork_url }}"
         if [ -z "$REPO_URL" ]; then
-          REPO_URL="${{ inputs.target_repo }}"
+          REPO_URL="${{ steps.normalize.outputs.target_repo }}"
         fi
         CLONE_URL="$REPO_URL"
         if [ -n "$GITHUB_TOKEN" ]; then

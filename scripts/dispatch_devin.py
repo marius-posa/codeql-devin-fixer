@@ -58,10 +58,16 @@ RETRY_DELAY = 5
 
 
 def validate_repo_url(url: str) -> str:
-    """Sanitise and loosely validate a GitHub repository URL."""
+    """Sanitise, normalise, and loosely validate a GitHub repository URL.
+
+    Accepts ``owner/repo`` shorthand in addition to full HTTPS URLs.
+    """
     url = url.strip().rstrip("/")
     if url.endswith(".git"):
         url = url[:-4]
+    if not url.startswith("http://") and not url.startswith("https://"):
+        if re.match(r"^[\w.-]+/[\w.-]+$", url):
+            url = f"https://github.com/{url}"
     pattern = r"^https://github\.com/[\w.-]+/[\w.-]+$"
     if not re.match(pattern, url):
         print(f"WARNING: repo URL may be invalid: {url}")
