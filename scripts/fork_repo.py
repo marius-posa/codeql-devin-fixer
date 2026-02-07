@@ -105,6 +105,10 @@ def main() -> None:
     default_branch = os.environ.get("DEFAULT_BRANCH", "main")
     fork_owner_hint = os.environ.get("FORK_OWNER", "")
 
+    if not token:
+        print("ERROR: GITHUB_TOKEN is required for fork operations.")
+        print("Set the github_token input to a Personal Access Token (PAT) with 'repo' scope.")
+        sys.exit(1)
     if not target_repo:
         print("ERROR: TARGET_REPO is required")
         sys.exit(1)
@@ -113,10 +117,9 @@ def main() -> None:
 
     my_user = resolve_owner(token, fork_owner_hint)
     if not my_user:
-        print("WARNING: Cannot determine fork owner. Falling back to original repo.")
-        fork_url = f"https://github.com/{owner}/{repo}"
-        _write_outputs(fork_url, owner, repo)
-        return
+        print("ERROR: Cannot determine fork owner.")
+        print("Set FORK_OWNER env var or use a PAT with 'repo' scope.")
+        sys.exit(1)
 
     print(f"Fork owner: {my_user}")
     print(f"Target repo: {owner}/{repo}")
@@ -136,11 +139,22 @@ def main() -> None:
                 fork_url = fork_data["html_url"]
                 sync_fork(token, my_user, repo, default_branch)
             except requests.exceptions.RequestException as e:
-                print(f"WARNING: Could not create fork: {e}")
-                print("The default GITHUB_TOKEN cannot create forks.")
-                print("To enable automatic forking, add a PAT with 'repo' scope as a secret.")
-                print("Falling back to original repo URL.")
-                fork_url = f"https://github.com/{owner}/{repo}"
+                print(f"ERROR: Could not create fork: {e}")
+                print()
+                print("The default GITHUB_TOKEN (Actions installation token) cannot create forks.")
+                print("You need a Personal Access Token (PAT) with 'repo' scope.")
+                print()
+                print("Setup instructions:")
+                print("  1. Go to https://github.com/settings/tokens")
+                print("  2. Generate new token (classic) with 'repo' scope")
+                print("  3. Copy the token")
+                print("  4. Go to your repo Settings > Secrets and variables > Actions")
+                print("  5. Create a new secret named GH_PAT with the token value")
+                print("  6. In your workflow, change:")
+                print("       github_token: ${{ secrets.GITHUB_TOKEN }}")
+                print("     to:")
+                print("       github_token: ${{ secrets.GH_PAT }}")
+                sys.exit(1)
 
     _write_outputs(fork_url, my_user, repo)
 

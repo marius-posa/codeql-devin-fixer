@@ -6,7 +6,7 @@ inputs:
     description: "GitHub repository URL to analyze (e.g., https://github.com/owner/repo)"
     required: true
   github_token:
-    description: "GitHub token for fork operations, log persistence, and dashboard generation"
+    description: "GitHub token for fork operations, log persistence, and dashboard generation. MUST be a Personal Access Token (PAT) with 'repo' scope for fork creation and push. The default GITHUB_TOKEN cannot fork or push to other repos."
     required: false
     default: ""
   languages:
