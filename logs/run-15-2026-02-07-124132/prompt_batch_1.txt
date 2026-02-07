@@ -1,0 +1,59 @@
+Fix 3 CodeQL security issue(s) in https://github.com/marius-posa/codeql-devin-fixer (branch: main).
+
+Issue IDs: CQLF-R15-0001, CQLF-R15-0002, CQLF-R15-0003
+Category: other | Severity: HIGH (max CVSS: 7.8)
+
+Issues to fix:
+
+### CQLF-R15-0001: py/incomplete-url-substring-sanitization (py/incomplete-url-substring-sanitization)
+- Severity: HIGH (7.8)
+- CWE: cwe-20
+- Location(s): telemetry/app.py:284
+- Description: The string [github.com/](1) may be at an arbitrary position in the sanitized URL.
+- Rule: Incomplete URL substring sanitization
+- Guidance: # Incomplete URL substring sanitization
+Sanitizing untrusted URLs is a common technique for preventing attacks such as request forgeries and malicious redirections. Usually, this is done by checking that the host of a URL is in a set of allowed hosts.
+
+However, treating the URL as a string and checking if one of the allowed hosts is a substring of the URL is very prone to errors. Malicious URLs can bypass such security checks by embedding one of the allowed hosts in an unexpected location.
+
+Even
+
+### CQLF-R15-0002: py/incomplete-url-substring-sanitization (py/incomplete-url-substring-sanitization)
+- Severity: HIGH (7.8)
+- CWE: cwe-20
+- Location(s): scripts/persist_telemetry.py:47
+- Description: The string [github.com/](1) may be at an arbitrary position in the sanitized URL.
+- Rule: Incomplete URL substring sanitization
+- Guidance: # Incomplete URL substring sanitization
+Sanitizing untrusted URLs is a common technique for preventing attacks such as request forgeries and malicious redirections. Usually, this is done by checking that the host of a URL is in a set of allowed hosts.
+
+However, treating the URL as a string and checking if one of the allowed hosts is a substring of the URL is very prone to errors. Malicious URLs can bypass such security checks by embedding one of the allowed hosts in an unexpected location.
+
+Even
+
+### CQLF-R15-0003: py/incomplete-url-substring-sanitization (py/incomplete-url-substring-sanitization)
+- Severity: HIGH (7.8)
+- CWE: cwe-20
+- Location(s): scripts/persist_logs.py:123
+- Description: The string [github.com](1) may be at an arbitrary position in the sanitized URL.
+- Rule: Incomplete URL substring sanitization
+- Guidance: # Incomplete URL substring sanitization
+Sanitizing untrusted URLs is a common technique for preventing attacks such as request forgeries and malicious redirections. Usually, this is done by checking that the host of a URL is in a set of allowed hosts.
+
+However, treating the URL as a string and checking if one of the allowed hosts is a substring of the URL is very prone to errors. Malicious URLs can bypass such security checks by embedding one of the allowed hosts in an unexpected location.
+
+Even
+
+Instructions:
+1. Clone https://github.com/marius-posa/codeql-devin-fixer and create a new branch from main.
+2. Fix ALL the issues listed above. Track which issue IDs you are fixing.
+3. Ensure fixes don't break existing functionality.
+4. Run existing tests if available to verify.
+5. Create a PR on https://github.com/marius-posa/codeql-devin-fixer with a clear description listing each issue ID fixed.
+6. Title the PR exactly: 'fix(CQLF-R15-0001,CQLF-R15-0002,CQLF-R15-0003): resolve other security issues'
+7. In the PR body, list each issue ID (CQLF-R15-0001, CQLF-R15-0002, CQLF-R15-0003) and describe the fix applied.
+
+Files to focus on:
+- scripts/persist_logs.py
+- scripts/persist_telemetry.py
+- telemetry/app.py
