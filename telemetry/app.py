@@ -518,11 +518,14 @@ def api_repo_detail(repo_url):
     page, per_page = _get_pagination()
     sorted_runs = sorted(repo_runs, key=lambda r: r.get("run_number", 0), reverse=True)
 
+    issues = _track_issues_across_runs(repo_runs)
+
     return jsonify({
         "stats": stats,
         "runs": _paginate(sorted_runs, page, per_page),
         "sessions": _paginate(repo_sessions, page, per_page),
         "prs": _paginate(repo_prs, page, per_page),
+        "issues": _paginate(issues, page, per_page),
     })
 
 

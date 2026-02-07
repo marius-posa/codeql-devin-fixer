@@ -125,6 +125,11 @@ a:hover { text-decoration: underline; }
 .badge-running { background: #3a3a1a; color: var(--accent-orange); }
 .badge-error { background: #4a1a1a; color: var(--accent-red); }
 .badge-unknown { background: var(--bg-tertiary); color: var(--text-muted); }
+.badge-recurring { background: #3a2a1a; color: var(--accent-orange); }
+.badge-new { background: #1a2a3a; color: var(--accent-cyan); }
+.badge-fixed { background: #1a3a2a; color: var(--accent-green); }
+.issue-summary { display: flex; gap: 16px; margin-bottom: 12px; font-size: 13px; }
+.issue-summary .count { font-weight: 600; font-size: 16px; }
 
 .empty-state {
   text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 14px;
@@ -195,6 +200,14 @@ a:hover { text-decoration: underline; }
     </div>
     <div class="panel-body" style="overflow-x:auto;" id="prs-table-container"></div>
   </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      Issue Tracking
+      <span id="issues-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+    </div>
+    <div class="panel-body" style="overflow-x:auto;" id="issues-table-container"></div>
+  </div>
 </div>
 
 <script>
@@ -226,6 +239,9 @@ function badgeClass(status) {
   if (s === 'finished' || s === 'stopped') return 'badge-finished';
   if (s === 'running' || s === 'started') return 'badge-running';
   if (s.startsWith('error')) return 'badge-error';
+  if (s === 'recurring') return 'badge-recurring';
+  if (s === 'new') return 'badge-new';
+  if (s === 'fixed') return 'badge-fixed';
   return 'badge-unknown';
 }
 
@@ -355,6 +371,41 @@ function renderPrsTable(prs) {
   </table>`;
 }
 
+function renderIssuesTable(issues) {
+  const el = document.getElementById('issues-table-container');
+  document.getElementById('issues-count').textContent = issues.length;
+  if (issues.length === 0) {
+    el.innerHTML = '<div class="empty-state">No issue fingerprints available yet.</div>';
+    return;
+  }
+  const recurring = issues.filter(i => i.status === 'recurring').length;
+  const newCount = issues.filter(i => i.status === 'new').length;
+  const fixed = issues.filter(i => i.status === 'fixed').length;
+  let html = `<div class="issue-summary">
+    <div><span class="badge badge-recurring">recurring</span> <span class="count">${recurring}</span></div>
+    <div><span class="badge badge-new">new</span> <span class="count">${newCount}</span></div>
+    <div><span class="badge badge-fixed">fixed</span> <span class="count">${fixed}</span></div>
+  </div>`;
+  html += `<table>
+    <thead><tr>
+      <th>Status</th><th>Rule</th><th>Severity</th><th>Category</th>
+      <th>File</th><th>Line</th><th>First Seen</th><th>Last Seen</th><th>Runs</th>
+    </tr></thead>
+    <tbody>${issues.map(i => `<tr>
+      <td><span class="badge ${badgeClass(i.status)}">${i.status}</span></td>
+      <td style="font-family:monospace;font-size:11px">${i.rule_id || i.fingerprint.slice(0,12)+'...'}</td>
+      <td><span class="badge ${badgeClass(i.severity_tier)}">${i.severity_tier || '-'}</span></td>
+      <td>${i.cwe_family || '-'}</td>
+      <td style="font-family:monospace;font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${i.file}">${i.file ? i.file.split('/').pop() : '-'}</td>
+      <td>${i.start_line || '-'}</td>
+      <td>Run #${i.first_seen_run}</td>
+      <td>Run #${i.last_seen_run}</td>
+      <td>${i.appearances}x</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+  el.innerHTML = html;
+}
+
 async function fetchRepoData() {
   setStatus('Loading data...');
   try {
@@ -366,6 +417,7 @@ async function fetchRepoData() {
     renderRunsTable(data.runs.items || []);
     renderSessionsTable(data.sessions.items || []);
     renderPrsTable(data.prs.items || []);
+    renderIssuesTable(data.issues.items || []);
     setStatus('Ready');
     setUpdated();
   } catch (e) {
