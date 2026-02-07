@@ -179,12 +179,19 @@ def create_devin_session(
     issue_ids = [iss.get("id", "") for iss in batch.get("issues", []) if iss.get("id")]
     ids_tag = ",".join(issue_ids[:6]) if issue_ids else f"batch-{batch['batch_id']}"
 
+    run_number = os.environ.get("RUN_NUMBER", "")
+    run_id = os.environ.get("RUN_ID", "")
+
     tags = [
         "codeql-fix",
         f"severity-{batch['severity_tier']}",
         f"cwe-{batch['cwe_family']}",
         f"batch-{batch['batch_id']}",
     ]
+    if run_number:
+        tags.append(f"run-{run_number}")
+    if run_id:
+        tags.append(f"run-id-{run_id}")
     for iid in issue_ids:
         tags.append(iid)
 

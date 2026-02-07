@@ -187,6 +187,8 @@ def aggregate_sessions(runs: list[dict]) -> list[dict]:
                 "target_repo": run.get("target_repo", ""),
                 "fork_url": run.get("fork_url", ""),
                 "run_number": run.get("run_number"),
+                "run_id": run.get("run_id", ""),
+                "run_url": run.get("run_url", ""),
                 "run_label": run.get("run_label", ""),
                 "timestamp": run.get("timestamp", ""),
                 "pr_url": s.get("pr_url", ""),
@@ -313,9 +315,8 @@ def _fetch_prs_from_github(runs: list[dict]) -> list[dict]:
 
                     has_issue_ref = bool(re.search(r"CQLF-R\d+-\d+", title + body))
                     matched_session = _match_pr_to_session(title + body, session_ids)
-                    is_devin_pr = "devin" in user_login.lower()
 
-                    if not has_issue_ref and not matched_session and not is_devin_pr:
+                    if not has_issue_ref and not matched_session:
                         continue
                     if html_url in seen_urls:
                         continue

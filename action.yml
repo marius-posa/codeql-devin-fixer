@@ -291,6 +291,8 @@ runs:
         DEFAULT_BRANCH: ${{ inputs.default_branch }}
         MAX_ACU_PER_SESSION: ${{ inputs.max_acu_per_session }}
         DRY_RUN: ${{ inputs.dry_run }}
+        RUN_NUMBER: ${{ github.run_number }}
+        RUN_ID: ${{ github.run_id }}
       run: |
         python "${{ github.action_path }}/scripts/dispatch_devin.py"\
           "${{ runner.temp }}/codeql-output/batches.json" \
@@ -317,6 +319,7 @@ runs:
         TARGET_REPO: ${{ env.SCAN_REPO_URL }}
         FORK_URL: ${{ steps.fork.outputs.fork_url }}
         RUN_NUMBER: ${{ github.run_number }}
+        RUN_ID: ${{ github.run_id }}
         RUN_LABEL: ${{ steps.parse.outputs.run_label }}
       run: |
         python "${{ github.action_path }}/scripts/persist_telemetry.py" \
