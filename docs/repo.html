@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Repo Detail - Telemetry</title>
+<link rel="stylesheet" href="static/shared.css">
+</head>
+<body>
+<div class="container">
+  <div class="breadcrumb">
+    <a href="index.html">Dashboard</a> / <span id="breadcrumb-repo"></span>
+  </div>
+
+  <header>
+    <h1><span id="header-repo"></span></h1>
+    <div class="header-actions">
+      <button class="btn btn-primary" onclick="openDispatchModalRepo()" style="background:#1f6feb;border-color:#388bfd">Run Action</button>
+      <a id="gh-link" href="#" target="_blank" class="btn">View on GitHub</a>
+      <a href="index.html" class="btn">Back to Dashboard</a>
+      <button class="btn" onclick="openSettingsModal()" style="font-size:16px" title="Settings">&#9881;</button>
+    </div>
+  </header>
+
+  <div class="status-bar">
+    <span id="status-text">Loading...</span>
+    <span id="last-updated"></span>
+  </div>
+
+  <div class="metrics-grid" id="metrics-grid"></div>
+
+  <div class="panel">
+    <div class="panel-header">Security Health Trend</div>
+    <div class="panel-body" id="trend-chart"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+  </div>
+
+  <div class="grid-2">
+    <div class="panel">
+      <div class="panel-header">Severity Breakdown</div>
+      <div class="panel-body" id="severity-chart"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">Category Breakdown</div>
+      <div class="panel-body" id="category-chart"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      Run History
+      <span id="runs-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+    </div>
+    <div class="panel-body" style="overflow-x:auto;" id="runs-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      Devin Sessions
+      <span id="sessions-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+    </div>
+    <div class="panel-body" style="overflow-x:auto;" id="sessions-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      Pull Requests
+      <span id="prs-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+    </div>
+    <div class="panel-body" style="overflow-x:auto;" id="prs-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      Issue Tracking
+      <span id="issues-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+    </div>
+    <div class="panel-body" style="overflow-x:auto;" id="issues-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="dispatch-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Trigger CodeQL Fixer Action</h2>
+      <button class="modal-close" onclick="closeDispatchModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="warning-banner" id="dispatch-warning"></div>
+      <div class="form-group">
+        <label for="d-target-repo">Target Repository URL *</label>
+        <input class="form-input" id="d-target-repo" type="text" value="" onchange="checkPreflightStatic()">
+        <div class="hint">GitHub repository URL to analyze</div>
+      </div>
+      <div class="form-group">
+        <label for="d-languages">Languages</label>
+        <input class="form-input" id="d-languages" type="text" value="" placeholder="e.g. javascript,python">
+        <div class="hint">Comma-separated CodeQL languages (leave empty for auto-detect)</div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="d-queries">Query Suite</label>
+          <select class="form-input" id="d-queries">
+            <option value="security-extended" selected>security-extended</option>
+            <option value="security-and-quality">security-and-quality</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="d-severity">Severity Threshold</label>
+          <select class="form-input" id="d-severity">
+            <option value="critical">critical</option>
+            <option value="high">high</option>
+            <option value="medium">medium</option>
+            <option value="low" selected>low</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="d-batch-size">Batch Size</label>
+          <input class="form-input" id="d-batch-size" type="number" value="5" min="1">
+          <div class="hint">Max issues per Devin session</div>
+        </div>
+        <div class="form-group">
+          <label for="d-max-sessions">Max Sessions</label>
+          <input class="form-input" id="d-max-sessions" type="number" value="5" min="1">
+          <div class="hint">Max Devin sessions to create</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="d-default-branch">Default Branch</label>
+        <input class="form-input" id="d-default-branch" type="text" value="main">
+        <div class="hint">Default branch of the target repo</div>
+      </div>
+      <div class="form-group">
+        <label for="d-include-paths">Include Paths</label>
+        <input class="form-input" id="d-include-paths" type="text" value="" placeholder="e.g. src/**,lib/**">
+        <div class="hint">Optional comma-separated globs to include</div>
+      </div>
+      <div class="form-group">
+        <label for="d-exclude-paths">Exclude Paths</label>
+        <input class="form-input" id="d-exclude-paths" type="text" value="" placeholder="e.g. test/**,vendor/**">
+        <div class="hint">Optional comma-separated globs to exclude</div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-check">
+            <input type="checkbox" id="d-persist-logs" checked>
+            <span>Persist Logs</span>
+          </label>
+          <div class="hint">Keep logs in GitHub</div>
+        </div>
+        <div class="form-group">
+          <label class="form-check">
+            <input type="checkbox" id="d-dry-run">
+            <span>Dry Run</span>
+          </label>
+          <div class="hint">Generate prompts only (no Devin sessions)</div>
+        </div>
+      </div>
+      <div class="dispatch-result" id="dispatch-result"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeDispatchModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitDispatchStatic()" id="btn-submit-dispatch">Dispatch Workflow</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="settings-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Settings</h2>
+      <button class="modal-close" onclick="closeSettingsModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label for="s-gh-token">GitHub Token</label>
+        <input class="form-input" id="s-gh-token" type="password" placeholder="ghp_...">
+        <div class="hint">PAT with <code>repo</code> scope. Needed for PR discovery, refresh, and workflow dispatch. Stored in your browser only.</div>
+      </div>
+      <div class="form-group">
+        <label for="s-devin-key">Devin API Key</label>
+        <input class="form-input" id="s-devin-key" type="password" placeholder="Bearer token">
+        <div class="hint">Devin API bearer token for polling session statuses. Stored in your browser only.</div>
+      </div>
+      <div class="form-group">
+        <label for="s-action-repo">Action Repository</label>
+        <input class="form-input" id="s-action-repo" type="text" placeholder="owner/repo">
+        <div class="hint">The repo containing the telemetry data, e.g. <code>marius-posa/codeql-devin-fixer</code></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeSettingsModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveSettings()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="static/api.js"></script>
+<script src="static/shared.js"></script>
+<script>
+const params = new URLSearchParams(window.location.search);
+const REPO_SHORT = params.get('repo') || '';
+const REPO_URL = 'https://github.com/' + REPO_SHORT;
+
+window._cachedRuns = [];
+window._cachedPrs = [];
+window._cachedSessions = [];
+
+document.getElementById('breadcrumb-repo').textContent = REPO_SHORT;
+document.getElementById('header-repo').textContent = REPO_SHORT;
+document.getElementById('gh-link').href = REPO_URL;
+document.title = REPO_SHORT + ' - Telemetry';
+
+function openDispatchModalRepo() {
+  openDispatchModal(REPO_URL);
+}
+
+function renderMetrics(s) {
+  const grid = document.getElementById('metrics-grid');
+  const fixRate = s.fix_rate || 0;
+  const cards = [
+    { label: 'Total Runs', value: s.total_runs || 0, cls: 'cyan' },
+    { label: 'Issues Found', value: s.total_issues || 0, cls: 'orange' },
+    { label: 'Devin Sessions', value: s.sessions_created || 0, cls: 'purple',
+      sub: (s.sessions_finished || 0) + ' finished' },
+    { label: 'PRs Created', value: s.prs_total || 0, cls: 'blue',
+      sub: (s.prs_merged || 0) + ' merged, ' + (s.prs_open || 0) + ' open' },
+    { label: 'Fix Rate', value: fixRate + '%', cls: fixRateColorClass(fixRate),
+      sub: 'merged / total PRs' },
+  ];
+  grid.innerHTML = cards.map(function(c) {
+    return '<div class="metric-card ' + c.cls + '">'
+      + '<div class="label">' + c.label + '</div>'
+      + '<div class="value">' + c.value + '</div>'
+      + (c.sub ? '<div class="sub">' + c.sub + '</div>' : '')
+      + '</div>';
+  }).join('');
+}
+
+function renderRunsTable(runs) {
+  const el = document.getElementById('runs-table-container');
+  document.getElementById('runs-count').textContent = runs.length;
+  if (runs.length === 0) {
+    el.innerHTML = '<div class="empty-state">No runs recorded yet.</div>';
+    return;
+  }
+  const sorted = [...runs].sort(function(a, b) { return (b.run_number || 0) - (a.run_number || 0); });
+  let rows = '';
+  sorted.forEach(function(r) {
+    rows += '<tr>'
+      + '<td><strong>#' + (r.run_number || '-') + '</strong></td>'
+      + '<td>' + (r.issues_found || 0) + '</td>'
+      + '<td>' + (r.batches_created || 0) + '</td>'
+      + '<td>' + (r.sessions || []).length + '</td>'
+      + '<td>' + formatDate(r.timestamp) + '</td>'
+      + '</tr>';
+  });
+  el.innerHTML = '<table><thead><tr>'
+    + '<th>Run</th><th>Issues</th><th>Batches</th><th>Sessions</th><th>Timestamp</th>'
+    + '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+function renderTrendChart(container, runs) {
+  if (!runs || runs.length === 0) {
+    container.innerHTML = '<div class="empty-state">No run data available yet</div>';
+    return;
+  }
+  const pts = runs.map(function(r) { return { run: r.run_number || 0, issues: r.issues_found || 0 }; })
+    .sort(function(a, b) { return a.run - b.run; });
+  if (pts.length === 0) {
+    container.innerHTML = '<div class="empty-state">No run data available yet</div>';
+    return;
+  }
+  const maxY = Math.max(...pts.map(function(p) { return p.issues; }), 1);
+  const W = 800, H = 280, PAD_L = 55, PAD_R = 20, PAD_T = 20, PAD_B = 50;
+  const plotW = W - PAD_L - PAD_R, plotH = H - PAD_T - PAD_B;
+  const xScale = pts.length > 1
+    ? function(i) { return PAD_L + (i / (pts.length - 1)) * plotW; }
+    : function() { return PAD_L + plotW / 2; };
+  const yScale = function(v) { return PAD_T + plotH - (v / maxY) * plotH; };
+
+  let gridSvg = '';
+  for (let i = 0; i <= 5; i++) {
+    const val = Math.round((maxY / 5) * i), y = yScale(val);
+    gridSvg += '<line x1="' + PAD_L + '" y1="' + y + '" x2="' + (W - PAD_R) + '" y2="' + y + '" stroke="#30363d" stroke-dasharray="4,4"/>';
+    gridSvg += '<text x="' + (PAD_L - 8) + '" y="' + (y + 4) + '" fill="#8b949e" font-size="11" text-anchor="end">' + val + '</text>';
+  }
+  let xLabelSvg = '';
+  const maxLabels = Math.min(15, Math.max(5, Math.floor(W / 60)));
+  const step = Math.max(1, Math.ceil(pts.length / maxLabels));
+  for (let i = 0; i < pts.length; i += step) {
+    xLabelSvg += '<text x="' + xScale(i) + '" y="' + (H - PAD_B + 20) + '" fill="#8b949e" font-size="11" text-anchor="middle">#' + pts[i].run + '</text>';
+  }
+  const color = '#58a6ff';
+  let lineSvg = '', dotsSvg = '';
+  if (pts.length === 1) {
+    dotsSvg = '<circle cx="' + xScale(0) + '" cy="' + yScale(pts[0].issues) + '" r="5" fill="' + color + '"><title>Run #' + pts[0].run + ': ' + pts[0].issues + ' issues</title></circle>';
+  } else {
+    const d = pts.map(function(p, i) { return (i===0?'M':'L') + xScale(i).toFixed(1) + ',' + yScale(p.issues).toFixed(1); }).join(' ');
+    lineSvg = '<path d="' + d + '" fill="none" stroke="' + color + '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+    pts.forEach(function(p, i) {
+      dotsSvg += '<circle cx="' + xScale(i) + '" cy="' + yScale(p.issues) + '" r="4" fill="' + color + '" stroke="var(--bg-secondary)" stroke-width="2"><title>Run #' + p.run + ': ' + p.issues + ' issues</title></circle>';
+    });
+  }
+  const axisLabelY = PAD_T + plotH / 2;
+  container.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="max-height:340px" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">'
+    + gridSvg
+    + '<line x1="' + PAD_L + '" y1="' + PAD_T + '" x2="' + PAD_L + '" y2="' + (PAD_T + plotH) + '" stroke="#30363d"/>'
+    + '<line x1="' + PAD_L + '" y1="' + (PAD_T + plotH) + '" x2="' + (W - PAD_R) + '" y2="' + (PAD_T + plotH) + '" stroke="#30363d"/>'
+    + '<text x="' + (PAD_L + plotW / 2) + '" y="' + (H - PAD_B + 38) + '" fill="#6e7681" font-size="12" text-anchor="middle">Action Runs</text>'
+    + '<text x="14" y="' + axisLabelY + '" fill="#6e7681" font-size="12" text-anchor="middle" transform="rotate(-90,14,' + axisLabelY + ')">Issues Found</text>'
+    + xLabelSvg + lineSvg + dotsSvg + '</svg>';
+}
+
+async function fetchRepoData() {
+  setStatus('Loading data...');
+  try {
+    const fullUrl = REPO_URL;
+    const runs = await loadRuns(false);
+    window._cachedRuns = runs;
+
+    const sessions = aggregateSessions(runs);
+    window._cachedSessions = sessions;
+
+    const prs = await fetchPrsFromGitHub(runs);
+    window._cachedPrs = prs;
+    linkPrsToSessions(sessions, prs);
+
+    const repoRuns = runs.filter(function(r) { return (r.target_repo || '') === fullUrl; });
+    const repoSessions = sessions.filter(function(s) { return (s.target_repo || '') === fullUrl; });
+
+    const allRepos = buildReposDict(runs, sessions, prs);
+    let repoInfo = null;
+    for (const r of allRepos) {
+      if (r.repo === fullUrl) { repoInfo = r; break; }
+    }
+    const forkUrl = repoInfo ? repoInfo.fork_url : '';
+    const repoPrs = prs.filter(function(p) { return forkUrl && p.repo && forkUrl.indexOf(p.repo) !== -1; });
+
+    const prMerged = repoPrs.filter(function(p) { return p.merged; }).length;
+    const prOpen = repoPrs.filter(function(p) { return p.state === 'open'; }).length;
+
+    const severityAgg = {};
+    const categoryAgg = {};
+    for (const run of repoRuns) {
+      for (const [tier, count] of Object.entries(run.severity_breakdown || {})) {
+        severityAgg[tier] = (severityAgg[tier] || 0) + count;
+      }
+      for (const [cat, count] of Object.entries(run.category_breakdown || {})) {
+        categoryAgg[cat] = (categoryAgg[cat] || 0) + count;
+      }
+    }
+
+    const sessionsCreated = repoSessions.filter(function(s) { return s.session_id; }).length;
+    const sessionsFinished = repoSessions.filter(function(s) { return s.status === 'finished' || s.status === 'stopped'; }).length;
+
+    const repoStats = {
+      total_runs: repoRuns.length,
+      total_issues: repoRuns.reduce(function(sum, r) { return sum + (r.issues_found || 0); }, 0),
+      sessions_created: sessionsCreated,
+      sessions_finished: sessionsFinished,
+      prs_total: repoPrs.length,
+      prs_merged: prMerged,
+      prs_open: prOpen,
+      prs_closed: repoPrs.filter(function(p) { return p.state === 'closed' && !p.merged; }).length,
+      fix_rate: Math.round(prMerged / Math.max(repoPrs.length, 1) * 1000) / 10,
+      severity_breakdown: severityAgg,
+      category_breakdown: categoryAgg,
+    };
+
+    const repoIssues = trackIssuesAcrossRuns(repoRuns);
+
+    renderMetrics(repoStats);
+    renderTrendChart(document.getElementById('trend-chart'), repoRuns);
+    renderBarChart(document.getElementById('severity-chart'), repoStats.severity_breakdown);
+    renderBarChart(document.getElementById('category-chart'), repoStats.category_breakdown);
+    renderRunsTable(repoRuns);
+    renderSessionsTable(repoSessions, 'sessions-table-container', 'sessions-count');
+    renderPrsTable(repoPrs, 'prs-table-container', 'prs-count');
+    renderIssuesTable(repoIssues, 'issues-table-container', 'issues-count');
+    setStatus('Ready');
+    setUpdated();
+  } catch (e) {
+    setStatus('Error loading data: ' + e.message);
+    console.error(e);
+  }
+}
+
+async function init() {
+  if (!REPO_SHORT) {
+    setStatus('No repo specified. Go back to the dashboard.');
+    return;
+  }
+  await fetchRepoData();
+}
+init();
+</script>
+</body>
+</html>
