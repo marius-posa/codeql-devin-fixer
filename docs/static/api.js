@@ -3,6 +3,8 @@ const DEVIN_API_BASE = 'https://api.devin.ai/v1';
 const GH_API = 'https://api.github.com';
 
 var _encKey = null;
+var _configCache = { githubToken: '', devinApiKey: '' };
+
 function _getEncKey() {
   if (_encKey) return Promise.resolve(_encKey);
   var raw = localStorage.getItem('_ek');
@@ -53,38 +55,59 @@ function _decryptValue(stored) {
   }
 }
 
+function _initConfigCache() {
+  var legacyToken = localStorage.getItem('gh_token') || '';
+  var legacyKey = localStorage.getItem('devin_api_key') || '';
+  if (legacyToken) _configCache.githubToken = legacyToken;
+  if (legacyKey) _configCache.devinApiKey = legacyKey;
+
+  var encToken = localStorage.getItem('gh_token_enc');
+  var encKey = localStorage.getItem('devin_api_key_enc');
+  if (encToken || encKey) {
+    var p1 = _decryptValue(encToken);
+    var p2 = _decryptValue(encKey);
+    Promise.all([p1, p2]).then(function(vals) {
+      if (vals[0]) _configCache.githubToken = vals[0];
+      if (vals[1]) _configCache.devinApiKey = vals[1];
+      if (legacyToken) {
+        _encryptValue(legacyToken).then(function(enc) {
+          localStorage.setItem('gh_token_enc', enc);
+          localStorage.removeItem('gh_token');
+        });
+      }
+      if (legacyKey) {
+        _encryptValue(legacyKey).then(function(enc) {
+          localStorage.setItem('devin_api_key_enc', enc);
+          localStorage.removeItem('devin_api_key');
+        });
+      }
+    }).catch(function() {});
+  }
+}
+_initConfigCache();
+
 function getConfig() {
   return {
-    githubToken: localStorage.getItem('gh_token') || '',
-    devinApiKey: localStorage.getItem('devin_api_key') || '',
+    githubToken: _configCache.githubToken || localStorage.getItem('gh_token') || '',
+    devinApiKey: _configCache.devinApiKey || localStorage.getItem('devin_api_key') || '',
     actionRepo: localStorage.getItem('action_repo') || ACTION_REPO_DEFAULT,
   };
 }
 
-function getConfigAsync() {
-  var token = _decryptValue(localStorage.getItem('gh_token_enc'));
-  var apiKey = _decryptValue(localStorage.getItem('devin_api_key_enc'));
-  return Promise.all([token, apiKey]).then(function(vals) {
-    return {
-      githubToken: vals[0] || localStorage.getItem('gh_token') || '',
-      devinApiKey: vals[1] || localStorage.getItem('devin_api_key') || '',
-      actionRepo: localStorage.getItem('action_repo') || ACTION_REPO_DEFAULT,
-    };
-  });
-}
-
 function saveConfig(cfg) {
   if (cfg.githubToken !== undefined) {
+    _configCache.githubToken = cfg.githubToken;
     _encryptValue(cfg.githubToken).then(function(enc) {
       localStorage.setItem('gh_token_enc', enc);
       localStorage.removeItem('gh_token');
-    });
+    }).catch(function() {});
   }
   if (cfg.devinApiKey !== undefined) {
+    _configCache.devinApiKey = cfg.devinApiKey;
     _encryptValue(cfg.devinApiKey).then(function(enc) {
       localStorage.setItem('devin_api_key_enc', enc);
       localStorage.removeItem('devin_api_key');
-    });
+    }).catch(function() {});
   }
   if (cfg.actionRepo !== undefined) localStorage.setItem('action_repo', cfg.actionRepo);
 }
