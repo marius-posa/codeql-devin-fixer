@@ -342,22 +342,42 @@ async function pollSessions() {
   const btn = document.getElementById('btn-poll');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Polling...';
-  setStatus('Polling Devin sessions & fetching PRs...');
+  setStatus('Triggering server-side session poll...');
   try {
-    const sessions = aggregateSessions(allRuns);
-    const updated = await pollDevinSessions(sessions);
-    allSessions = updated;
-    window._cachedSessions = updated;
+    var result = await triggerPollWorkflow();
+    if (result.error) {
+      setStatus('Poll error: ' + result.error);
+      btn.disabled = false;
+      btn.textContent = 'Poll Sessions';
+      return;
+    }
+    setStatus('Poll workflow dispatched, waiting for completion...');
+    var waitResult = await waitForPollWorkflow(120000);
+    if (waitResult.error) {
+      setStatus('Poll warning: ' + waitResult.error);
+    } else {
+      setStatus('Poll workflow completed (' + (waitResult.conclusion || 'done') + '). Refreshing data...');
+    }
 
-    const prs = await fetchPrsFromGitHub(allRuns);
+    _runsCache = null;
+    const runs = await loadRuns(true);
+    allRuns = runs;
+    window._cachedRuns = runs;
+
+    const sessions = aggregateSessions(runs);
+    allSessions = sessions;
+    window._cachedSessions = sessions;
+
+    const prs = await fetchPrsFromGitHub(runs);
     allPrs = prs;
     window._cachedPrs = prs;
-    linkPrsToSessions(updated, prs);
+    linkPrsToSessions(sessions, prs);
 
-    stats = aggregateStats(allRuns, updated, prs);
-    allRepos = buildReposDict(allRuns, updated, prs);
+    stats = aggregateStats(runs, sessions, prs);
+    allRepos = buildReposDict(runs, sessions, prs);
+    allIssues = trackIssuesAcrossRuns(runs);
     renderAll();
-    setStatus('Polled ' + updated.length + ' sessions, found ' + prs.length + ' PRs');
+    setStatus('Polled ' + sessions.length + ' sessions, found ' + prs.length + ' PRs');
     setUpdated();
   } catch (e) {
     setStatus('Poll error: ' + e.message);
