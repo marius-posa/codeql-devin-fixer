@@ -1,0 +1,74 @@
+{
+  "schema_version": "1.0",
+  "batches": [
+    {
+      "batch_id": 1,
+      "cwe_family": "info-disclosure",
+      "severity_tier": "high",
+      "max_severity_score": 7.5,
+      "issue_count": 2,
+      "file_count": 2,
+      "issues": [
+        {
+          "id": "CQLF-R22-0001",
+          "rule_id": "js/clear-text-storage-of-sensitive-data",
+          "rule_name": "js/clear-text-storage-of-sensitive-data",
+          "rule_description": "Clear text storage of sensitive information",
+          "rule_help": "# Clear text storage of sensitive information\nSensitive information that is stored unencrypted is accessible to an attacker who gains access to the storage. This is particularly important for cookies, which are stored on the machine of the end-user.\n\n\n## Recommendation\nEnsure that sensitive information is always encrypted before being stored. If possible, avoid placing sensitive information in cookies altogether. Instead, prefer storing, in the cookie, a key that can be used to look up the sensitive information.\n\nIn general, decrypt sensitive information only at the point where it is necessary for it to be used in cleartext.\n\nBe aware that external processes often store the `standard out` and `standard error` streams of the application, causing logged sensitive information to be stored as well.\n\n\n## Example\nThe following example code stores user credentials (in this case, their password) in a cookie in plain text:\n\n\n```javascript\nvar express = require('express');\n\nvar app = express();\n",
+          "message": "This stores sensitive data returned by [an access to devinApiKey](1) as clear text.",
+          "severity_score": 7.5,
+          "severity_tier": "high",
+          "cwes": [
+            "cwe-312",
+            "cwe-315",
+            "cwe-359"
+          ],
+          "cwe_family": "info-disclosure",
+          "locations": [
+            {
+              "file": "docs/static/api.js",
+              "start_line": 15,
+              "end_line": 15,
+              "start_column": 76
+            }
+          ],
+          "level": "warning",
+          "partial_fingerprints": {
+            "primaryLocationLineHash": "63287290c07aed5c:1",
+            "primaryLocationStartColumnFingerprint": "73"
+          },
+          "fingerprint": "98419b9cd97e8181"
+        },
+        {
+          "id": "CQLF-R22-0002",
+          "rule_id": "py/flask-debug",
+          "rule_name": "py/flask-debug",
+          "rule_description": "Flask app is run in debug mode",
+          "rule_help": "# Flask app is run in debug mode\nRunning a Flask application with debug mode enabled may allow an attacker to gain access through the Werkzeug debugger.\n\n\n## Recommendation\nEnsure that Flask applications that are run in a production environment have debugging disabled.\n\n\n## Example\nRunning the following code starts a Flask webserver that has debugging enabled. By visiting `/crash`, it is possible to gain access to the debugger, and run arbitrary code through the interactive debugger.\n\n\n```python\nfrom flask import Flask\n\napp = Flask(__name__)\n\n@app.route('/crash')\ndef main():\n    raise Exception()\n\napp.run(debug=True)\n\n```\n\n## References\n* Flask Quickstart Documentation: [Debug Mode](http://flask.pocoo.org/docs/1.0/quickstart/#debug-mode).\n* Werkzeug Documentation: [Debugging Applications](http://werkzeug.pocoo.org/docs/0.14/debug/).\n* Common Weakness Enumeration: [CWE-215](https://cwe.mitre.org/data/definitions/215.html).\n* Common Weakness Enumeration: [CWE-489](https://cwe.mitre.org/d",
+          "message": "A Flask app appears to be run in debug mode. This may allow an attacker to run arbitrary code through the debugger.",
+          "severity_score": 7.5,
+          "severity_tier": "high",
+          "cwes": [
+            "cwe-215",
+            "cwe-489"
+          ],
+          "cwe_family": "info-disclosure",
+          "locations": [
+            {
+              "file": "telemetry/app.py",
+              "start_line": 509,
+              "end_line": 509,
+              "start_column": 5
+            }
+          ],
+          "level": "warning",
+          "partial_fingerprints": {
+            "primaryLocationLineHash": "9b172cdabae2b61e:1",
+            "primaryLocationStartColumnFingerprint": "0"
+          },
+          "fingerprint": "7cd37c368f3c7da0"
+        }
+      ]
+    }
+  ]
+}
