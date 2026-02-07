@@ -3,6 +3,7 @@
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -86,7 +87,6 @@ def main() -> None:
 
     remote_url = run_git("remote", "get-url", "origin", cwd=repo_dir)
     if "github.com" in remote_url and github_token:
-        import re
         authed_url = re.sub(
             r"https://github\.com/",
             f"https://x-access-token:{github_token}@github.com/",
@@ -95,8 +95,19 @@ def main() -> None:
         run_git("remote", "set-url", "origin", authed_url, cwd=repo_dir)
 
     branch = run_git("rev-parse", "--abbrev-ref", "HEAD", cwd=repo_dir)
-    run_git("push", "origin", branch, cwd=repo_dir)
-    print(f"Logs pushed to {branch}")
+    result = subprocess.run(
+        ["git", "push", "origin", branch],
+        cwd=repo_dir,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    if result.returncode != 0:
+        print(f"WARNING: git push failed: {result.stderr}")
+        print("The default GITHUB_TOKEN may not have permission to push to the target repo.")
+        print("Logs were committed locally but could not be pushed.")
+    else:
+        print(f"Logs pushed to {branch}")
 
 
 if __name__ == "__main__":

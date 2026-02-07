@@ -19,20 +19,30 @@ def parse_repo_url(url: str) -> tuple[str, str]:
     return m.group(1), m.group(2)
 
 
-def get_authenticated_user(token: str) -> str:
-    resp = requests.get(
-        "https://api.github.com/user",
-        headers={"Authorization": f"token {token}", "Accept": "application/vnd.github+json"},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    return resp.json()["login"]
+def resolve_owner(token: str, fallback: str) -> str:
+    if fallback:
+        return fallback
+    try:
+        resp = requests.get(
+            "https://api.github.com/user",
+            headers={"Authorization": f"token {token}", "Accept": "application/vnd.github+json"},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json()["login"]
+    except requests.exceptions.RequestException as e:
+        print(f"WARNING: could not determine user from /user endpoint: {e}")
+        print("Hint: set FORK_OWNER or use a Personal Access Token (PAT) with 'repo' scope.")
+        return ""
 
 
 def check_fork_exists(token: str, owner: str, repo: str, my_user: str) -> dict | None:
+    headers = {"Accept": "application/vnd.github+json"}
+    if token:
+        headers["Authorization"] = f"token {token}"
     resp = requests.get(
         f"https://api.github.com/repos/{my_user}/{repo}",
-        headers={"Authorization": f"token {token}", "Accept": "application/vnd.github+json"},
+        headers=headers,
         timeout=30,
     )
     if resp.status_code == 200:
@@ -40,6 +50,8 @@ def check_fork_exists(token: str, owner: str, repo: str, my_user: str) -> dict |
         if data.get("fork"):
             parent = data.get("parent", {})
             if parent.get("full_name", "").lower() == f"{owner}/{repo}".lower():
+                return data
+            if not parent:
                 return data
     return None
 
@@ -91,17 +103,22 @@ def main() -> None:
     token = os.environ.get("GITHUB_TOKEN", "")
     target_repo = os.environ.get("TARGET_REPO", "")
     default_branch = os.environ.get("DEFAULT_BRANCH", "main")
+    fork_owner_hint = os.environ.get("FORK_OWNER", "")
 
-    if not token:
-        print("ERROR: GITHUB_TOKEN is required for fork operations")
-        sys.exit(1)
     if not target_repo:
         print("ERROR: TARGET_REPO is required")
         sys.exit(1)
 
     owner, repo = parse_repo_url(target_repo)
-    my_user = get_authenticated_user(token)
-    print(f"Authenticated as: {my_user}")
+
+    my_user = resolve_owner(token, fork_owner_hint)
+    if not my_user:
+        print("WARNING: Cannot determine fork owner. Falling back to original repo.")
+        fork_url = f"https://github.com/{owner}/{repo}"
+        _write_outputs(fork_url, owner, repo)
+        return
+
+    print(f"Fork owner: {my_user}")
     print(f"Target repo: {owner}/{repo}")
 
     if owner.lower() == my_user.lower():
@@ -114,17 +131,27 @@ def main() -> None:
             fork_url = existing["html_url"]
             sync_fork(token, my_user, repo, default_branch)
         else:
-            fork_data = create_fork(token, owner, repo)
-            fork_url = fork_data["html_url"]
-            sync_fork(token, my_user, repo, default_branch)
+            try:
+                fork_data = create_fork(token, owner, repo)
+                fork_url = fork_data["html_url"]
+                sync_fork(token, my_user, repo, default_branch)
+            except requests.exceptions.RequestException as e:
+                print(f"WARNING: Could not create fork: {e}")
+                print("The default GITHUB_TOKEN cannot create forks.")
+                print("To enable automatic forking, add a PAT with 'repo' scope as a secret.")
+                print("Falling back to original repo URL.")
+                fork_url = f"https://github.com/{owner}/{repo}"
 
+    _write_outputs(fork_url, my_user, repo)
+
+
+def _write_outputs(fork_url: str, owner: str, repo: str) -> None:
     github_output = os.environ.get("GITHUB_OUTPUT")
     if github_output:
         with open(github_output, "a") as f:
             f.write(f"fork_url={fork_url}\n")
-            f.write(f"fork_owner={my_user}\n")
+            f.write(f"fork_owner={owner}\n")
             f.write(f"fork_repo={repo}\n")
-
     print(f"FORK_URL={fork_url}")
 
 
