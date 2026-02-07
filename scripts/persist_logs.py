@@ -40,6 +40,7 @@ import re
 import shutil
 import subprocess
 import sys
+from urllib.parse import urlparse
 
 
 def run_git(*args: str, cwd: str) -> str:
@@ -120,7 +121,8 @@ def main() -> None:
     run_git("commit", "-m", f"chore: persist run logs for {run_label}", cwd=repo_dir)
 
     remote_url = run_git("remote", "get-url", "origin", cwd=repo_dir)
-    if "github.com" in remote_url and github_token:
+    parsed_remote = urlparse(remote_url)
+    if parsed_remote.hostname == "github.com" and github_token:
         authed_url = re.sub(
             r"https://github\.com/",
             f"https://x-access-token:{github_token}@github.com/",

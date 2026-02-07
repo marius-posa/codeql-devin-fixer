@@ -43,6 +43,7 @@ import pathlib
 import re
 import time
 import threading
+from urllib.parse import urlparse
 
 import requests
 from flask import Flask, jsonify, render_template, request as flask_request
@@ -281,8 +282,11 @@ def _fetch_prs_from_github(runs: list[dict]) -> list[dict]:
     fork_repos: set[str] = set()
     for run in runs:
         fork_url = run.get("fork_url", "")
-        if "github.com/" in fork_url:
-            fork_repos.add(fork_url.rstrip("/").split("github.com/")[1])
+        parsed = urlparse(fork_url)
+        if parsed.hostname == "github.com":
+            path = parsed.path.strip("/")
+            if path:
+                fork_repos.add(path)
 
     session_ids = _collect_session_ids(runs)
 
