@@ -279,20 +279,21 @@ def _fetch_prs_from_github(runs: list[dict]) -> list[dict]:
     if not token:
         return []
 
-    fork_repos: set[str] = set()
+    search_repos: set[str] = set()
     for run in runs:
-        fork_url = run.get("fork_url", "")
-        parsed = urlparse(fork_url)
-        if parsed.hostname == "github.com":
-            path = parsed.path.strip("/")
-            if path:
-                fork_repos.add(path)
+        for url_field in ("fork_url", "target_repo"):
+            raw_url = run.get(url_field, "")
+            parsed = urlparse(raw_url)
+            if parsed.hostname == "github.com":
+                path = parsed.path.strip("/")
+                if path:
+                    search_repos.add(path)
 
     session_ids = _collect_session_ids(runs)
 
     prs: list[dict] = []
     seen_urls: set[str] = set()
-    for repo_full in fork_repos:
+    for repo_full in search_repos:
         gh_page = 1
         while True:
             url = (f"https://api.github.com/repos/{repo_full}/pulls"
@@ -632,7 +633,11 @@ def api_poll():
     updated = poll_devin_sessions(sessions)
     _save_session_updates(updated)
     cache.set_polled_sessions(updated)
-    return jsonify({"sessions": updated, "polled": len(updated)})
+    prs = _fetch_prs_from_github(runs)
+    cache.set_prs(prs)
+    updated = _link_prs_to_sessions(updated, prs)
+    _save_session_updates(updated)
+    return jsonify({"sessions": updated, "polled": len(updated), "prs_found": len(prs)})
 
 
 @app.route("/api/poll-prs", methods=["POST"])
@@ -678,9 +683,25 @@ def api_refresh():
         gh_page += 1
 
     cache.invalidate_runs()
+    runs = cache.get_runs()
+    prs = _fetch_prs_from_github(runs)
+    cache.set_prs(prs)
+    sessions = aggregate_sessions(runs)
+    _link_prs_to_sessions(sessions, prs)
+    _save_session_updates(sessions)
     return jsonify({
         "downloaded": downloaded,
         "total_files": len(list(RUNS_DIR.glob("*.json"))),
+        "prs_found": len(prs),
+    })
+
+
+@app.route("/api/config")
+def api_config():
+    return jsonify({
+        "github_token_set": bool(os.environ.get("GITHUB_TOKEN", "")),
+        "devin_api_key_set": bool(os.environ.get("DEVIN_API_KEY", "")),
+        "action_repo": os.environ.get("ACTION_REPO", ""),
     })
 
 

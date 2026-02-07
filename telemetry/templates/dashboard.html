@@ -502,13 +502,12 @@ async function pollSessions() {
   const btn = document.getElementById('btn-poll');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Polling...';
-  setStatus('Polling Devin sessions...');
+  setStatus('Polling Devin sessions & fetching PRs...');
   try {
     const res = await fetch(API + '/api/poll', { method: 'POST' });
     const data = await res.json();
-    allSessions = data.sessions || allSessions;
-    renderSessionsTable(allSessions);
-    setStatus('Polled ' + (data.polled || 0) + ' sessions');
+    const prsFound = data.prs_found || 0;
+    setStatus('Polled ' + (data.polled || 0) + ' sessions, found ' + prsFound + ' PRs');
     await fetchAll();
   } catch (e) {
     setStatus('Poll error: ' + e.message);
@@ -521,9 +520,17 @@ async function refreshData() {
   const btn = document.getElementById('btn-refresh');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Refreshing...';
-  setStatus('Pulling latest telemetry...');
+  setStatus('Pulling latest telemetry & PRs...');
   try {
-    await fetch(API + '/api/refresh', { method: 'POST' });
+    const res = await fetch(API + '/api/refresh', { method: 'POST' });
+    const data = await res.json();
+    if (data.error) {
+      setStatus('Refresh error: ' + data.error);
+    } else {
+      const dl = data.downloaded || 0;
+      const prs = data.prs_found || 0;
+      setStatus('Downloaded ' + dl + ' new run files, found ' + prs + ' PRs');
+    }
     await fetchAll();
   } catch (e) {
     setStatus('Refresh error: ' + e.message);
@@ -532,7 +539,26 @@ async function refreshData() {
   btn.textContent = 'Refresh Data';
 }
 
-fetchAll();
+let configWarning = '';
+async function checkConfig() {
+  try {
+    const res = await fetch(API + '/api/config');
+    const cfg = await res.json();
+    const warnings = [];
+    if (!cfg.github_token_set) warnings.push('GITHUB_TOKEN not set in .env — PR discovery disabled');
+    if (!cfg.devin_api_key_set) warnings.push('DEVIN_API_KEY not set in .env — session polling disabled');
+    if (warnings.length > 0) {
+      configWarning = '\u26a0\ufe0f ' + warnings.join(' | ');
+    }
+  } catch (e) {}
+}
+
+async function init() {
+  await checkConfig();
+  await fetchAll();
+  if (configWarning) setStatus(configWarning);
+}
+init();
 </script>
 </body>
 </html>
