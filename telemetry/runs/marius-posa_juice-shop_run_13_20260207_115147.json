@@ -28,24 +28,26 @@
       "session_id": "devin-ac6f06c78c47462db463af668f5e34b2",
       "session_url": "https://app.devin.ai/sessions/ac6f06c78c47462db463af668f5e34b2",
       "batch_id": 1,
-      "status": "created",
+      "status": "finished",
       "issue_ids": [
         "CQLF-R13-0001",
         "CQLF-R13-0002"
-      ]
+      ],
+      "pr_url": "https://github.com/marius-posa/juice-shop/pull/4"
     },
     {
       "session_id": "devin-51add30d411c4bbba4d596f6f554a8b9",
       "session_url": "https://app.devin.ai/sessions/51add30d411c4bbba4d596f6f554a8b9",
       "batch_id": 2,
-      "status": "created",
+      "status": "finished",
       "issue_ids": [
         "CQLF-R13-0003",
         "CQLF-R13-0004",
         "CQLF-R13-0009",
         "CQLF-R13-0010",
         "CQLF-R13-0011"
-      ]
+      ],
+      "pr_url": "https://github.com/marius-posa/juice-shop/pull/3"
     }
   ]
 }

@@ -29,11 +29,12 @@
       "session_id": "devin-514dd6acc55a4bcf8b684ba03b7f34fe",
       "session_url": "https://app.devin.ai/sessions/514dd6acc55a4bcf8b684ba03b7f34fe",
       "batch_id": 1,
-      "status": "created",
+      "status": "finished",
       "issue_ids": [
         "CQLF-R14-0001",
         "CQLF-R14-0002"
-      ]
+      ],
+      "pr_url": "https://github.com/marius-posa/juice-shop/pull/5"
     }
   ]
 }

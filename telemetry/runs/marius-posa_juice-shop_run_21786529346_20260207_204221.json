@@ -34,14 +34,15 @@
       "session_id": "devin-548468fd932947cb87f7f3a311ecf769",
       "session_url": "https://app.devin.ai/sessions/548468fd932947cb87f7f3a311ecf769",
       "batch_id": 1,
-      "status": "created",
+      "status": "finished",
       "issue_ids": [
         "CQLF-R21-0001",
         "CQLF-R21-0002",
         "CQLF-R21-0007",
         "CQLF-R21-0008",
         "CQLF-R21-0009"
-      ]
+      ],
+      "pr_url": "https://github.com/marius-posa/juice-shop/pull/7"
     }
   ],
   "issue_fingerprints": [

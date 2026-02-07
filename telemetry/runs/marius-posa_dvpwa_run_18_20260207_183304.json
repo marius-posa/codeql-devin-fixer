@@ -20,14 +20,15 @@
       "session_id": "devin-13c79a0145a14bccb2c98c102b5affb8",
       "session_url": "https://app.devin.ai/sessions/13c79a0145a14bccb2c98c102b5affb8",
       "batch_id": 1,
-      "status": "created",
+      "status": "finished",
       "issue_ids": [
         "CQLF-R18-0001",
         "CQLF-R18-0002",
         "CQLF-R18-0003",
         "CQLF-R18-0004",
         "CQLF-R18-0005"
-      ]
+      ],
+      "pr_url": "https://github.com/marius-posa/dvpwa/pull/1"
     }
   ],
   "issue_fingerprints": [

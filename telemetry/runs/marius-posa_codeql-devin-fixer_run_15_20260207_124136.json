@@ -18,12 +18,13 @@
       "session_id": "devin-f3bd41c51f814d6c917b827b7a3fbc2b",
       "session_url": "https://app.devin.ai/sessions/f3bd41c51f814d6c917b827b7a3fbc2b",
       "batch_id": 1,
-      "status": "created",
+      "status": "finished",
       "issue_ids": [
         "CQLF-R15-0001",
         "CQLF-R15-0002",
         "CQLF-R15-0003"
-      ]
+      ],
+      "pr_url": "https://github.com/marius-posa/codeql-devin-fixer/pull/17"
     }
   ],
   "issue_fingerprints": [

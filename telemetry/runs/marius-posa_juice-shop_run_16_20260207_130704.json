@@ -29,11 +29,12 @@
       "session_id": "devin-8c4c232320f94df6b15f6aedca0073f0",
       "session_url": "https://app.devin.ai/sessions/8c4c232320f94df6b15f6aedca0073f0",
       "batch_id": 1,
-      "status": "created",
+      "status": "finished",
       "issue_ids": [
         "CQLF-R16-0001",
         "CQLF-R16-0002"
-      ]
+      ],
+      "pr_url": "https://github.com/marius-posa/juice-shop/pull/6"
     }
   ],
   "issue_fingerprints": [
