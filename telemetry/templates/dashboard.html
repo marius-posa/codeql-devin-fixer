@@ -492,11 +492,10 @@ function renderAll() {
   renderBarChart(document.getElementById('severity-chart'), stats.latest_severity || stats.severity_breakdown);
   renderBarChart(document.getElementById('category-chart'), stats.latest_category || stats.category_breakdown);
   renderReposTable(allRepos);
-  renderRunsTable(filteredRuns);
-  renderSessionsTable(filteredSessions);
-  renderPrsTable(filteredPrs);
-  const filteredIssues = selectedRepo ? allIssues.filter(i => i.target_repo === selectedRepo) : allIssues;
-  renderIssuesTable(filteredIssues);
+  renderRunsTable(allRuns);
+  renderSessionsTable(allSessions);
+  renderPrsTable(allPrs);
+  renderIssuesTable(allIssues);
 }
 
 async function pollSessions() {
