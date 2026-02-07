@@ -13,7 +13,7 @@ import time
 
 import requests
 
-MAX_RETRIES= 3
+MAX_RETRIES = 3
 BASE_DELAY = 2.0
 MAX_JITTER = 1.0
 
@@ -44,7 +44,7 @@ def request_with_retry(
 
     Retries on network errors (``ConnectionError``, ``Timeout``) and on
     server-side status codes listed in *retry_statuses*.  Non-retryable
-    HTTP errors are raised immediately via ``raise_for_status()``.
+    responses are returned directly to the caller.
 
     Parameters
     ----------
