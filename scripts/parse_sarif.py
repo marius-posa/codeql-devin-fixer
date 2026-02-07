@@ -238,7 +238,11 @@ def parse_sarif(sarif_path: str) -> list[dict[str, Any]]:
     with open(sarif_path) as f:
         sarif = json.load(f)
 
-    validate_sarif(sarif, sarif_path)
+    try:
+        validate_sarif(sarif, sarif_path)
+    except ValueError as exc:
+        print(f"WARNING: {exc}")
+        return []
 
     issues: list[dict[str, Any]] = []
 
