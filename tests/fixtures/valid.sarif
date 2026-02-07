@@ -1,0 +1,107 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "CodeQL",
+          "version": "2.15.0",
+          "semanticVersion": "2.15.0",
+          "rules": [
+            {
+              "id": "js/sql-injection",
+              "name": "SqlInjection",
+              "shortDescription": { "text": "Database query built from user-controlled sources" },
+              "help": { "text": "Use parameterized queries instead of string concatenation." },
+              "properties": {
+                "tags": ["security", "external/cwe/cwe-89"],
+                "security-severity": "9.8"
+              }
+            },
+            {
+              "id": "js/xss",
+              "name": "Xss",
+              "shortDescription": { "text": "Cross-site scripting vulnerability" },
+              "help": { "text": "Sanitize user input before rendering." },
+              "properties": {
+                "tags": ["security", "external/cwe/cwe-79"],
+                "security-severity": "7.5"
+              }
+            },
+            {
+              "id": "js/path-injection",
+              "name": "TaintedPath",
+              "shortDescription": { "text": "Uncontrolled data used in path expression" },
+              "help": { "text": "Validate and sanitize file paths." },
+              "properties": {
+                "tags": ["security", "external/cwe/cwe-22"],
+                "security-severity": "7.5"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "js/sql-injection",
+          "level": "error",
+          "message": { "text": "This query depends on a user-provided value." },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "src/routes/login.ts" },
+                "region": { "startLine": 42, "endLine": 42, "startColumn": 5 }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "primaryLocationLineHash": "abc123def456"
+          }
+        },
+        {
+          "ruleId": "js/sql-injection",
+          "level": "error",
+          "message": { "text": "This query depends on a user-provided value." },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "src/routes/search.ts" },
+                "region": { "startLine": 78, "endLine": 80, "startColumn": 10 }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "primaryLocationLineHash": "def789ghi012"
+          }
+        },
+        {
+          "ruleId": "js/xss",
+          "level": "error",
+          "message": { "text": "Cross-site scripting vulnerability due to unescaped output." },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "src/views/profile.ejs" },
+                "region": { "startLine": 15, "endLine": 15, "startColumn": 1 }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "js/path-injection",
+          "level": "warning",
+          "message": { "text": "Unsanitized user input in file path." },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "src/utils/files.ts" },
+                "region": { "startLine": 23, "endLine": 23, "startColumn": 12 }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
