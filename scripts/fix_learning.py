@@ -170,10 +170,10 @@ class FixLearning:
             for s in sessions:
                 status = s.get("status", "")
                 family = "other"
-                for fp in run.get("issue_fingerprints", []):
-                    issue_id = fp.get("id", "")
+                for ifp in run.get("issue_fingerprints", []):
+                    issue_id = ifp.get("id", "")
                     if issue_id in s.get("issue_ids", []):
-                        family = fp.get("cwe_family", "other")
+                        family = ifp.get("cwe_family", "other")
                         break
                 if family not in stats:
                     stats[family] = FamilyStats()

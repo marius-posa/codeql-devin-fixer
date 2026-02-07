@@ -96,6 +96,9 @@ jobs:
             exit 0
           fi
 
+          export SARIF_FILE
+          export PR_TITLE="${{ github.event.pull_request.title }}"
+
           python3 << 'PYEOF'
           import json
           import os
@@ -103,7 +106,7 @@ jobs:
           import sys
 
           sarif_file = os.environ.get("SARIF_FILE", "")
-          pr_title = """${{ github.event.pull_request.title }}"""
+          pr_title = os.environ.get("PR_TITLE", "")
 
           with open(sarif_file) as f:
               sarif = json.load(f)
@@ -155,8 +158,6 @@ jobs:
                   if len(remaining) > 20:
                       f.write(f"- ... and {len(remaining) - 20} more\n")
           PYEOF
-        env:
-          SARIF_FILE: ${{ runner.temp }}/codeql-verify-results/*.sarif
 
       - name: Label PR based on results
         if: steps.compare.outputs.status != 'no-sarif'

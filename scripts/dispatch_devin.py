@@ -343,6 +343,9 @@ def main() -> None:
     is_own_repo = fork_url == repo_url or not fork_url
     max_acu = cfg.max_acu_per_session
     target_dir = cfg.target_dir
+    if target_dir and not os.path.isdir(target_dir):
+        print(f"WARNING: TARGET_DIR '{target_dir}' does not exist; code snippets disabled")
+        target_dir = ""
     telemetry_dir = cfg.telemetry_dir
 
     fix_learn: FixLearning | None = None
