@@ -1,0 +1,7 @@
+# Environment secrets (use .env.example as template)
+telemetry/.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
