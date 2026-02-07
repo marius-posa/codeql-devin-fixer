@@ -4,7 +4,10 @@ from urllib.parse import urlparse
 
 import requests
 
-from .config import gh_headers as _gh_headers
+try:
+    from .config import gh_headers as _gh_headers
+except ImportError:  # running as top-level script
+    from config import gh_headers as _gh_headers
 
 
 def collect_session_ids(runs: list[dict]) -> set[str]:
