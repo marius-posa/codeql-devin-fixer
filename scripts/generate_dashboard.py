@@ -32,6 +32,7 @@ DASHBOARD_OUTPUT_DIR : str
 import json
 import os
 import pathlib
+import re
 import sys
 from datetime import datetime, timezone
 from typing import Any
