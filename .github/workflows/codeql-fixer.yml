@@ -7,7 +7,7 @@ on:
         description: "GitHub repository URL to analyze"
         required: true
         type: string
-        default: "https://github.com/juice-shop/juice-shop"
+        default: "https://github.com/owner/repo"
       languages:
         description: "Comma-separated CodeQL languages (leave empty for auto-detect)"
         required: false

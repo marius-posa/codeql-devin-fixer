@@ -27,20 +27,28 @@ Issues are ranked from an adversary's perspective -- which vulnerabilities are e
 
 ## Quick Start
 
-### 1. Prerequisites
+### Option A: Fork This Repo (Recommended)
 
-You need two secrets configured in your repository:
+This is the easiest way to get started -- you get the full action, workflow, and telemetry dashboard in your own GitHub account.
 
-| Secret | Purpose | How to create |
-|--------|---------|---------------|
-| `DEVIN_API_KEY` | Devin API authentication | [Devin API docs](https://docs.devin.ai/api-reference/overview) |
-| `GH_PAT` | Fork creation, log persistence, dashboard push | [Create a PAT](https://github.com/settings/tokens) with **`repo`** scope |
+1. **Fork** this repository on GitHub (click the **Fork** button at the top-right)
+2. In your fork, go to **Settings > Secrets and variables > Actions**
+3. Add these **repository secrets**:
 
-> **Why a PAT?** The default `secrets.GITHUB_TOKEN` is an installation token scoped only to the repo running the workflow. It cannot create forks or push to other repositories. A Personal Access Token with `repo` scope is required for these cross-repo operations.
+   | Secret | Purpose | How to create |
+   |--------|---------|---------------|
+   | `DEVIN_API_KEY` | Devin API authentication | [Devin API docs](https://docs.devin.ai/api-reference/overview) |
+   | `GH_PAT` | Fork creation, log persistence, dashboard push | [Create a PAT](https://github.com/settings/tokens) with **`repo`** scope |
 
-### 2. As a Reusable Action
+4. Go to **Actions** > **CodeQL Devin Fixer** > **Run workflow**
+5. Enter the target repository URL (e.g. `https://github.com/owner/repo`) and configure options
+6. The action will fork the target, analyze it with CodeQL, and create Devin fix sessions
 
-Reference this action in your workflow:
+> **Why a PAT?** The default `secrets.GITHUB_TOKEN` is scoped only to the repo running the workflow. It cannot create forks or push to other repositories. A Personal Access Token with `repo` scope is required for these cross-repo operations.
+
+### Option B: Use as a Reusable Action
+
+Reference this action from any workflow in any repository. Replace `YOUR_USERNAME` with the GitHub user or org that owns the fork:
 
 ```yaml
 name: Fix Security Issues
@@ -60,22 +68,50 @@ jobs:
   fix:
     runs-on: ubuntu-latest
     steps:
-      - uses: marius-posa/codeql-devin-fixer@main
+      - uses: YOUR_USERNAME/codeql-devin-fixer@main
         with:
           target_repo: ${{ inputs.target_repo }}
           github_token: ${{ secrets.GH_PAT }}
           devin_api_key: ${{ secrets.DEVIN_API_KEY }}
           persist_logs: "true"
-          generate_dashboard: "true"
 ```
 
-### 3. Run from This Repo
+> **Note:** Replace `YOUR_USERNAME/codeql-devin-fixer@main` with your actual fork path.
 
-1. Fork or clone this repo
-2. Add `DEVIN_API_KEY` and `GH_PAT` as repository secrets
-3. Go to **Actions** > **CodeQL Devin Fixer** > **Run workflow**
-4. Enter the target repository URL and configure options
-5. The action will fork the target, analyze, and create Devin fix sessions
+### Option C: Clone and Customize
+
+```bash
+git clone https://github.com/YOUR_USERNAME/codeql-devin-fixer.git
+cd codeql-devin-fixer
+```
+
+Edit `.github/workflows/codeql-fixer.yml` to change defaults (batch size, severity threshold, etc.), then push to your own GitHub repo and add the required secrets.
+
+## Using This Action in Another GitHub Account
+
+The codebase is fully portable -- there are **no hardcoded usernames or repos** in the action logic. Everything is configured via inputs, secrets, and environment variables that GitHub Actions provides automatically (e.g. `github.repository_owner`, `github.repository`).
+
+### Step-by-Step Setup
+
+1. **Fork or clone** this repository into your own GitHub account
+2. **Create secrets** in your fork (Settings > Secrets and variables > Actions):
+   - `DEVIN_API_KEY` -- your Devin API key ([get one here](https://docs.devin.ai/api-reference/overview))
+   - `GH_PAT` -- a GitHub Personal Access Token with `repo` scope ([create one here](https://github.com/settings/tokens))
+3. **Enable GitHub Actions** if not already enabled (Settings > Actions > General > allow all actions)
+4. **Run the workflow**: Actions > CodeQL Devin Fixer > Run workflow > enter target repo URL
+
+### What Gets Auto-Configured
+
+| Variable | Source | What it does |
+|----------|--------|--------------|
+| `github.repository_owner` | GitHub Actions context | Determines where forks are created |
+| `github.repository` | GitHub Actions context | Used as `ACTION_REPO` for telemetry |
+| `github.run_number` | GitHub Actions context | Used in issue IDs (`CQLF-R{run}-{seq}`) |
+| `github.run_id` | GitHub Actions context | Links to workflow run URL |
+| `secrets.GH_PAT` | Your repository secrets | PAT for fork/push operations |
+| `secrets.DEVIN_API_KEY` | Your repository secrets | Devin API key for session creation |
+
+No code changes are required -- just add the secrets and run.
 
 ## Inputs
 
@@ -127,16 +163,17 @@ Issues are grouped by CWE vulnerability family:
 
 Highest-severity batches are dispatched first.
 
-## Example: Analyzing juice-shop
+## Example Usage
 
 ```yaml
-- uses: marius-posa/codeql-devin-fixer@main
+- uses: YOUR_USERNAME/codeql-devin-fixer@main
   with:
     target_repo: "https://github.com/juice-shop/juice-shop"
     languages: "javascript"
     batch_size: 5
     max_sessions: 10
     severity_threshold: "medium"
+    github_token: ${{ secrets.GH_PAT }}
     devin_api_key: ${{ secrets.DEVIN_API_KEY }}
 ```
 
@@ -203,12 +240,26 @@ The telemetry dashboard is a centralized web app that aggregates data from **all
 ```bash
 cd telemetry
 cp .env.example .env
-# Edit .env with your GITHUB_TOKEN, DEVIN_API_KEY, and ACTION_REPO
+```
+
+Edit `.env` with your credentials:
+
+```
+GITHUB_TOKEN=ghp_your_pat_here
+DEVIN_API_KEY=your_devin_api_key_here
+ACTION_REPO=your-username/codeql-devin-fixer
+```
+
+Set `ACTION_REPO` to your fork's `owner/repo` name.
+
+Then install and run:
+
+```bash
 pip install -r requirements.txt
 python app.py
 ```
 
-Then open `http://localhost:5000` in your browser.
+Open `http://localhost:5000` in your browser.
 
 ### How it works
 
@@ -234,7 +285,7 @@ Then open `http://localhost:5000` in your browser.
 |----------|---------|
 | `GITHUB_TOKEN` | PAT with `repo` scope for GitHub API calls |
 | `DEVIN_API_KEY` | Devin API key for polling session statuses |
-| `ACTION_REPO` | This repo's full name (e.g. `marius-posa/codeql-devin-fixer`) |
+| `ACTION_REPO` | Your fork's full name (e.g. `your-username/codeql-devin-fixer`) |
 
 ## Notes
 
@@ -246,7 +297,7 @@ Then open `http://localhost:5000` in your browser.
 Test without creating Devin sessions:
 
 ```yaml
-- uses: marius-posa/codeql-devin-fixer@main
+- uses: YOUR_USERNAME/codeql-devin-fixer@main
   with:
     target_repo: "https://github.com/juice-shop/juice-shop"
     devin_api_key: "not-needed-for-dry-run"
@@ -323,3 +374,4 @@ Dashboard UI at http://localhost:5000
 | Fork not created | `github_token` input not set | Pass `github_token: ${{ secrets.GH_PAT }}` in workflow |
 | Dashboard empty | No logs persisted yet | Enable `persist_logs: "true"` and ensure PAT has push access |
 | `No SARIF file found` | CodeQL analysis found no supported languages | Check `languages` input or verify target repo has supported code |
+| Telemetry not appearing | `ACTION_REPO` env var not set | Set `ACTION_REPO` to `your-username/codeql-devin-fixer` in `.env` or workflow env |

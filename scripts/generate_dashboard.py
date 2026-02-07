@@ -238,7 +238,7 @@ DASHBOARD_TEMPLATE = """\
 {prs_table}
 
 <div class="footer">
-  Powered by <a href="https://github.com/marius-posa/codeql-devin-fixer" target="_blank">CodeQL Devin Fixer</a>
+  Powered by <a href="https://github.com/{action_repo}" target="_blank">CodeQL Devin Fixer</a>
   &middot; Data refreshed every action run
 </div>
 
@@ -594,6 +594,7 @@ def main() -> None:
     target_repo = os.environ.get("TARGET_REPO", "")
     logs_dir = os.environ.get("LOGS_DIR", "logs")
     output_dir = os.environ.get("DASHBOARD_OUTPUT_DIR", "dashboard")
+    action_repo_env = os.environ.get("ACTION_REPO", "")
 
     if not target_repo:
         print("ERROR: TARGET_REPO is required")
@@ -648,6 +649,7 @@ def main() -> None:
     html = DASHBOARD_TEMPLATE.format(
         generated_at=generated_at,
         repo_name=repo_name,
+        action_repo=action_repo_env or repo_name,
         total_runs=total_runs,
         total_issues=total_issues,
         total_sessions=total_sessions,
