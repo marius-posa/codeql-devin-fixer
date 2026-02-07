@@ -10,13 +10,10 @@ across ``fork_repo.py``, ``persist_logs.py``, ``persist_telemetry.py``,
 import random
 import subprocess
 import time
-from typing import TypeVar
 
 import requests
 
-T = TypeVar("T")
-
-MAX_RETRIES = 3
+MAX_RETRIES= 3
 BASE_DELAY = 2.0
 MAX_JITTER = 1.0
 
