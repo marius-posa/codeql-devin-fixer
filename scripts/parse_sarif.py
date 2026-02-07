@@ -241,6 +241,8 @@ def parse_sarif(sarif_path: str) -> list[dict[str, Any]]:
                     }
                 )
 
+            partial_fps = result.get("partialFingerprints", {})
+
             message = result.get("message", {}).get("text", "")
             rule_desc = rule.get("shortDescription", {}).get("text", "")
             rule_help = rule.get("help", {}).get("text", "")
@@ -260,6 +262,7 @@ def parse_sarif(sarif_path: str) -> list[dict[str, Any]]:
                     "cwe_family": cwe_family,
                     "locations": locations,
                     "level": result.get("level", "warning"),
+                    "partial_fingerprints": partial_fps,
                 }
             )
 
@@ -414,16 +417,36 @@ def generate_summary(
 def compute_fingerprint(issue: dict[str, Any]) -> str:
     """Compute a stable fingerprint for an issue across runs.
 
-    The fingerprint is based on ``rule_id`` and the primary source location
-    (file path + start line).  This allows the same vulnerability to be
-    recognised even when it appears in different action runs with different
-    sequential issue IDs.
+    Stability hierarchy (most stable first):
+
+    1. **SARIF ``partialFingerprints``** -- CodeQL emits a content-based hash
+       that survives line-number shifts.  When available this is the most
+       reliable cross-run identifier.
+    2. **rule_id + file + message** -- the diagnostic message usually encodes
+       enough context (e.g. tainted variable name) to distinguish distinct
+       occurrences of the same rule in the same file without relying on line
+       numbers.
+    3. **rule_id + file + start_line** -- legacy fallback when neither of the
+       above is available.
     """
+    partial_fps = issue.get("partial_fingerprints", {})
+    primary_fp = (
+        partial_fps.get("primaryLocationLineHash")
+        or partial_fps.get("primaryLocationStartColumnFingerprint")
+    )
+    if primary_fp:
+        raw = f"{issue.get('rule_id', '')}|{primary_fp}"
+        return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
     rule_id = issue.get("rule_id", "")
     locs = issue.get("locations", [])
     file_path = locs[0].get("file", "") if locs else ""
-    start_line = str(locs[0].get("start_line", 0)) if locs else "0"
-    raw = f"{rule_id}|{file_path}|{start_line}"
+    message = issue.get("message", "")
+    if message:
+        raw = f"{rule_id}|{file_path}|{message}"
+    else:
+        start_line = str(locs[0].get("start_line", 0)) if locs else "0"
+        raw = f"{rule_id}|{file_path}|{start_line}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 

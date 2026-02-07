@@ -747,11 +747,45 @@ def api_backfill():
 
 
 def _track_issues_across_runs(runs: list[dict]) -> list[dict]:
+    """Classify every unique issue fingerprint as recurring / new / fixed.
+
+    Scalability
+    -----------
+    All lookups use dicts so the function is **O(total_fingerprint_entries)**
+    regardless of how many unique issues exist -- suitable for 10 000+ issues
+    across hundreds of runs.
+
+    Robustness
+    ----------
+    Runs that pre-date the fingerprinting feature (no ``issue_fingerprints``
+    key) are counted as *participating runs* for their repo so that an issue
+    present in one fingerprinted run can still be marked "recurring" if the
+    same repo had earlier runs without fingerprint data.
+    """
+    if not runs:
+        return []
+
     sorted_runs = sorted(runs, key=lambda r: r.get("timestamp", ""))
 
     fp_history: dict[str, list[dict]] = {}
+    fp_metadata: dict[str, dict] = {}
+
+    runs_per_repo: dict[str, int] = {}
+    runs_with_fps_per_repo: dict[str, int] = {}
+
     for run in sorted_runs:
-        for iss in run.get("issue_fingerprints", []):
+        repo = run.get("target_repo", "")
+        if repo:
+            runs_per_repo[repo] = runs_per_repo.get(repo, 0) + 1
+
+        fingerprints = run.get("issue_fingerprints", [])
+        if not fingerprints:
+            continue
+
+        if repo:
+            runs_with_fps_per_repo[repo] = runs_with_fps_per_repo.get(repo, 0) + 1
+
+        for iss in fingerprints:
             fp = iss.get("fingerprint", "")
             if not fp:
                 continue
@@ -761,11 +795,16 @@ def _track_issues_across_runs(runs: list[dict]) -> list[dict]:
                 "run_number": run.get("run_number"),
                 "timestamp": run.get("timestamp", ""),
                 "issue_id": iss.get("id", ""),
-                "target_repo": run.get("target_repo", ""),
+                "target_repo": repo,
             })
-
-    if not sorted_runs:
-        return []
+            if fp not in fp_metadata:
+                fp_metadata[fp] = {
+                    "rule_id": iss.get("rule_id", ""),
+                    "severity_tier": iss.get("severity_tier", ""),
+                    "cwe_family": iss.get("cwe_family", ""),
+                    "file": iss.get("file", ""),
+                    "start_line": iss.get("start_line", 0),
+                }
 
     latest_run_per_repo: dict[str, dict] = {}
     for run in sorted_runs:
@@ -779,52 +818,47 @@ def _track_issues_across_runs(runs: list[dict]) -> list[dict]:
             if fp:
                 latest_fps.add(fp)
 
-    result = []
+    result: list[dict] = []
     for fp, appearances in fp_history.items():
         first = appearances[0]
         latest = appearances[-1]
         run_numbers = [a["run_number"] for a in appearances]
+        repo = first["target_repo"]
+
+        has_older_runs_without_fps = (
+            runs_per_repo.get(repo, 0) > runs_with_fps_per_repo.get(repo, 0)
+        )
 
         if fp in latest_fps:
-            if len(appearances) > 1:
+            if len(appearances) > 1 or has_older_runs_without_fps:
                 status = "recurring"
             else:
                 status = "new"
         else:
             status = "fixed"
 
+        meta = fp_metadata.get(fp, {})
         result.append({
             "fingerprint": fp,
-            "rule_id": "",
-            "severity_tier": "",
-            "cwe_family": "",
-            "file": "",
-            "start_line": 0,
+            "rule_id": meta.get("rule_id", ""),
+            "severity_tier": meta.get("severity_tier", ""),
+            "cwe_family": meta.get("cwe_family", ""),
+            "file": meta.get("file", ""),
+            "start_line": meta.get("start_line", 0),
             "status": status,
             "first_seen_run": first["run_number"],
             "first_seen_date": first["timestamp"],
             "last_seen_run": latest["run_number"],
             "last_seen_date": latest["timestamp"],
-            "target_repo": first["target_repo"],
+            "target_repo": repo,
             "appearances": len(appearances),
             "run_numbers": run_numbers,
             "latest_issue_id": latest["issue_id"],
         })
 
-    for run in sorted_runs:
-        for iss in run.get("issue_fingerprints", []):
-            fp = iss.get("fingerprint", "")
-            for r in result:
-                if r["fingerprint"] == fp and not r["rule_id"]:
-                    r["rule_id"] = iss.get("rule_id", "")
-                    r["severity_tier"] = iss.get("severity_tier", "")
-                    r["cwe_family"] = iss.get("cwe_family", "")
-                    r["file"] = iss.get("file", "")
-                    r["start_line"] = iss.get("start_line", 0)
-                    break
-
+    _STATUS_ORDER = {"recurring": 0, "new": 1, "fixed": 2}
     result.sort(key=lambda x: (
-        {"recurring": 0, "new": 1, "fixed": 2}.get(x["status"], 3),
+        _STATUS_ORDER.get(x["status"], 3),
         x.get("last_seen_date", ""),
     ))
     return result
