@@ -4,202 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{{ repo_short }} - Telemetry</title>
-<style>
-:root {
-  --bg-primary: #0d1117;
-  --bg-secondary: #161b22;
-  --bg-tertiary: #21262d;
-  --border: #30363d;
-  --text-primary: #e6edf3;
-  --text-secondary: #8b949e;
-  --text-muted: #6e7681;
-  --accent-blue: #58a6ff;
-  --accent-green: #3fb950;
-  --accent-red: #f85149;
-  --accent-orange: #d29922;
-  --accent-purple: #bc8cff;
-  --accent-cyan: #39d2c0;
-  --card-shadow: 0 1px 3px rgba(0,0,0,0.3);
-}
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  line-height: 1.5;
-}
-.container { max-width: 1400px; margin: 0 auto; padding: 24px; }
-header {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 16px 0; border-bottom: 1px solid var(--border); margin-bottom: 24px;
-}
-header h1 { font-size: 20px; font-weight: 600; }
-header h1 span { color: var(--accent-blue); }
-.header-actions { display: flex; gap: 8px; align-items: center; }
-.btn {
-  padding: 6px 16px; border-radius: 6px; border: 1px solid var(--border);
-  background: var(--bg-tertiary); color: var(--text-primary);
-  cursor: pointer; font-size: 13px; font-weight: 500;
-  transition: background 0.15s; text-decoration: none; display: inline-block;
-}
-.btn:hover { background: var(--border); text-decoration: none; }
-.btn-primary { background: #238636; border-color: #2ea043; }
-.btn-primary:hover { background: #2ea043; }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border);
-  border-top-color: var(--accent-blue); border-radius: 50%; animation: spin 0.6s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-
-.breadcrumb {
-  font-size: 13px; color: var(--text-muted); margin-bottom: 16px;
-}
-.breadcrumb a { color: var(--accent-blue); text-decoration: none; }
-.breadcrumb a:hover { text-decoration: underline; }
-
-.metrics-grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 16px; margin-bottom: 24px;
-}
-.metric-card {
-  background: var(--bg-secondary); border: 1px solid var(--border);
-  border-radius: 8px; padding: 16px; box-shadow: var(--card-shadow);
-}
-.metric-card .label { font-size: 12px; color: var(--text-secondary); text-transform: uppercase;
-  letter-spacing: 0.5px; margin-bottom: 4px; }
-.metric-card .value { font-size: 28px; font-weight: 700; }
-.metric-card .sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
-.metric-card.blue .value { color: var(--accent-blue); }
-.metric-card.green .value { color: var(--accent-green); }
-.metric-card.red .value { color: var(--accent-red); }
-.metric-card.orange .value { color: var(--accent-orange); }
-.metric-card.purple .value { color: var(--accent-purple); }
-.metric-card.cyan .value { color: var(--accent-cyan); }
-
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
-@media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
-
-.panel {
-  background: var(--bg-secondary); border: 1px solid var(--border);
-  border-radius: 8px; overflow: hidden; box-shadow: var(--card-shadow);
-  margin-bottom: 24px;
-}
-.panel-header {
-  padding: 12px 16px; border-bottom: 1px solid var(--border);
-  font-size: 14px; font-weight: 600; display: flex; justify-content: space-between; align-items: center;
-}
-.panel-body { padding: 16px; }
-
-.bar-chart { display: flex; flex-direction: column; gap: 8px; }
-.bar-row { display: flex; align-items: center; gap: 8px; }
-.bar-label { width: 80px; font-size: 12px; color: var(--text-secondary); text-align: right; text-transform: capitalize; }
-.bar-track { flex: 1; height: 20px; background: var(--bg-tertiary); border-radius: 4px; overflow: hidden; }
-.bar-fill { height: 100%; border-radius: 4px; transition: width 0.4s ease; min-width: 2px; }
-.bar-value { width: 40px; font-size: 12px; color: var(--text-secondary); }
-.bar-critical { background: var(--accent-red); }
-.bar-high { background: var(--accent-orange); }
-.bar-medium { background: #d29922; }
-.bar-low { background: var(--accent-blue); }
-.bar-default { background: var(--accent-purple); }
-
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-thead th {
-  text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border);
-  color: var(--text-secondary); font-weight: 600; font-size: 12px; text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-tbody td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
-tbody tr:last-child td { border-bottom: none; }
-tbody tr:hover { background: var(--bg-tertiary); }
-a { color: var(--accent-blue); text-decoration: none; }
-a:hover { text-decoration: underline; }
-
-.badge {
-  display: inline-block; padding: 2px 8px; border-radius: 12px;
-  font-size: 11px; font-weight: 600; text-transform: uppercase;
-}
-.badge-open { background: #1a4023; color: var(--accent-green); }
-.badge-merged { background: #2d1a4e; color: var(--accent-purple); }
-.badge-closed { background: #4a1a1a; color: var(--accent-red); }
-.badge-created { background: #1a3a4a; color: var(--accent-cyan); }
-.badge-finished { background: #1a4023; color: var(--accent-green); }
-.badge-running { background: #3a3a1a; color: var(--accent-orange); }
-.badge-error { background: #4a1a1a; color: var(--accent-red); }
-.badge-unknown { background: var(--bg-tertiary); color: var(--text-muted); }
-.badge-recurring { background: #3a2a1a; color: var(--accent-orange); }
-.badge-new { background: #1a2a3a; color: var(--accent-cyan); }
-.badge-fixed { background: #1a3a2a; color: var(--accent-green); }
-.issue-summary { display: flex; gap: 16px; margin-bottom: 12px; font-size: 13px; }
-.issue-summary .count { font-weight: 600; font-size: 16px; }
-
-.modal-overlay {
-  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6);
-  z-index: 1000; justify-content: center; align-items: flex-start; padding-top: 60px;
-}
-.modal-overlay.active { display: flex; }
-.modal {
-  background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px;
-  width: 560px; max-height: calc(100vh - 120px); overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-}
-.modal-header {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 16px 20px; border-bottom: 1px solid var(--border);
-}
-.modal-header h2 { font-size: 16px; font-weight: 600; }
-.modal-close {
-  background: none; border: none; color: var(--text-muted); cursor: pointer;
-  font-size: 20px; padding: 4px 8px; border-radius: 4px;
-}
-.modal-close:hover { background: var(--bg-tertiary); color: var(--text-primary); }
-.modal-body { padding: 20px; }
-.modal-footer {
-  padding: 16px 20px; border-top: 1px solid var(--border);
-  display: flex; justify-content: flex-end; gap: 8px;
-}
-.form-group { margin-bottom: 16px; }
-.form-group label {
-  display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary);
-  text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;
-}
-.form-group .hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
-.form-input {
-  width: 100%; padding: 8px 12px; background: var(--bg-tertiary); border: 1px solid var(--border);
-  border-radius: 6px; color: var(--text-primary); font-size: 13px; font-family: inherit;
-}
-.form-input:focus { outline: none; border-color: var(--accent-blue); }
-.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.form-check {
-  display: flex; align-items: center; gap: 8px; cursor: pointer;
-}
-.form-check input[type="checkbox"] {
-  width: 16px; height: 16px; accent-color: var(--accent-blue); cursor: pointer;
-}
-.form-check span { font-size: 13px; color: var(--text-primary); }
-.warning-banner {
-  background: #2d2000; border: 1px solid #5c4400; border-radius: 8px;
-  padding: 12px 16px; margin-bottom: 16px; font-size: 13px; color: var(--accent-orange);
-  display: none;
-}
-.warning-banner.visible { display: block; }
-.warning-banner a { color: var(--accent-orange); text-decoration: underline; }
-.dispatch-result {
-  padding: 12px 16px; border-radius: 8px; margin-top: 12px; font-size: 13px; display: none;
-}
-.dispatch-result.success { display: block; background: #1a3a1a; border: 1px solid #2ea043; color: var(--accent-green); }
-.dispatch-result.error { display: block; background: #3a1a1a; border: 1px solid #f85149; color: var(--accent-red); }
-
-.empty-state {
-  text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 14px;
-}
-.status-bar {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 8px 0; font-size: 12px; color: var(--text-muted); margin-bottom: 16px;
-}
-.issue-id {
-  display: inline-block; padding: 1px 6px; background: var(--bg-tertiary);
-  border-radius: 3px; font-size: 11px; font-family: monospace; color: var(--accent-cyan);
-  margin: 1px;
-}
-</style>
+<link rel="stylesheet" href="/static/shared.css">
 </head>
 <body>
 <div class="container">
@@ -225,17 +30,17 @@ a:hover { text-decoration: underline; }
 
   <div class="panel">
     <div class="panel-header">Security Health Trend</div>
-    <div class="panel-body" id="trend-chart"></div>
+    <div class="panel-body" id="trend-chart"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
   </div>
 
   <div class="grid-2">
     <div class="panel">
       <div class="panel-header">Severity Breakdown</div>
-      <div class="panel-body" id="severity-chart"></div>
+      <div class="panel-body" id="severity-chart"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
     </div>
     <div class="panel">
       <div class="panel-header">Category Breakdown</div>
-      <div class="panel-body" id="category-chart"></div>
+      <div class="panel-body" id="category-chart"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
     </div>
   </div>
 
@@ -244,7 +49,7 @@ a:hover { text-decoration: underline; }
       Run History
       <span id="runs-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
     </div>
-    <div class="panel-body" style="overflow-x:auto;" id="runs-table-container"></div>
+    <div class="panel-body" style="overflow-x:auto;" id="runs-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
   </div>
 
   <div class="panel">
@@ -252,7 +57,7 @@ a:hover { text-decoration: underline; }
       Devin Sessions
       <span id="sessions-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
     </div>
-    <div class="panel-body" style="overflow-x:auto;" id="sessions-table-container"></div>
+    <div class="panel-body" style="overflow-x:auto;" id="sessions-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
   </div>
 
   <div class="panel">
@@ -260,7 +65,7 @@ a:hover { text-decoration: underline; }
       Pull Requests
       <span id="prs-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
     </div>
-    <div class="panel-body" style="overflow-x:auto;" id="prs-table-container"></div>
+    <div class="panel-body" style="overflow-x:auto;" id="prs-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
   </div>
 
   <div class="panel">
@@ -268,150 +73,20 @@ a:hover { text-decoration: underline; }
       Issue Tracking
       <span id="issues-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
     </div>
-    <div class="panel-body" style="overflow-x:auto;" id="issues-table-container"></div>
+    <div class="panel-body" style="overflow-x:auto;" id="issues-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
   </div>
 </div>
 
-<div class="modal-overlay" id="dispatch-modal">
-  <div class="modal">
-    <div class="modal-header">
-      <h2>Run CodeQL Fixer Action</h2>
-      <button class="modal-close" onclick="closeDispatchModal()">&times;</button>
-    </div>
-    <div class="modal-body">
-      <div class="warning-banner" id="dispatch-warning"></div>
-      <div class="form-group">
-        <label for="d-target-repo">Target Repository URL *</label>
-        <input class="form-input" id="d-target-repo" type="text" value="" onchange="checkPreflight()">
-        <div class="hint">GitHub repository URL to analyze</div>
-      </div>
-      <div class="form-group">
-        <label for="d-languages">Languages</label>
-        <input class="form-input" id="d-languages" type="text" value="" placeholder="e.g. javascript,python">
-        <div class="hint">Comma-separated CodeQL languages (leave empty for auto-detect)</div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label for="d-queries">Query Suite</label>
-          <select class="form-input" id="d-queries">
-            <option value="security-extended" selected>security-extended</option>
-            <option value="security-and-quality">security-and-quality</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label for="d-severity">Severity Threshold</label>
-          <select class="form-input" id="d-severity">
-            <option value="critical">critical</option>
-            <option value="high">high</option>
-            <option value="medium">medium</option>
-            <option value="low" selected>low</option>
-          </select>
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label for="d-batch-size">Batch Size</label>
-          <input class="form-input" id="d-batch-size" type="number" value="5" min="1">
-          <div class="hint">Max issues per Devin session</div>
-        </div>
-        <div class="form-group">
-          <label for="d-max-sessions">Max Sessions</label>
-          <input class="form-input" id="d-max-sessions" type="number" value="5" min="1">
-          <div class="hint">Max Devin sessions to create</div>
-        </div>
-      </div>
-      <div class="form-group">
-        <label for="d-default-branch">Default Branch</label>
-        <input class="form-input" id="d-default-branch" type="text" value="main">
-        <div class="hint">Default branch of the target repo</div>
-      </div>
-      <div class="form-group">
-        <label for="d-include-paths">Include Paths</label>
-        <input class="form-input" id="d-include-paths" type="text" value="" placeholder="e.g. src/**,lib/**">
-        <div class="hint">Optional comma-separated globs to include</div>
-      </div>
-      <div class="form-group">
-        <label for="d-exclude-paths">Exclude Paths</label>
-        <input class="form-input" id="d-exclude-paths" type="text" value="" placeholder="e.g. test/**,vendor/**">
-        <div class="hint">Optional comma-separated globs to exclude</div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-check">
-            <input type="checkbox" id="d-persist-logs" checked>
-            <span>Persist Logs</span>
-          </label>
-          <div class="hint">Keep logs in GitHub</div>
-        </div>
-        <div class="form-group">
-          <label class="form-check">
-            <input type="checkbox" id="d-dry-run">
-            <span>Dry Run</span>
-          </label>
-          <div class="hint">Generate prompts only (no Devin sessions)</div>
-        </div>
-      </div>
-      <div class="dispatch-result" id="dispatch-result"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn" onclick="closeDispatchModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="submitDispatch()" id="btn-submit-dispatch">Dispatch Workflow</button>
-    </div>
-  </div>
-</div>
+{% include 'dispatch_modal.html' %}
 
+<script src="/static/shared.js"></script>
 <script>
-const API = window.location.origin;
 const REPO_SHORT = {{ repo_short|tojson }};
-
-function setStatus(msg) { document.getElementById('status-text').textContent = msg; }
-function setUpdated() {
-  document.getElementById('last-updated').textContent = 'Updated: ' + new Date().toLocaleTimeString();
-}
-
-function formatDate(iso) {
-  if (!iso) return '-';
-  const d = new Date(iso);
-  return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-}
-
-function repoShort(url) {
-  if (!url) return '-';
-  return url.replace('https://github.com/', '');
-}
-
-function prLabel(url) {
-  if (!url) return '';
-  const m = url.match(/\/pull\/(\d+)/);
-  return m ? '#' + m[1] : 'PR';
-}
-
-function badgeClass(status) {
-  const s = (status || '').toLowerCase();
-  if (s === 'open') return 'badge-open';
-  if (s === 'merged' || s === 'true') return 'badge-merged';
-  if (s === 'closed') return 'badge-closed';
-  if (s === 'created') return 'badge-created';
-  if (s === 'finished' || s === 'stopped') return 'badge-finished';
-  if (s === 'running' || s === 'started') return 'badge-running';
-  if (s.startsWith('error')) return 'badge-error';
-  if (s === 'recurring') return 'badge-recurring';
-  if (s === 'new') return 'badge-new';
-  if (s === 'fixed') return 'badge-fixed';
-  return 'badge-unknown';
-}
-
-function barClass(label) {
-  const l = label.toLowerCase();
-  if (l === 'critical') return 'bar-critical';
-  if (l === 'high') return 'bar-high';
-  if (l === 'medium') return 'bar-medium';
-  if (l === 'low') return 'bar-low';
-  return 'bar-default';
-}
+const REPO_URL = {{ repo_url|tojson }};
 
 function renderMetrics(s) {
   const grid = document.getElementById('metrics-grid');
+  const fixRate = s.fix_rate || 0;
   const cards = [
     { label: 'Total Runs', value: s.total_runs || 0, cls: 'cyan' },
     { label: 'Issues Found', value: s.total_issues || 0, cls: 'orange' },
@@ -419,41 +94,16 @@ function renderMetrics(s) {
       sub: (s.sessions_finished || 0) + ' finished' },
     { label: 'PRs Created', value: s.prs_total || 0, cls: 'blue',
       sub: (s.prs_merged || 0) + ' merged, ' + (s.prs_open || 0) + ' open' },
-    { label: 'Fix Rate', value: (s.fix_rate || 0) + '%', cls: 'green',
+    { label: 'Fix Rate', value: fixRate + '%', cls: fixRateColorClass(fixRate),
       sub: 'merged / total PRs' },
   ];
-  grid.innerHTML = cards.map(c => `
-    <div class="metric-card ${c.cls}">
-      <div class="label">${c.label}</div>
-      <div class="value">${c.value}</div>
-      ${c.sub ? '<div class="sub">' + c.sub + '</div>' : ''}
-    </div>
-  `).join('');
-}
-
-function renderBarChart(container, data) {
-  if (!data || Object.keys(data).length === 0) {
-    container.innerHTML = '<div class="empty-state">No data yet</div>';
-    return;
-  }
-  const max = Math.max(...Object.values(data), 1);
-  const order = ['critical','high','medium','low'];
-  const sorted = Object.entries(data).sort((a, b) => {
-    const ia = order.indexOf(a[0].toLowerCase()), ib = order.indexOf(b[0].toLowerCase());
-    if (ia !== -1 && ib !== -1) return ia - ib;
-    if (ia !== -1) return -1;
-    if (ib !== -1) return 1;
-    return b[1] - a[1];
-  });
-  container.innerHTML = '<div class="bar-chart">' + sorted.map(([label, count]) => `
-    <div class="bar-row">
-      <span class="bar-label">${label}</span>
-      <div class="bar-track">
-        <div class="bar-fill ${barClass(label)}" style="width:${(count/max*100).toFixed(1)}%"></div>
-      </div>
-      <span class="bar-value">${count}</span>
-    </div>
-  `).join('') + '</div>';
+  grid.innerHTML = cards.map(function(c) {
+    return '<div class="metric-card ' + c.cls + '">'
+      + '<div class="label">' + c.label + '</div>'
+      + '<div class="value">' + c.value + '</div>'
+      + (c.sub ? '<div class="sub">' + c.sub + '</div>' : '')
+      + '</div>';
+  }).join('');
 }
 
 function renderRunsTable(runs) {
@@ -464,102 +114,19 @@ function renderRunsTable(runs) {
     return;
   }
   const sorted = [...runs].sort((a, b) => (b.run_number || 0) - (a.run_number || 0));
-  el.innerHTML = `<table>
-    <thead><tr>
-      <th>Run</th><th>Issues</th><th>Batches</th>
-      <th>Sessions</th><th>Timestamp</th>
-    </tr></thead>
-    <tbody>${sorted.map(r => `<tr>
-      <td><strong>#${r.run_number || '-'}</strong></td>
-      <td>${r.issues_found || 0}</td>
-      <td>${r.batches_created || 0}</td>
-      <td>${(r.sessions || []).length}</td>
-      <td>${formatDate(r.timestamp)}</td>
-    </tr>`).join('')}</tbody>
-  </table>`;
-}
-
-function renderSessionsTable(sessions) {
-  const el = document.getElementById('sessions-table-container');
-  document.getElementById('sessions-count').textContent = sessions.length;
-  if (sessions.length === 0) {
-    el.innerHTML = '<div class="empty-state">No Devin sessions created yet.</div>';
-    return;
-  }
-  el.innerHTML = `<table>
-    <thead><tr>
-      <th>Session</th><th>Status</th><th>Run</th>
-      <th>Batch</th><th>Issues</th><th>PR</th>
-    </tr></thead>
-    <tbody>${sessions.map(s => `<tr>
-      <td>${s.session_url ? '<a href="'+s.session_url+'" target="_blank">'+s.session_id.slice(0,8)+'...</a>' : s.session_id || '-'}</td>
-      <td><span class="badge ${badgeClass(s.status)}">${s.status}</span></td>
-      <td>${s.run_url ? '<a href="'+s.run_url+'" target="_blank">#'+s.run_number+'</a>' : '#'+(s.run_number || '-')}</td>
-      <td>${s.batch_id !== undefined ? s.batch_id : '-'}</td>
-      <td>${(s.issue_ids || []).map(id => '<span class="issue-id">'+id+'</span>').join(' ') || '-'}</td>
-      <td>${s.pr_url ? '<a href="'+s.pr_url+'" target="_blank">'+prLabel(s.pr_url)+'</a>' : '-'}</td>
-    </tr>`).join('')}</tbody>
-  </table>`;
-}
-
-function renderPrsTable(prs) {
-  const el = document.getElementById('prs-table-container');
-  document.getElementById('prs-count').textContent = prs.length;
-  if (prs.length === 0) {
-    el.innerHTML = '<div class="empty-state">No pull requests found yet.</div>';
-    return;
-  }
-  el.innerHTML = `<table>
-    <thead><tr>
-      <th>PR</th><th>Status</th><th>Title</th>
-      <th>Issues</th><th>Created</th>
-    </tr></thead>
-    <tbody>${prs.map(p => {
-      const statusLabel = p.merged ? 'merged' : p.state;
-      return `<tr>
-        <td><a href="${p.html_url}" target="_blank">#${p.pr_number}</a></td>
-        <td><span class="badge ${badgeClass(statusLabel)}">${statusLabel}</span></td>
-        <td>${p.title}</td>
-        <td>${(p.issue_ids || []).map(id => '<span class="issue-id">'+id+'</span>').join(' ') || '-'}</td>
-        <td>${formatDate(p.created_at)}</td>
-      </tr>`;
-    }).join('')}</tbody>
-  </table>`;
-}
-
-function renderIssuesTable(issues) {
-  const el = document.getElementById('issues-table-container');
-  document.getElementById('issues-count').textContent = issues.length;
-  if (issues.length === 0) {
-    el.innerHTML = '<div class="empty-state">No issue fingerprints available yet.</div>';
-    return;
-  }
-  const recurring = issues.filter(i => i.status === 'recurring').length;
-  const newCount = issues.filter(i => i.status === 'new').length;
-  const fixed = issues.filter(i => i.status === 'fixed').length;
-  let html = `<div class="issue-summary">
-    <div><span class="badge badge-recurring">recurring</span> <span class="count">${recurring}</span></div>
-    <div><span class="badge badge-new">new</span> <span class="count">${newCount}</span></div>
-    <div><span class="badge badge-fixed">fixed</span> <span class="count">${fixed}</span></div>
-  </div>`;
-  html += `<table>
-    <thead><tr>
-      <th>Status</th><th>Rule</th><th>Severity</th><th>Category</th>
-      <th>File</th><th>Line</th><th>First Seen</th><th>Last Seen</th><th>Runs</th>
-    </tr></thead>
-    <tbody>${issues.map(i => `<tr>
-      <td><span class="badge ${badgeClass(i.status)}">${i.status}</span></td>
-      <td style="font-family:monospace;font-size:11px">${i.rule_id || i.fingerprint.slice(0,12)+'...'}</td>
-      <td><span class="badge ${badgeClass(i.severity_tier)}">${i.severity_tier || '-'}</span></td>
-      <td>${i.cwe_family || '-'}</td>
-      <td style="font-family:monospace;font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${i.file}">${i.file ? i.file.split('/').pop() : '-'}</td>
-      <td>${i.start_line || '-'}</td>
-      <td>Run #${i.first_seen_run}</td>
-      <td>Run #${i.last_seen_run}</td>
-      <td>${i.appearances}x</td>
-    </tr>`).join('')}</tbody>
-  </table>`;
-  el.innerHTML = html;
+  let rows = '';
+  sorted.forEach(function(r) {
+    rows += '<tr>'
+      + '<td><strong>#' + (r.run_number || '-') + '</strong></td>'
+      + '<td>' + (r.issues_found || 0) + '</td>'
+      + '<td>' + (r.batches_created || 0) + '</td>'
+      + '<td>' + (r.sessions || []).length + '</td>'
+      + '<td>' + formatDate(r.timestamp) + '</td>'
+      + '</tr>';
+  });
+  el.innerHTML = '<table><thead><tr>'
+    + '<th>Run</th><th>Issues</th><th>Batches</th><th>Sessions</th><th>Timestamp</th>'
+    + '</tr></thead><tbody>' + rows + '</tbody></table>';
 }
 
 function renderTrendChart(container, runs) {
@@ -567,68 +134,55 @@ function renderTrendChart(container, runs) {
     container.innerHTML = '<div class="empty-state">No run data available yet</div>';
     return;
   }
-  const pts = runs.map(r => ({ run: r.run_number || 0, issues: r.issues_found || 0 }))
+  const pts = runs.map(function(r) { return { run: r.run_number || 0, issues: r.issues_found || 0 }; })
     .sort((a, b) => a.run - b.run);
   if (pts.length === 0) {
     container.innerHTML = '<div class="empty-state">No run data available yet</div>';
     return;
   }
-  const maxY = Math.max(...pts.map(p => p.issues), 1);
+  const maxY = Math.max(...pts.map(function(p) { return p.issues; }), 1);
   const W = 800, H = 280, PAD_L = 55, PAD_R = 20, PAD_T = 20, PAD_B = 50;
-  const plotW = W - PAD_L - PAD_R;
-  const plotH = H - PAD_T - PAD_B;
-
+  const plotW = W - PAD_L - PAD_R, plotH = H - PAD_T - PAD_B;
   const xScale = pts.length > 1
-    ? (i) => PAD_L + (i / (pts.length - 1)) * plotW
-    : () => PAD_L + plotW / 2;
-  const yScale = (v) => PAD_T + plotH - (v / maxY) * plotH;
+    ? function(i) { return PAD_L + (i / (pts.length - 1)) * plotW; }
+    : function() { return PAD_L + plotW / 2; };
+  const yScale = function(v) { return PAD_T + plotH - (v / maxY) * plotH; };
 
-  const gridLines = 5;
   let gridSvg = '';
-  for (let i = 0; i <= gridLines; i++) {
-    const val = Math.round((maxY / gridLines) * i);
-    const y = yScale(val);
-    gridSvg += `<line x1="${PAD_L}" y1="${y}" x2="${W - PAD_R}" y2="${y}" stroke="#30363d" stroke-dasharray="4,4"/>`;
-    gridSvg += `<text x="${PAD_L - 8}" y="${y + 4}" fill="#8b949e" font-size="11" text-anchor="end">${val}</text>`;
+  for (let i = 0; i <= 5; i++) {
+    const val = Math.round((maxY / 5) * i), y = yScale(val);
+    gridSvg += '<line x1="' + PAD_L + '" y1="' + y + '" x2="' + (W - PAD_R) + '" y2="' + y + '" stroke="#30363d" stroke-dasharray="4,4"/>';
+    gridSvg += '<text x="' + (PAD_L - 8) + '" y="' + (y + 4) + '" fill="#8b949e" font-size="11" text-anchor="end">' + val + '</text>';
   }
-
   let xLabelSvg = '';
-  const maxLabels = 15;
+  const maxLabels = Math.min(15, Math.max(5, Math.floor(W / 60)));
   const step = Math.max(1, Math.ceil(pts.length / maxLabels));
   for (let i = 0; i < pts.length; i += step) {
-    const x = xScale(i);
-    xLabelSvg += `<text x="${x}" y="${H - PAD_B + 20}" fill="#8b949e" font-size="11" text-anchor="middle">#${pts[i].run}</text>`;
+    xLabelSvg += '<text x="' + xScale(i) + '" y="' + (H - PAD_B + 20) + '" fill="#8b949e" font-size="11" text-anchor="middle">#' + pts[i].run + '</text>';
   }
-
   const color = '#58a6ff';
-  let lineSvg = '';
-  let dotsSvg = '';
+  let lineSvg = '', dotsSvg = '';
   if (pts.length === 1) {
-    const cx = xScale(0), cy = yScale(pts[0].issues);
-    dotsSvg = `<circle cx="${cx}" cy="${cy}" r="5" fill="${color}"><title>Run #${pts[0].run}: ${pts[0].issues} issues</title></circle>`;
+    dotsSvg = '<circle cx="' + xScale(0) + '" cy="' + yScale(pts[0].issues) + '" r="5" fill="' + color + '"><title>Run #' + pts[0].run + ': ' + pts[0].issues + ' issues</title></circle>';
   } else {
-    const pathParts = pts.map((p, i) => {
-      const x = xScale(i), y = yScale(p.issues);
-      return (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1);
+    const d = pts.map(function(p, i) { return (i===0?'M':'L') + xScale(i).toFixed(1) + ',' + yScale(p.issues).toFixed(1); }).join(' ');
+    lineSvg = '<path d="' + d + '" fill="none" stroke="' + color + '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+    pts.forEach(function(p, i) {
+      dotsSvg += '<circle cx="' + xScale(i) + '" cy="' + yScale(p.issues) + '" r="4" fill="' + color + '" stroke="var(--bg-secondary)" stroke-width="2"><title>Run #' + p.run + ': ' + p.issues + ' issues</title></circle>';
     });
-    lineSvg = `<path d="${pathParts.join(' ')}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
-    for (let i = 0; i < pts.length; i++) {
-      const cx = xScale(i), cy = yScale(pts[i].issues);
-      dotsSvg += `<circle cx="${cx}" cy="${cy}" r="4" fill="${color}" stroke="var(--bg-secondary)" stroke-width="2"><title>Run #${pts[i].run}: ${pts[i].issues} issues</title></circle>`;
-    }
   }
-
   const axisLabelY = PAD_T + plotH / 2;
-  container.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:340px" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
-    ${gridSvg}
-    <line x1="${PAD_L}" y1="${PAD_T}" x2="${PAD_L}" y2="${PAD_T + plotH}" stroke="#30363d"/>
-    <line x1="${PAD_L}" y1="${PAD_T + plotH}" x2="${W - PAD_R}" y2="${PAD_T + plotH}" stroke="#30363d"/>
-    <text x="${PAD_L + plotW / 2}" y="${H - PAD_B + 38}" fill="#6e7681" font-size="12" text-anchor="middle">Action Runs</text>
-    <text x="14" y="${axisLabelY}" fill="#6e7681" font-size="12" text-anchor="middle" transform="rotate(-90,14,${axisLabelY})">Issues Found</text>
-    ${xLabelSvg}
-    ${lineSvg}
-    ${dotsSvg}
-  </svg>`;
+  container.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="max-height:340px" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">'
+    + gridSvg
+    + '<line x1="' + PAD_L + '" y1="' + PAD_T + '" x2="' + PAD_L + '" y2="' + (PAD_T + plotH) + '" stroke="#30363d"/>'
+    + '<line x1="' + PAD_L + '" y1="' + (PAD_T + plotH) + '" x2="' + (W - PAD_R) + '" y2="' + (PAD_T + plotH) + '" stroke="#30363d"/>'
+    + '<text x="' + (PAD_L + plotW / 2) + '" y="' + (H - PAD_B + 38) + '" fill="#6e7681" font-size="12" text-anchor="middle">Action Runs</text>'
+    + '<text x="14" y="' + axisLabelY + '" fill="#6e7681" font-size="12" text-anchor="middle" transform="rotate(-90,14,' + axisLabelY + ')">Issues Found</text>'
+    + xLabelSvg + lineSvg + dotsSvg + '</svg>';
+}
+
+function openDispatchModalRepo() {
+  openDispatchModal(REPO_URL);
 }
 
 async function fetchRepoData() {
@@ -641,116 +195,21 @@ async function fetchRepoData() {
     renderBarChart(document.getElementById('severity-chart'), data.stats.severity_breakdown);
     renderBarChart(document.getElementById('category-chart'), data.stats.category_breakdown);
     renderRunsTable(data.runs.items || []);
-    renderSessionsTable(data.sessions.items || []);
-    renderPrsTable(data.prs.items || []);
-    renderIssuesTable(data.issues.items || []);
+    renderSessionsTable(data.sessions.items || [], 'sessions-table-container', 'sessions-count');
+    renderPrsTable(data.prs.items || [], 'prs-table-container', 'prs-count');
+    renderIssuesTable(data.issues.items || [], 'issues-table-container', 'issues-count');
     setStatus('Ready');
     setUpdated();
   } catch (e) {
     setStatus('Error loading data: ' + e.message);
   }
 }
-
 fetchRepoData();
 
-const REPO_URL = {{ repo_url|tojson }};
-let preflightTimer = null;
-function openDispatchModal() {
-  const modal = document.getElementById('dispatch-modal');
-  modal.classList.add('active');
-  document.getElementById('dispatch-result').className = 'dispatch-result';
-  document.getElementById('dispatch-result').textContent = '';
-  document.getElementById('btn-submit-dispatch').disabled = false;
-  document.getElementById('btn-submit-dispatch').textContent = 'Dispatch Workflow';
-  document.getElementById('d-target-repo').value = REPO_URL;
-  checkPreflight();
-}
-function closeDispatchModal() {
-  document.getElementById('dispatch-modal').classList.remove('active');
-}
-document.getElementById('dispatch-modal').addEventListener('click', function(e) {
-  if (e.target === this) closeDispatchModal();
-});
-
-async function checkPreflight() {
-  const targetRepo = document.getElementById('d-target-repo').value.trim();
-  const warning = document.getElementById('dispatch-warning');
-  warning.className = 'warning-banner';
-  warning.innerHTML = '';
-  if (!targetRepo) return;
-  clearTimeout(preflightTimer);
-  preflightTimer = setTimeout(async () => {
-    try {
-      const res = await fetch(API + '/api/dispatch/preflight?target_repo=' + encodeURIComponent(targetRepo));
-      const data = await res.json();
-      if (data.open_prs > 0) {
-        let html = '\u26a0\ufe0f <strong>' + data.open_prs + ' Devin PR' + (data.open_prs > 1 ? 's are' : ' is') +
-          ' still open</strong> for this repo. Consider merging or closing them before triggering a new run.';
-        if (data.prs && data.prs.length > 0) {
-          html += '<ul style="margin:8px 0 0 16px;padding:0;list-style:disc">';
-          data.prs.forEach(function(p) {
-            html += '<li><a href="' + p.html_url + '" target="_blank">#' + p.pr_number + '</a> ' + p.title + '</li>';
-          });
-          html += '</ul>';
-        }
-        warning.innerHTML = html;
-        warning.className = 'warning-banner visible';
-      }
-    } catch (e) {}
-  }, 500);
-}
-
-async function submitDispatch() {
-  const btn = document.getElementById('btn-submit-dispatch');
-  const resultEl = document.getElementById('dispatch-result');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Dispatching...';
-  resultEl.className = 'dispatch-result';
-  resultEl.textContent = '';
-
-  const payload = {
-    target_repo: document.getElementById('d-target-repo').value.trim(),
-    languages: document.getElementById('d-languages').value.trim(),
-    queries: document.getElementById('d-queries').value,
-    severity_threshold: document.getElementById('d-severity').value,
-    batch_size: parseInt(document.getElementById('d-batch-size').value) || 5,
-    max_sessions: parseInt(document.getElementById('d-max-sessions').value) || 5,
-    default_branch: document.getElementById('d-default-branch').value.trim() || 'main',
-    include_paths: document.getElementById('d-include-paths').value.trim(),
-    exclude_paths: document.getElementById('d-exclude-paths').value.trim(),
-    persist_logs: document.getElementById('d-persist-logs').checked,
-    dry_run: document.getElementById('d-dry-run').checked,
-  };
-
-  if (!payload.target_repo) {
-    resultEl.textContent = 'Target repository URL is required.';
-    resultEl.className = 'dispatch-result error';
-    btn.disabled = false;
-    btn.textContent = 'Dispatch Workflow';
-    return;
-  }
-
-  try {
-    const res = await fetch(API + '/api/dispatch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json();
-    if (data.success) {
-      resultEl.textContent = 'Workflow dispatched successfully! Check GitHub Actions for progress.';
-      resultEl.className = 'dispatch-result success';
-    } else {
-      resultEl.textContent = data.error || 'Failed to dispatch workflow.';
-      resultEl.className = 'dispatch-result error';
-    }
-  } catch (e) {
-    resultEl.textContent = 'Request failed: ' + e.message;
-    resultEl.className = 'dispatch-result error';
-  }
-  btn.disabled = false;
-  btn.textContent = 'Dispatch Workflow';
-}
+(function() {
+  var btn = document.querySelector('[onclick="openDispatchModal()"]');
+  if (btn) btn.setAttribute('onclick', 'openDispatchModalRepo()');
+})();
 </script>
 </body>
 </html>
