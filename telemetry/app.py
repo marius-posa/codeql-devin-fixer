@@ -255,6 +255,24 @@ def aggregate_stats(runs: list[dict], sessions: list[dict], prs: list[dict]) -> 
     }
 
 
+def _collect_session_ids(runs: list[dict]) -> set[str]:
+    ids: set[str] = set()
+    for run in runs:
+        for s in run.get("sessions", []):
+            sid = s.get("session_id", "")
+            if sid and sid != "dry-run":
+                clean = sid.replace("devin-", "") if sid.startswith("devin-") else sid
+                ids.add(clean)
+    return ids
+
+
+def _match_pr_to_session(pr_body: str, session_ids: set[str]) -> str:
+    for sid in session_ids:
+        if sid in (pr_body or ""):
+            return sid
+    return ""
+
+
 def _fetch_prs_from_github(runs: list[dict]) -> list[dict]:
     token = os.environ.get("GITHUB_TOKEN", "")
     if not token:
@@ -265,6 +283,8 @@ def _fetch_prs_from_github(runs: list[dict]) -> list[dict]:
         fork_url = run.get("fork_url", "")
         if "github.com/" in fork_url:
             fork_repos.add(fork_url.rstrip("/").split("github.com/")[1])
+
+    session_ids = _collect_session_ids(runs)
 
     prs: list[dict] = []
     seen_urls: set[str] = set()
@@ -282,13 +302,21 @@ def _fetch_prs_from_github(runs: list[dict]) -> list[dict]:
                     break
                 for pr in batch:
                     title = pr.get("title", "")
-                    if not re.search(r"fix\(CQLF-", title):
-                        continue
+                    body = pr.get("body", "") or ""
                     html_url = pr.get("html_url", "")
+                    user_login = pr.get("user", {}).get("login", "")
+
+                    has_issue_ref = bool(re.search(r"CQLF-R\d+-\d+", title + body))
+                    matched_session = _match_pr_to_session(title + body, session_ids)
+                    is_devin_pr = "devin" in user_login.lower()
+
+                    if not has_issue_ref and not matched_session and not is_devin_pr:
+                        continue
                     if html_url in seen_urls:
                         continue
                     seen_urls.add(html_url)
-                    issue_ids = re.findall(r"CQLF-R\d+-\d+", title)
+
+                    issue_ids = re.findall(r"CQLF-R\d+-\d+", title + body)
                     prs.append({
                         "pr_number": pr.get("number"),
                         "title": title,
@@ -297,8 +325,9 @@ def _fetch_prs_from_github(runs: list[dict]) -> list[dict]:
                         "merged": pr.get("merged_at") is not None,
                         "created_at": pr.get("created_at", ""),
                         "repo": repo_full,
-                        "issue_ids": issue_ids,
-                        "user": pr.get("user", {}).get("login", ""),
+                        "issue_ids": list(dict.fromkeys(issue_ids)),
+                        "user": user_login,
+                        "session_id": matched_session,
                     })
                 if len(batch) < 100:
                     break
@@ -306,6 +335,34 @@ def _fetch_prs_from_github(runs: list[dict]) -> list[dict]:
             except requests.RequestException:
                 break
     return prs
+
+
+def _link_prs_to_sessions(
+    sessions: list[dict], prs: list[dict],
+) -> list[dict]:
+    pr_by_session: dict[str, str] = {}
+    pr_by_issue: dict[str, str] = {}
+    for p in prs:
+        sid = p.get("session_id", "")
+        if sid:
+            pr_by_session[sid] = p.get("html_url", "")
+        for iid in p.get("issue_ids", []):
+            if iid:
+                pr_by_issue[iid] = p.get("html_url", "")
+
+    for s in sessions:
+        if s.get("pr_url"):
+            continue
+        sid = s.get("session_id", "")
+        clean = sid.replace("devin-", "") if sid.startswith("devin-") else sid
+        if clean in pr_by_session:
+            s["pr_url"] = pr_by_session[clean]
+            continue
+        for iid in s.get("issue_ids", []):
+            if iid in pr_by_issue:
+                s["pr_url"] = pr_by_issue[iid]
+                break
+    return sessions
 
 
 def poll_devin_sessions(sessions: list[dict]) -> list[dict]:
@@ -411,6 +468,8 @@ def api_runs():
 def api_sessions():
     runs = cache.get_runs()
     sessions = aggregate_sessions(runs)
+    prs = cache.get_prs(runs)
+    sessions = _link_prs_to_sessions(sessions, prs)
     page, per_page = _get_pagination()
     return jsonify(_paginate(sessions, page, per_page))
 
@@ -588,6 +647,101 @@ def api_backfill():
     if patched:
         cache.invalidate_runs()
     return jsonify({"patched_files": patched})
+
+
+def _track_issues_across_runs(runs: list[dict]) -> list[dict]:
+    sorted_runs = sorted(runs, key=lambda r: r.get("timestamp", ""))
+
+    fp_history: dict[str, list[dict]] = {}
+    for run in sorted_runs:
+        for iss in run.get("issue_fingerprints", []):
+            fp = iss.get("fingerprint", "")
+            if not fp:
+                continue
+            if fp not in fp_history:
+                fp_history[fp] = []
+            fp_history[fp].append({
+                "run_number": run.get("run_number"),
+                "timestamp": run.get("timestamp", ""),
+                "issue_id": iss.get("id", ""),
+                "target_repo": run.get("target_repo", ""),
+            })
+
+    if not sorted_runs:
+        return []
+
+    latest_run_per_repo: dict[str, dict] = {}
+    for run in sorted_runs:
+        repo = run.get("target_repo", "")
+        if repo:
+            latest_run_per_repo[repo] = run
+    latest_fps: set[str] = set()
+    for run in latest_run_per_repo.values():
+        for iss in run.get("issue_fingerprints", []):
+            fp = iss.get("fingerprint", "")
+            if fp:
+                latest_fps.add(fp)
+
+    result = []
+    for fp, appearances in fp_history.items():
+        first = appearances[0]
+        latest = appearances[-1]
+        run_numbers = [a["run_number"] for a in appearances]
+
+        if fp in latest_fps:
+            if len(appearances) > 1:
+                status = "recurring"
+            else:
+                status = "new"
+        else:
+            status = "fixed"
+
+        result.append({
+            "fingerprint": fp,
+            "rule_id": "",
+            "severity_tier": "",
+            "cwe_family": "",
+            "file": "",
+            "start_line": 0,
+            "status": status,
+            "first_seen_run": first["run_number"],
+            "first_seen_date": first["timestamp"],
+            "last_seen_run": latest["run_number"],
+            "last_seen_date": latest["timestamp"],
+            "target_repo": first["target_repo"],
+            "appearances": len(appearances),
+            "run_numbers": run_numbers,
+            "latest_issue_id": latest["issue_id"],
+        })
+
+    for run in sorted_runs:
+        for iss in run.get("issue_fingerprints", []):
+            fp = iss.get("fingerprint", "")
+            for r in result:
+                if r["fingerprint"] == fp and not r["rule_id"]:
+                    r["rule_id"] = iss.get("rule_id", "")
+                    r["severity_tier"] = iss.get("severity_tier", "")
+                    r["cwe_family"] = iss.get("cwe_family", "")
+                    r["file"] = iss.get("file", "")
+                    r["start_line"] = iss.get("start_line", 0)
+                    break
+
+    result.sort(key=lambda x: (
+        {"recurring": 0, "new": 1, "fixed": 2}.get(x["status"], 3),
+        x.get("last_seen_date", ""),
+    ))
+    return result
+
+
+@app.route("/api/issues")
+def api_issues():
+    runs = cache.get_runs()
+    repo_filter = flask_request.args.get("repo", "")
+    if repo_filter:
+        runs = [r for r in runs if r.get("target_repo") == repo_filter]
+    issues = _track_issues_across_runs(runs)
+    page, per_page = _get_pagination()
+    return jsonify(_paginate(issues, page, per_page))
 
 
 if __name__ == "__main__":

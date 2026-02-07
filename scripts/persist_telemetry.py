@@ -69,11 +69,23 @@ def build_telemetry_record(output_dir: str) -> dict:
 
     severity_breakdown: dict[str, int] = {}
     category_breakdown: dict[str, int] = {}
+    issue_fingerprints: list[dict] = []
     for issue in issues:
         tier = issue.get("severity_tier", "unknown")
         severity_breakdown[tier] = severity_breakdown.get(tier, 0) + 1
         family = issue.get("cwe_family", "other")
         category_breakdown[family] = category_breakdown.get(family, 0) + 1
+        fp = issue.get("fingerprint", "")
+        if fp:
+            issue_fingerprints.append({
+                "id": issue.get("id", ""),
+                "fingerprint": fp,
+                "rule_id": issue.get("rule_id", ""),
+                "severity_tier": tier,
+                "cwe_family": family,
+                "file": (issue.get("locations") or [{}])[0].get("file", ""),
+                "start_line": (issue.get("locations") or [{}])[0].get("start_line", 0),
+            })
 
     session_records = []
     for s in sessions:
@@ -101,6 +113,7 @@ def build_telemetry_record(output_dir: str) -> dict:
         "category_breakdown": category_breakdown,
         "batches_created": len(batches),
         "sessions": session_records,
+        "issue_fingerprints": issue_fingerprints,
     }
 
 
