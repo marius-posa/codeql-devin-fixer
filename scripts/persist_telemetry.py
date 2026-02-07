@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+"""Push run telemetry to the codeql-devin-fixer repo via the GitHub Contents API.
+
+After each action run, this script collects the run metadata (target repo,
+fork URL, issues found, batches created, Devin sessions started) and commits
+a JSON file to ``telemetry/runs/`` in the **action repository** (the repo
+where codeql-devin-fixer lives, NOT the fork).  This centralises telemetry
+across all target repos so the dashboard can aggregate everything.
+
+The file is named ``{owner}_{repo}_run_{number}_{timestamp}.json`` to avoid
+collisions across concurrent runs on different targets.
+
+Environment variables
+---------------------
+GITHUB_TOKEN : str
+    PAT with ``repo`` scope -- needed to push to the action repo.
+ACTION_REPO : str
+    Full name of the action repo, e.g. ``marius-posa/codeql-devin-fixer``.
+TARGET_REPO : str
+    HTTPS URL of the target repo that was scanned.
+FORK_URL : str
+    HTTPS URL of the fork used for scanning.
+RUN_NUMBER : str
+    GitHub Actions run number.
+RUN_LABEL : str
+    Timestamped label for this run.
+"""
+
+import base64
+import json
+import os
+import sys
+from datetime import datetime, timezone
+
+import requests
+
+
+def _gh_headers(token: str) -> dict:
+    return {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"token {token}",
+    }
+
+
+def _repo_short_name(url: str) -> str:
+    name = url.rstrip("/")
+    if "github.com/" in name:
+        name = name.split("github.com/")[1]
+    return name.replace("/", "_")
+
+
+def load_output_file(output_dir: str, filename: str) -> list | dict | None:
+    path = os.path.join(output_dir, filename)
+    if os.path.isfile(path):
+        with open(path) as f:
+            return json.load(f)
+    return None
+
+
+def build_telemetry_record(output_dir: str) -> dict:
+    target_repo = os.environ.get("TARGET_REPO", "")
+    fork_url = os.environ.get("FORK_URL", "")
+    run_number = os.environ.get("RUN_NUMBER", "0")
+    run_label = os.environ.get("RUN_LABEL", "")
+
+    issues = load_output_file(output_dir, "issues.json") or []
+    batches = load_output_file(output_dir, "batches.json") or []
+    sessions = load_output_file(output_dir, "sessions.json") or []
+
+    severity_breakdown: dict[str, int] = {}
+    category_breakdown: dict[str, int] = {}
+    for issue in issues:
+        tier = issue.get("severity_tier", "unknown")
+        severity_breakdown[tier] = severity_breakdown.get(tier, 0) + 1
+        family = issue.get("cwe_family", "other")
+        category_breakdown[family] = category_breakdown.get(family, 0) + 1
+
+    session_records = []
+    for s in sessions:
+        session_records.append({
+            "session_id": s.get("session_id", ""),
+            "session_url": s.get("url", ""),
+            "batch_id": s.get("batch_id"),
+            "status": s.get("status", "unknown"),
+            "issue_ids": [],
+        })
+        batch = next((b for b in batches if b.get("batch_id") == s.get("batch_id")), None)
+        if batch:
+            session_records[-1]["issue_ids"] = [
+                i.get("issue_id", "") for i in batch.get("issues", [])
+            ]
+
+    return {
+        "target_repo": target_repo,
+        "fork_url": fork_url,
+        "run_number": int(run_number),
+        "run_label": run_label,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "issues_found": len(issues),
+        "severity_breakdown": severity_breakdown,
+        "category_breakdown": category_breakdown,
+        "batches_created": len(batches),
+        "sessions": session_records,
+    }
+
+
+def push_telemetry(token: str, action_repo: str, record: dict) -> bool:
+    repo_short = _repo_short_name(record["target_repo"])
+    run_num = record["run_number"]
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    filename = f"{repo_short}_run_{run_num}_{ts}.json"
+    path = f"telemetry/runs/{filename}"
+
+    content_b64 = base64.b64encode(
+        json.dumps(record, indent=2).encode()
+    ).decode()
+
+    url = f"https://api.github.com/repos/{action_repo}/contents/{path}"
+    payload = {
+        "message": f"telemetry: {record['target_repo']} run {run_num}",
+        "content": content_b64,
+    }
+
+    resp = requests.put(url, headers=_gh_headers(token), json=payload, timeout=30)
+    if resp.status_code in (200, 201):
+        print(f"Telemetry pushed: {path}")
+        return True
+
+    print(f"WARNING: Failed to push telemetry ({resp.status_code}): {resp.text[:200]}")
+    return False
+
+
+def main() -> None:
+    output_dir = sys.argv[1] if len(sys.argv) > 1 else "output"
+    token = os.environ.get("GITHUB_TOKEN", "")
+    action_repo = os.environ.get("ACTION_REPO", "")
+
+    if not token:
+        print("WARNING: GITHUB_TOKEN not set; skipping telemetry push")
+        return
+    if not action_repo:
+        print("WARNING: ACTION_REPO not set; skipping telemetry push")
+        return
+
+    record = build_telemetry_record(output_dir)
+    print(f"Telemetry record: {record['target_repo']} | "
+          f"{record['issues_found']} issues | "
+          f"{record['batches_created']} batches | "
+          f"{len(record['sessions'])} sessions")
+
+    push_telemetry(token, action_repo, record)
+
+
+if __name__ == "__main__":
+    main()

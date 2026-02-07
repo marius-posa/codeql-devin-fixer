@@ -1,5 +1,41 @@
 #!/usr/bin/env python3
-"""Check for an existing fork and create one if needed."""
+"""Check for an existing fork of the target repo and create one if needed.
+
+This script is the first step in the CodeQL Devin Fixer pipeline.  It ensures
+that the analysis runs against a *fork* in the user's GitHub account rather
+than the original upstream repository.  This is important because:
+
+* The user may not have push access to the upstream repo.
+* Devin sessions need a repo where they can create branches and PRs.
+* Scanning a fork keeps upstream unaffected.
+
+The script requires a **Personal Access Token (PAT)** with ``repo`` scope.
+The default ``secrets.GITHUB_TOKEN`` issued by GitHub Actions is an
+installation token scoped only to the repo running the workflow -- it cannot
+create forks or push to other repositories.
+
+Environment variables
+---------------------
+GITHUB_TOKEN : str
+    PAT with ``repo`` scope (required).
+TARGET_REPO : str
+    Full HTTPS URL of the upstream repository to fork.
+DEFAULT_BRANCH : str
+    Branch to sync after forking (default ``main``).
+FORK_OWNER : str
+    GitHub username that should own the fork.  In the workflow this is set
+    from ``github.repository_owner`` so the script does not need to call
+    the ``/user`` API (which fails with installation tokens).
+
+Outputs (written to ``$GITHUB_OUTPUT``)
+---------------------------------------
+fork_url : str
+    HTTPS URL of the fork (e.g. ``https://github.com/user/repo``).
+fork_owner : str
+    Owner of the fork.
+fork_repo : str
+    Repository name of the fork.
+"""
 
 import os
 import re
@@ -9,6 +45,11 @@ import requests
 
 
 def parse_repo_url(url: str) -> tuple[str, str]:
+    """Extract ``(owner, repo)`` from a GitHub HTTPS URL.
+
+    Handles trailing slashes and ``.git`` suffixes so callers can pass URLs
+    in any common format.
+    """
     url = url.strip().rstrip("/")
     if url.endswith(".git"):
         url = url[:-4]
@@ -20,6 +61,13 @@ def parse_repo_url(url: str) -> tuple[str, str]:
 
 
 def resolve_owner(token: str, fallback: str) -> str:
+    """Determine the GitHub username that will own the fork.
+
+    The primary source is the ``FORK_OWNER`` env var (passed as *fallback*),
+    which is set from ``github.repository_owner`` in the workflow and is always
+    available.  The ``/user`` API call is a secondary fallback for local
+    testing with a PAT -- it will fail with an installation token.
+    """
     if fallback:
         return fallback
     try:
@@ -37,6 +85,12 @@ def resolve_owner(token: str, fallback: str) -> str:
 
 
 def check_fork_exists(token: str, owner: str, repo: str, my_user: str) -> dict | None:
+    """Check whether ``my_user`` already has a fork of ``owner/repo``.
+
+    Uses the ``GET /repos/{my_user}/{repo}`` endpoint and verifies that the
+    returned repository is actually a fork whose parent matches the target.
+    Returns the repo JSON dict if a valid fork is found, otherwise ``None``.
+    """
     headers = {"Accept": "application/vnd.github+json"}
     if token:
         headers["Authorization"] = f"token {token}"
@@ -57,6 +111,12 @@ def check_fork_exists(token: str, owner: str, repo: str, my_user: str) -> dict |
 
 
 def create_fork(token: str, owner: str, repo: str) -> dict:
+    """Create a new fork of ``owner/repo`` under the authenticated user.
+
+    After the API call returns, GitHub may still be copying data.  The
+    function polls up to 12 times (60 s total) until the fork's ``size``
+    field is non-zero, indicating the copy is complete.
+    """
     print(f"Creating fork of {owner}/{repo}...")
     resp = requests.post(
         f"https://api.github.com/repos/{owner}/{repo}/forks",
@@ -86,6 +146,11 @@ def create_fork(token: str, owner: str, repo: str) -> dict:
 
 
 def sync_fork(token: str, my_user: str, repo: str, branch: str) -> None:
+    """Bring the fork's default branch up to date with upstream.
+
+    Uses the ``POST /repos/{owner}/{repo}/merge-upstream`` endpoint.  A 409
+    response means the branch is already up to date, which is fine.
+    """
     print(f"Syncing fork {my_user}/{repo} with upstream {branch}...")
     resp = requests.post(
         f"https://api.github.com/repos/{my_user}/{repo}/merge-upstream",
@@ -160,6 +225,7 @@ def main() -> None:
 
 
 def _write_outputs(fork_url: str, owner: str, repo: str) -> None:
+    """Write fork details to ``$GITHUB_OUTPUT`` for downstream action steps."""
     github_output = os.environ.get("GITHUB_OUTPUT")
     if github_output:
         with open(github_output, "a") as f:

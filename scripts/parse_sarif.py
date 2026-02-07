@@ -1,5 +1,45 @@
 #!/usr/bin/env python3
-"""Parse CodeQL SARIF output, prioritize by severity, and group into batches."""
+"""Parse CodeQL SARIF output, prioritize by severity, and group into batches.
+
+This script is the analytical core of the pipeline.  It transforms raw SARIF
+(Static Analysis Results Interchange Format) output from CodeQL into
+actionable, prioritised batches that can be dispatched to Devin sessions.
+
+The processing pipeline is:
+
+1. **Parse** -- extract issues from one or more ``.sarif`` files.
+2. **Deduplicate** -- remove findings that share the same rule + location.
+3. **Prioritize** -- filter by severity threshold and sort by CVSS score.
+4. **Assign IDs** -- give each issue a stable identifier
+   (``CQLF-R{run}-{seq}``) so it can be tracked across sessions and PRs.
+5. **Batch** -- group related issues by CWE family and chunk them to fit
+   within the configured ``batch_size``.  Families are ordered by maximum
+   severity so the most critical batches are dispatched first.
+
+Design decisions
+----------------
+* **CVSS-based severity tiers** -- we map the ``security-severity`` property
+  (a CVSS v3 score) to four tiers.  This mirrors how vulnerability scanners
+  report risk and aligns with industry norms (NVD, GitHub Advisory).
+* **CWE family grouping** -- issues are batched by CWE family rather than
+  individual CWE because related weaknesses often share the same remediation
+  pattern (e.g. all injection CWEs benefit from parameterised queries).
+  Batching by family lets Devin apply a consistent fix strategy.
+* **Issue IDs** -- the ``CQLF-R{run}-{seq}`` format encodes the run number
+  so IDs are unique across runs.  This makes it easy to trace a PR back to
+  the exact action run that identified the issues.
+
+Environment variables
+---------------------
+BATCH_SIZE : int
+    Maximum issues per batch / Devin session (default 5).
+MAX_SESSIONS : int
+    Maximum number of batches to create (default 10).
+SEVERITY_THRESHOLD : str
+    Minimum severity tier to include: critical | high | medium | low.
+RUN_NUMBER : str
+    GitHub Actions run number, used in issue IDs.
+"""
 
 import json
 import re
@@ -9,6 +49,9 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
+# Severity tiers map CVSS v3 score ranges to human-readable labels.
+# These thresholds follow the NVD / GitHub Advisory severity scale so that
+# results are consistent with what developers see on github.com.
 SEVERITY_TIERS = {
     "critical": (9.0, 10.0),
     "high": (7.0, 8.9),
@@ -19,6 +62,10 @@ SEVERITY_TIERS = {
 
 SEVERITY_ORDER = ["critical", "high", "medium", "low", "none"]
 
+# CWE families group related weakness IDs so that issues sharing a common
+# remediation strategy end up in the same batch.  For example, SQL injection
+# (CWE-89) and OS command injection (CWE-78) both require input validation /
+# parameterised APIs, so they belong to the "injection" family.
 CWE_FAMILIES: dict[str, list[str]] = {
     "injection": [
         "cwe-77",
@@ -49,6 +96,7 @@ CWE_FAMILIES: dict[str, list[str]] = {
     "template-injection": ["cwe-73", "cwe-1336"],
 }
 
+# Reverse index: CWE-ID -> family name for O(1) lookup during parsing.
 _CWE_FAMILY_INDEX: dict[str, str] = {}
 for _family, _members in CWE_FAMILIES.items():
     for _cwe in _members:
@@ -56,6 +104,11 @@ for _family, _members in CWE_FAMILIES.items():
 
 
 def normalize_cwe(cwe: str) -> str:
+    """Normalise a CWE identifier to lowercase ``cwe-{number}`` form.
+
+    SARIF tags may include leading zeros (``CWE-079``); this strips them so
+    lookups into ``_CWE_FAMILY_INDEX`` are consistent.
+    """
     m = re.match(r"cwe-0*(\d+)", cwe.lower())
     if m:
         return f"cwe-{m.group(1)}"
@@ -63,6 +116,7 @@ def normalize_cwe(cwe: str) -> str:
 
 
 def classify_severity(score: float) -> str:
+    """Map a numeric CVSS score to a severity tier string."""
     for tier, (low, high) in SEVERITY_TIERS.items():
         if low <= score <= high:
             return tier
@@ -70,6 +124,10 @@ def classify_severity(score: float) -> str:
 
 
 def extract_cwes(tags: list[str]) -> list[str]:
+    """Extract and normalise CWE IDs from SARIF rule tags.
+
+    CodeQL encodes CWEs as ``external/cwe/cwe-79`` in the tags array.
+    """
     cwes = []
     for tag in tags:
         if tag.startswith("external/cwe/"):
@@ -79,6 +137,7 @@ def extract_cwes(tags: list[str]) -> list[str]:
 
 
 def get_cwe_family(cwes: list[str]) -> str:
+    """Return the family name for the first recognised CWE, or ``'other'``."""
     for cwe in cwes:
         family = _CWE_FAMILY_INDEX.get(cwe)
         if family:
@@ -87,6 +146,15 @@ def get_cwe_family(cwes: list[str]) -> str:
 
 
 def parse_sarif(sarif_path: str) -> list[dict[str, Any]]:
+    """Extract security issues from a single SARIF file.
+
+    Iterates over every ``run`` / ``result`` in the SARIF and enriches each
+    finding with severity score, tier, CWE IDs, and source locations.
+
+    If the ``security-severity`` property is absent (some built-in rules
+    don't set it), the function falls back to the result ``level`` field:
+    ``error`` -> 7.0 (high), ``warning`` -> 4.0 (medium).
+    """
     file_size = os.path.getsize(sarif_path)
     if file_size > 500 * 1024 * 1024:
         print(f"WARNING: SARIF file is very large ({file_size / 1024 / 1024:.0f} MB)")
@@ -170,6 +238,12 @@ def parse_sarif(sarif_path: str) -> list[dict[str, Any]]:
 
 
 def deduplicate_issues(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Remove duplicate findings that share the same rule ID and location(s).
+
+    CodeQL can report the same issue in multiple SARIF runs (e.g. when
+    analysing different languages).  Deduplication prevents Devin from
+    receiving the same fix request twice.
+    """
     seen: set[str] = set()
     unique: list[dict[str, Any]] = []
     for issue in issues:
@@ -187,6 +261,11 @@ def deduplicate_issues(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def prioritize_issues(
     issues: list[dict[str, Any]], threshold: str = "low"
 ) -> list[dict[str, Any]]:
+    """Filter issues below *threshold* and sort by descending severity.
+
+    Secondary sort key is ``cwe_family`` so that issues in the same family
+    are adjacent, which improves batching efficiency.
+    """
     threshold_idx = SEVERITY_ORDER.index(threshold)
     allowed_tiers = set(SEVERITY_ORDER[: threshold_idx + 1])
     filtered = [i for i in issues if i["severity_tier"] in allowed_tiers]
@@ -197,6 +276,14 @@ def prioritize_issues(
 def batch_issues(
     issues: list[dict[str, Any]], batch_size: int = 5, max_batches: int = 10
 ) -> list[dict[str, Any]]:
+    """Group issues into batches by CWE family, capped at *batch_size*.
+
+    Families with the highest max-severity score are processed first so
+    that the most critical batches get dispatched before hitting the
+    *max_batches* cap.  Within a family, issues are already sorted by
+    severity (from ``prioritize_issues``), so each batch contains the
+    most severe issues first.
+    """
     family_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for issue in issues:
         family_groups[issue["cwe_family"]].append(issue)
@@ -247,6 +334,7 @@ def generate_summary(
     total_raw: int = 0,
     dedup_removed: int = 0,
 ) -> str:
+    """Generate a Markdown summary for the GitHub Step Summary."""
     lines = ["# CodeQL Analysis Summary\n"]
 
     if total_raw > 0:
@@ -297,6 +385,11 @@ def generate_summary(
 def assign_issue_ids(
     issues: list[dict[str, Any]], run_number: str = ""
 ) -> list[dict[str, Any]]:
+    """Assign a unique ID to each issue in the format ``CQLF-R{run}-{seq}``.
+
+    The run number is embedded so IDs remain unique across workflow runs.
+    Sequential numbering starts at 1 and zero-pads to 4 digits.
+    """
     prefix = f"R{run_number}-" if run_number else ""
     for idx, issue in enumerate(issues, 1):
         issue["id"] = f"CQLF-{prefix}{idx:04d}"
