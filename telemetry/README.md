@@ -36,11 +36,12 @@ Open http://localhost:5000 in your browser.
 ## Features
 
 - **Aggregated metrics** across all action runs and target repos
-- **Repo-by-repo filtering** -- click "Filter" on any repo row to see metrics for that repo only
+- **Repo detail pages** -- click any repo to see scoped metrics, runs, sessions, and PRs
 - **Session polling** -- click "Poll Sessions" to fetch live Devin session statuses
-- **PR tracking** -- shows PRs created, merged, and open on fork repos
+- **PR-session linking** -- PRs are matched to Devin sessions by searching for session IDs in PR body/title
+- **Cross-run issue tracking** -- stable fingerprints (`rule_id + file + start_line`) classify issues as recurring, new, or fixed
 - **Refresh** -- pulls the latest telemetry JSON files from the action repo
-- **Backfill** -- PATCH `/api/backfill` to correct old telemetry records with missing issue IDs or PR URLs
+- **Backfill** -- POST `/api/backfill` to correct old telemetry records with missing issue IDs or PR URLs
 
 ## API Endpoints
 
@@ -51,6 +52,16 @@ Open http://localhost:5000 in your browser.
 | `/api/sessions` | GET | All Devin sessions across runs (paginated) |
 | `/api/prs` | GET | All PRs from fork repos (paginated) |
 | `/api/repos` | GET | Per-repo aggregated metrics |
+| `/api/issues` | GET | Cross-run issue tracking with fingerprints (`?repo=` optional filter) |
+| `/api/repo/<owner/repo>` | GET | Repo-scoped stats, runs, sessions, and PRs |
 | `/api/poll` | POST | Poll Devin API for session status updates |
+| `/api/poll-prs` | POST | Re-fetch PRs from GitHub API |
 | `/api/refresh` | POST | Pull latest telemetry files from GitHub |
 | `/api/backfill` | POST | Patch old records with corrected issue IDs and PR URLs |
+
+### Pages
+
+| URL | Description |
+|---|---|
+| `/` | Main dashboard with aggregated metrics |
+| `/repo/<owner/repo>` | Dedicated detail page for a specific repository |
