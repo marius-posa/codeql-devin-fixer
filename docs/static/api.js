@@ -1,5 +1,4 @@
 const ACTION_REPO_DEFAULT = 'marius-posa/codeql-devin-fixer';
-const DEVIN_API_BASE = 'https://api.devin.ai/v1';
 const GH_API = 'https://api.github.com';
 
 var _encKey = null;
@@ -117,11 +116,6 @@ function ghHeaders() {
   const h = { 'Accept': 'application/vnd.github+json' };
   if (token) h['Authorization'] = 'token ' + token;
   return h;
-}
-
-function devinHeaders() {
-  const key = getConfig().devinApiKey;
-  return { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' };
 }
 
 let _runsCache = null;
@@ -458,48 +452,6 @@ function linkPrsToSessions(sessions, prs) {
   return sessions;
 }
 
-async function pollDevinSessions(sessions) {
-  const cfg = getConfig();
-  if (!cfg.devinApiKey) return sessions;
-
-  const updated = [];
-  for (const s of sessions) {
-    const sid = s.session_id || '';
-    if (!sid || sid === 'dry-run') {
-      updated.push(s);
-      continue;
-    }
-    try {
-      const cleanSid = sid.startsWith('devin-') ? sid.slice(6) : sid;
-      const resp = await fetch(DEVIN_API_BASE + '/sessions/' + cleanSid, {
-        headers: devinHeaders(),
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        let statusStr = String(data.status_enum || data.status || 'unknown').toLowerCase();
-        if (typeof statusStr === 'object') statusStr = statusStr.status || 'unknown';
-        s.status = statusStr;
-
-        let prUrl = '';
-        const so = data.structured_output;
-        if (so && typeof so === 'object') prUrl = so.pull_request_url || '';
-        if (!prUrl) {
-          const res = data.result;
-          if (res && typeof res === 'object') prUrl = res.pull_request_url || '';
-        }
-        if (!prUrl) {
-          const prInfo = data.pull_request;
-          if (prInfo && typeof prInfo === 'object') prUrl = prInfo.url || prInfo.html_url || '';
-          else if (typeof prInfo === 'string') prUrl = prInfo;
-        }
-        if (prUrl) s.pr_url = prUrl;
-      }
-    } catch (e) {}
-    updated.push(s);
-  }
-  return updated;
-}
-
 function trackIssuesAcrossRuns(runs) {
   if (!runs || runs.length === 0) return [];
 
@@ -649,9 +601,9 @@ async function triggerPollWorkflow() {
   if (!cfg.githubToken) return { error: 'GitHub token not configured. Open Settings to add it.' };
   if (!cfg.actionRepo) return { error: 'Action repo not configured. Open Settings to add it.' };
 
-  var url = GH_API + '/repos/' + cfg.actionRepo + '/actions/workflows/poll-sessions.yml/dispatches';
+  const url = GH_API + '/repos/' + cfg.actionRepo + '/actions/workflows/poll-sessions.yml/dispatches';
   try {
-    var resp = await fetch(url, {
+    const resp = await fetch(url, {
       method: 'POST',
       headers: ghHeaders(),
       body: JSON.stringify({ ref: 'main' }),
@@ -659,9 +611,9 @@ async function triggerPollWorkflow() {
     if (resp.status === 204) {
       return { success: true };
     }
-    var errMsg = 'GitHub API error (' + resp.status + ')';
+    let errMsg = 'GitHub API error (' + resp.status + ')';
     try {
-      var errData = await resp.json();
+      const errData = await resp.json();
       errMsg += ': ' + (errData.message || resp.statusText);
     } catch (e) {}
     return { error: errMsg };
@@ -671,49 +623,49 @@ async function triggerPollWorkflow() {
 }
 
 async function waitForPollWorkflow(timeoutMs) {
-  var cfg = getConfig();
+  const cfg = getConfig();
   if (!cfg.githubToken || !cfg.actionRepo) return { error: 'Not configured' };
 
-  var maxWait = timeoutMs || 120000;
-  var start = Date.now();
-  var runId = null;
+  const maxWait = timeoutMs || 120000;
+  const start = Date.now();
+  let runId = null;
 
   await new Promise(function(r) { setTimeout(r, 3000); });
 
   while (Date.now() - start < maxWait) {
     try {
-      var url = GH_API + '/repos/' + cfg.actionRepo + '/actions/workflows/poll-sessions.yml/runs?per_page=1&status=in_progress';
-      var resp = await fetch(url, { headers: ghHeaders() });
+      const url = GH_API + '/repos/' + cfg.actionRepo + '/actions/workflows/poll-sessions.yml/runs?per_page=1&status=in_progress';
+      const resp = await fetch(url, { headers: ghHeaders() });
       if (resp.ok) {
-        var data = await resp.json();
+        const data = await resp.json();
         if (data.workflow_runs && data.workflow_runs.length > 0) {
           runId = data.workflow_runs[0].id;
         } else if (runId) {
-          var checkUrl = GH_API + '/repos/' + cfg.actionRepo + '/actions/runs/' + runId;
-          var checkResp = await fetch(checkUrl, { headers: ghHeaders() });
+          const checkUrl = GH_API + '/repos/' + cfg.actionRepo + '/actions/runs/' + runId;
+          const checkResp = await fetch(checkUrl, { headers: ghHeaders() });
           if (checkResp.ok) {
-            var run = await checkResp.json();
+            const run = await checkResp.json();
             if (run.status === 'completed') {
               return { success: true, conclusion: run.conclusion };
             }
           }
         } else {
-          var queuedUrl = GH_API + '/repos/' + cfg.actionRepo + '/actions/workflows/poll-sessions.yml/runs?per_page=1&status=queued';
-          var queuedResp = await fetch(queuedUrl, { headers: ghHeaders() });
+          const queuedUrl = GH_API + '/repos/' + cfg.actionRepo + '/actions/workflows/poll-sessions.yml/runs?per_page=1&status=queued';
+          const queuedResp = await fetch(queuedUrl, { headers: ghHeaders() });
           if (queuedResp.ok) {
-            var queuedData = await queuedResp.json();
+            const queuedData = await queuedResp.json();
             if (queuedData.workflow_runs && queuedData.workflow_runs.length > 0) {
               runId = queuedData.workflow_runs[0].id;
             }
           }
           if (!runId) {
-            var recentUrl = GH_API + '/repos/' + cfg.actionRepo + '/actions/workflows/poll-sessions.yml/runs?per_page=1';
-            var recentResp = await fetch(recentUrl, { headers: ghHeaders() });
+            const recentUrl = GH_API + '/repos/' + cfg.actionRepo + '/actions/workflows/poll-sessions.yml/runs?per_page=1';
+            const recentResp = await fetch(recentUrl, { headers: ghHeaders() });
             if (recentResp.ok) {
-              var recentData = await recentResp.json();
+              const recentData = await recentResp.json();
               if (recentData.workflow_runs && recentData.workflow_runs.length > 0) {
-                var latest = recentData.workflow_runs[0];
-                var createdAt = new Date(latest.created_at).getTime();
+                const latest = recentData.workflow_runs[0];
+                const createdAt = new Date(latest.created_at).getTime();
                 if (createdAt > start - 5000) {
                   if (latest.status === 'completed') {
                     return { success: true, conclusion: latest.conclusion };

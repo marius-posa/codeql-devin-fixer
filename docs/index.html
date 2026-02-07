@@ -344,7 +344,7 @@ async function pollSessions() {
   btn.innerHTML = '<span class="spinner"></span> Polling...';
   setStatus('Triggering server-side session poll...');
   try {
-    var result = await triggerPollWorkflow();
+    const result = await triggerPollWorkflow();
     if (result.error) {
       setStatus('Poll error: ' + result.error);
       btn.disabled = false;
@@ -352,7 +352,7 @@ async function pollSessions() {
       return;
     }
     setStatus('Poll workflow dispatched, waiting for completion...');
-    var waitResult = await waitForPollWorkflow(120000);
+    const waitResult = await waitForPollWorkflow(120000);
     if (waitResult.error) {
       setStatus('Poll warning: ' + waitResult.error);
     } else {
@@ -424,7 +424,6 @@ async function init() {
   var cfg = getConfig();
   var warnings = [];
   if (!cfg.githubToken) warnings.push('GitHub token not set - PR discovery and refresh limited');
-  if (!cfg.devinApiKey) warnings.push('Devin API key not set - session polling disabled');
   await fetchAll();
   if (warnings.length > 0) setStatus(warnings.join(' | ') + ' (click Settings to configure)');
 }
