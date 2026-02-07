@@ -113,3 +113,11 @@ jobs:
           devin_api_key: ${{ secrets.DEVIN_API_KEY }}
           dry_run: ${{ inputs.dry_run }}
           default_branch: ${{ inputs.default_branch }}
+          queries: ${{ inputs.queries }}
+          include_paths: ${{ inputs.include_paths }}
+          exclude_paths: ${{ inputs.exclude_paths }}
+          wait_for_sessions: ${{ inputs.wait_for_sessions }}
+          poll_timeout: ${{ inputs.poll_timeout }}
+          poll_interval: ${{ inputs.poll_interval }}
+          persist_logs: ${{ inputs.persist_logs }}
+          generate_dashboard: ${{ inputs.generate_dashboard }}
