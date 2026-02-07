@@ -303,6 +303,8 @@ def _fetch_prs_from_github(runs: list[dict]) -> list[dict]:
             try:
                 resp = requests.get(url, headers=_gh_headers(), timeout=30)
                 if resp.status_code != 200:
+                    snippet = (resp.text or "").strip().replace("\n", " ")[:200]
+                    print(f"WARNING: PRs API returned {resp.status_code} for {repo_full} page {gh_page}: {snippet}")
                     break
                 batch = resp.json()
                 if not batch:
@@ -313,7 +315,7 @@ def _fetch_prs_from_github(runs: list[dict]) -> list[dict]:
                     html_url = pr.get("html_url", "")
                     user_login = pr.get("user", {}).get("login", "")
 
-                    has_issue_ref = bool(re.search(r"CQLF-R\d+-\d+", title + body))
+                    has_issue_ref = bool(re.search(r"CQLF-R\d+-\d+", title + body, re.IGNORECASE))
                     matched_session = _match_pr_to_session(title + body, session_ids)
 
                     if not has_issue_ref and not matched_session:
@@ -322,7 +324,7 @@ def _fetch_prs_from_github(runs: list[dict]) -> list[dict]:
                         continue
                     seen_urls.add(html_url)
 
-                    issue_ids = re.findall(r"CQLF-R\d+-\d+", title + body)
+                    issue_ids = re.findall(r"CQLF-R\d+-\d+", title + body, re.IGNORECASE)
                     prs.append({
                         "pr_number": pr.get("number"),
                         "title": title,
@@ -338,7 +340,8 @@ def _fetch_prs_from_github(runs: list[dict]) -> list[dict]:
                 if len(batch) < 100:
                     break
                 gh_page += 1
-            except requests.RequestException:
+            except requests.RequestException as exc:
+                print(f"ERROR: fetching PRs from GitHub failed: {exc}")
                 break
     return prs
 

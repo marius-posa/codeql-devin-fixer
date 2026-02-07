@@ -311,9 +311,9 @@ def fetch_codeql_prs(token: str, owner: str, repo: str) -> list[dict[str, Any]]:
                     title = pr.get("title", "")
                     body = pr.get("body", "") or ""
                     combined = title + " " + body
-                    if not re.search(r"CQLF-R\d+-\d+", combined):
+                    if not re.search(r"CQLF-R\d+-\d+", combined, re.IGNORECASE):
                         continue
-                    issue_ids = re.findall(r"CQLF-R\d+-\d+", combined)
+                    issue_ids = re.findall(r"CQLF-R\d+-\d+", combined, re.IGNORECASE)
                     prs.append({
                         "number": pr["number"],
                         "title": title,
