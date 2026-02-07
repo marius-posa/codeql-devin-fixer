@@ -84,7 +84,7 @@ def build_batch_prompt(batch: dict, repo_url: str, default_branch: str) -> str:
             "2. Fix ALL the issues listed above. Track which issue IDs you are fixing.",
             "3. Ensure fixes don't break existing functionality.",
             "4. Run existing tests if available to verify.",
-            "5. Create a PR with a clear description listing each issue ID fixed.",
+            f"5. Create a PR **on the repo {repo_url}** (not the upstream) with a clear description listing each issue ID fixed.",
             f"6. Title the PR exactly: '{pr_title}'",
             f"7. In the PR body, list each issue ID ({ids_str}) and describe the fix applied.",
             "",

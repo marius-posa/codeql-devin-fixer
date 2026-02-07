@@ -121,6 +121,7 @@ runs:
         GITHUB_TOKEN: ${{ inputs.github_token }}
         TARGET_REPO: ${{ inputs.target_repo }}
         DEFAULT_BRANCH: ${{ inputs.default_branch }}
+        FORK_OWNER: ${{ github.repository_owner }}
       run: |
         if [ -n "$GITHUB_TOKEN" ]; then
           python "${{ github.action_path }}/scripts/fork_repo.py"
@@ -133,13 +134,18 @@ runs:
       shell: bash
       env:
         GIT_LFS_SKIP_SMUDGE: "1"
+        GITHUB_TOKEN: ${{ inputs.github_token }}
       run: |
         TARGET_DIR="${{ runner.temp }}/target-repo"
         REPO_URL="${{ steps.fork.outputs.fork_url }}"
         if [ -z "$REPO_URL" ]; then
           REPO_URL="${{ inputs.target_repo }}"
         fi
-        git clone --depth 1 --single-branch "$REPO_URL" "$TARGET_DIR"
+        CLONE_URL="$REPO_URL"
+        if [ -n "$GITHUB_TOKEN" ]; then
+          CLONE_URL=$(echo "$REPO_URL" | sed "s|https://github.com/|https://x-access-token:${GITHUB_TOKEN}@github.com/|")
+        fi
+        git clone --depth 1 --single-branch "$CLONE_URL" "$TARGET_DIR"
         echo "TARGET_DIR=$TARGET_DIR" >> "$GITHUB_ENV"
         echo "SCAN_REPO_URL=$REPO_URL" >> "$GITHUB_ENV"
 
@@ -360,12 +366,13 @@ runs:
           echo "No dashboard changes to commit"
         else
           git commit -m "chore: update tracking dashboard"
-          REMOTE_URL=$(git remote get-url origin)
-          AUTH_URL=$(echo "$REMOTE_URL" | sed "s|https://github.com/|https://x-access-token:${GITHUB_TOKEN}@github.com/|")
-          git remote set-url origin "$AUTH_URL"
           BRANCH=$(git rev-parse --abbrev-ref HEAD)
-          git push origin "$BRANCH"
-          echo "Dashboard committed and pushed"
+          if git push origin "$BRANCH" 2>&1; then
+            echo "Dashboard committed and pushed"
+          else
+            echo "WARNING: Could not push dashboard. The GITHUB_TOKEN may lack permission for the target repo."
+            echo "Dashboard was committed locally but not pushed."
+          fi
         fi
 
     - name: Upload artifacts
