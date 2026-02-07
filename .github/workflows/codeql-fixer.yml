@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       target_repo:
-        description: "GitHub repository URL to analyze"
+        description: "GitHub repository to analyze (full URL or owner/repo shorthand)"
         required: true
         type: string
         default: "https://github.com/juice-shop/juice-shop"
