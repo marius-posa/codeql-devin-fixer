@@ -160,6 +160,11 @@ a:hover { text-decoration: underline; }
 
   <div class="metrics-grid" id="metrics-grid"></div>
 
+  <div class="panel">
+    <div class="panel-header">Security Health Trend</div>
+    <div class="panel-body" id="trend-chart"></div>
+  </div>
+
   <div class="grid-2">
     <div class="panel">
       <div class="panel-header">Severity Breakdown</div>
@@ -235,6 +240,12 @@ function formatDate(iso) {
 function repoShort(url) {
   if (!url) return '-';
   return url.replace('https://github.com/', '');
+}
+
+function prLabel(url) {
+  if (!url) return '';
+  const m = url.match(/\/pull\/(\d+)/);
+  return m ? '#' + m[1] : 'PR';
 }
 
 function badgeClass(status) {
@@ -384,7 +395,7 @@ function renderSessionsTable(sessions) {
       <td>${s.run_url ? '<a href="'+s.run_url+'" target="_blank">#'+s.run_number+'</a>' : '#'+(s.run_number || '-')}</td>
       <td>${s.batch_id !== undefined ? s.batch_id : '-'}</td>
       <td>${(s.issue_ids || []).map(id => '<span class="issue-id">'+id+'</span>').join(' ') || '-'}</td>
-      <td>${s.pr_url ? '<a href="'+s.pr_url+'" target="_blank">View PR</a>' : '-'}</td>
+      <td>${s.pr_url ? '<a href="'+s.pr_url+'" target="_blank">'+prLabel(s.pr_url)+'</a>' : '-'}</td>
     </tr>`).join('')}</tbody>
   </table>`;
 }
@@ -413,6 +424,110 @@ function renderPrsTable(prs) {
       </tr>`;
     }).join('')}</tbody>
   </table>`;
+}
+
+const TREND_COLORS = ['#58a6ff','#3fb950','#f85149','#d29922','#bc8cff','#39d2c0','#f778ba','#a5d6ff'];
+
+function renderTrendChart(container, runs) {
+  if (!runs || runs.length === 0) {
+    container.innerHTML = '<div class="empty-state">No run data available yet</div>';
+    return;
+  }
+  const byRepo = {};
+  for (const r of runs) {
+    const repo = repoShort(r.target_repo || '');
+    if (!repo || repo === '-') continue;
+    if (!byRepo[repo]) byRepo[repo] = [];
+    byRepo[repo].push({ run: r.run_number || 0, issues: r.issues_found || 0 });
+  }
+  const repos = Object.keys(byRepo);
+  if (repos.length === 0) {
+    container.innerHTML = '<div class="empty-state">No run data available yet</div>';
+    return;
+  }
+  for (const repo of repos) {
+    byRepo[repo].sort((a, b) => a.run - b.run);
+  }
+  let allIssues = [];
+  let allRunNums = [];
+  for (const repo of repos) {
+    for (const pt of byRepo[repo]) {
+      allIssues.push(pt.issues);
+      allRunNums.push(pt.run);
+    }
+  }
+  const maxY = Math.max(...allIssues, 1);
+  const W = 800, H = 280, PAD_L = 55, PAD_R = 20, PAD_T = 20, PAD_B = 50;
+  const plotW = W - PAD_L - PAD_R;
+  const plotH = H - PAD_T - PAD_B;
+
+  const allSorted = [...new Set(allRunNums)].sort((a, b) => a - b);
+  const xScale = allSorted.length > 1
+    ? (v) => PAD_L + ((allSorted.indexOf(v)) / (allSorted.length - 1)) * plotW
+    : () => PAD_L + plotW / 2;
+  const yScale = (v) => PAD_T + plotH - (v / maxY) * plotH;
+
+  const gridLines = 5;
+  let gridSvg = '';
+  for (let i = 0; i <= gridLines; i++) {
+    const val = Math.round((maxY / gridLines) * i);
+    const y = yScale(val);
+    gridSvg += `<line x1="${PAD_L}" y1="${y}" x2="${W - PAD_R}" y2="${y}" stroke="#30363d" stroke-dasharray="4,4"/>`;
+    gridSvg += `<text x="${PAD_L - 8}" y="${y + 4}" fill="#8b949e" font-size="11" text-anchor="end">${val}</text>`;
+  }
+
+  let xLabelSvg = '';
+  const maxLabels = 15;
+  const step = Math.max(1, Math.ceil(allSorted.length / maxLabels));
+  for (let i = 0; i < allSorted.length; i += step) {
+    const run = allSorted[i];
+    const x = xScale(run);
+    xLabelSvg += `<text x="${x}" y="${H - PAD_B + 20}" fill="#8b949e" font-size="11" text-anchor="middle">#${run}</text>`;
+  }
+
+  let linesSvg = '';
+  let dotsSvg = '';
+  repos.forEach((repo, idx) => {
+    const color = TREND_COLORS[idx % TREND_COLORS.length];
+    const pts = byRepo[repo];
+    if (pts.length === 1) {
+      const cx = xScale(pts[0].run), cy = yScale(pts[0].issues);
+      dotsSvg += `<circle cx="${cx}" cy="${cy}" r="5" fill="${color}"><title>${repo} Run #${pts[0].run}: ${pts[0].issues} issues</title></circle>`;
+    } else {
+      const pathParts = pts.map((p, i) => {
+        const x = xScale(p.run), y = yScale(p.issues);
+        return (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1);
+      });
+      linesSvg += `<path d="${pathParts.join(' ')}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+      for (const p of pts) {
+        const cx = xScale(p.run), cy = yScale(p.issues);
+        dotsSvg += `<circle cx="${cx}" cy="${cy}" r="4" fill="${color}" stroke="var(--bg-secondary)" stroke-width="2"><title>${repo} Run #${p.run}: ${p.issues} issues</title></circle>`;
+      }
+    }
+  });
+
+  let legendSvg = '';
+  if (repos.length > 1) {
+    repos.forEach((repo, idx) => {
+      const color = TREND_COLORS[idx % TREND_COLORS.length];
+      const x = PAD_L + idx * 180;
+      legendSvg += `<rect x="${x}" y="${H - 10}" width="12" height="12" rx="2" fill="${color}"/>`;
+      legendSvg += `<text x="${x + 16}" y="${H}" fill="#8b949e" font-size="11">${repo.length > 20 ? repo.slice(0, 20) + '...' : repo}</text>`;
+    });
+  }
+
+  const axisLabelY = PAD_T + plotH / 2;
+  container.innerHTML = `<svg viewBox="0 0 ${W} ${H + (repos.length > 1 ? 20 : 0)}" width="100%" style="max-height:340px" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+    ${gridSvg}
+    <line x1="${PAD_L}" y1="${PAD_T}" x2="${PAD_L}" y2="${PAD_T + plotH}" stroke="#30363d"/>
+    <line x1="${PAD_L}" y1="${PAD_T + plotH}" x2="${W - PAD_R}" y2="${PAD_T + plotH}" stroke="#30363d"/>
+    <text x="${PAD_L + plotW / 2}" y="${H - PAD_B + 38}" fill="#6e7681" font-size="12" text-anchor="middle">Action Runs</text>
+    <text x="14" y="${axisLabelY}" fill="#6e7681" font-size="12" text-anchor="middle" transform="rotate(-90,14,${axisLabelY})">Issues Found</text>
+    ${xLabelSvg}
+    ${linesSvg}
+    ${dotsSvg}
+    ${legendSvg}
+  </svg>`;
 }
 
 async function fetchAllPages(endpoint) {
@@ -489,6 +604,7 @@ async function fetchAll() {
 
 function renderAll() {
   renderMetrics(stats);
+  renderTrendChart(document.getElementById('trend-chart'), allRuns);
   renderBarChart(document.getElementById('severity-chart'), stats.latest_severity || stats.severity_breakdown);
   renderBarChart(document.getElementById('category-chart'), stats.latest_category || stats.category_breakdown);
   renderReposTable(allRepos);
