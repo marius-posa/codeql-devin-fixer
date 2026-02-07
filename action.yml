@@ -52,26 +52,10 @@ inputs:
     description: "Default branch of the target repo"
     required: false
     default: "main"
-  wait_for_sessions:
-    description: "Wait for Devin sessions to finish and collect outcomes"
-    required: false
-    default: "false"
-  poll_timeout:
-    description: "Polling timeout in minutes (must be <= workflow timeout)"
-    required: false
-    default: "60"
-  poll_interval:
-    description: "Polling interval in seconds"
-    required: false
-    default: "30"
   persist_logs:
-    description: "Persist run logs to the repository"
+    description: "Persist run logs to the fork repository"
     required: false
     default: "true"
-  generate_dashboard:
-    description: "Deprecated -- dashboard is now in the telemetry app. Kept for backward compatibility."
-    required: false
-    default: "false"
 
 outputs:
   total_issues:
@@ -86,15 +70,6 @@ outputs:
   session_urls:
     description: "Comma-separated list of Devin session URLs"
     value: ${{ steps.dispatch.outputs.session_urls }}
-  sessions_finished:
-    description: "Number of Devin sessions that finished (if waited)"
-    value: ${{ steps.dispatch.outputs.sessions_finished }}
-  sessions_with_pr:
-    description: "Number of sessions that produced a PR (if waited)"
-    value: ${{ steps.dispatch.outputs.sessions_with_pr }}
-  issues_addressed:
-    description: "Proxy: sum of issues in finished sessions with PR (if waited)"
-    value: ${{ steps.dispatch.outputs.issues_addressed }}
   fork_url:
     description: "URL of the fork used for scanning"
     value: ${{ steps.fork.outputs.fork_url }}
@@ -315,9 +290,6 @@ runs:
         DEFAULT_BRANCH: ${{ inputs.default_branch }}
         MAX_ACU_PER_SESSION: ${{ inputs.max_acu_per_session }}
         DRY_RUN: ${{ inputs.dry_run }}
-        WAIT_FOR_SESSIONS: ${{ inputs.wait_for_sessions }}
-        POLL_TIMEOUT: ${{ inputs.poll_timeout }}
-        POLL_INTERVAL: ${{ inputs.poll_interval }}
       run: |
         python "${{ github.action_path }}/scripts/dispatch_devin.py" \
           "${{ runner.temp }}/codeql-output/batches.json" \

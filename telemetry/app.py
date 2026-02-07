@@ -6,12 +6,23 @@ single dashboard.  Run data is stored as JSON files under ``telemetry/runs/``
 in this repository -- each action run pushes one file via the GitHub Contents
 API (see ``scripts/persist_telemetry.py``).
 
+Scalability
+-----------
+* **In-memory cache** -- run data is loaded once and refreshed only when the
+  runs directory changes (based on file count + mtime of newest file).  This
+  avoids re-reading every JSON file on each request.
+* **Pagination** -- ``/api/runs``, ``/api/sessions``, and ``/api/prs`` accept
+  ``page`` and ``per_page`` query parameters.  Defaults: page=1, per_page=50.
+* **Cached PR / session data** -- GitHub and Devin API results are cached for
+  a configurable TTL (default 120 s) so repeated page loads don't hammer
+  external APIs.
+
 Endpoints
 ---------
 GET  /                  Serve the dashboard UI.
-GET  /api/runs          Return all run records.
-GET  /api/sessions      Return all Devin sessions (aggregated from runs).
-GET  /api/prs           Return PRs fetched from the GitHub API.
+GET  /api/runs          Return paginated run records.
+GET  /api/sessions      Return paginated Devin sessions (aggregated from runs).
+GET  /api/prs           Return paginated PRs fetched from the GitHub API.
 GET  /api/stats         Return aggregated statistics.
 POST /api/poll          Poll Devin API for live session statuses.
 POST /api/poll-prs      Poll GitHub API for PR statuses.
@@ -23,22 +34,18 @@ directory:
 GITHUB_TOKEN   PAT with ``repo`` scope (for GitHub API calls).
 DEVIN_API_KEY  Devin API key (for polling session statuses).
 ACTION_REPO    The repo where telemetry lives, e.g. ``marius-posa/codeql-devin-fixer``.
-
-Start with::
-
-    cd telemetry
-    pip install -r requirements.txt
-    python app.py
+CACHE_TTL      Seconds to cache external API results (default 120).
 """
 
 import json
 import os
 import pathlib
 import re
-from datetime import datetime, timezone
+import time
+import threading
 
 import requests
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request as flask_request
 from flask_cors import CORS
 
 app = Flask(__name__)
@@ -46,6 +53,77 @@ CORS(app)
 
 RUNS_DIR = pathlib.Path(__file__).parent / "runs"
 DEVIN_API_BASE = "https://api.devin.ai/v1"
+
+
+class _Cache:
+    """Thread-safe in-memory cache with TTL for external API results."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._runs: list[dict] = []
+        self._runs_fingerprint: str = ""
+        self._prs: list[dict] = []
+        self._prs_ts: float = 0.0
+        self._sessions_polled: list[dict] = []
+        self._sessions_ts: float = 0.0
+
+    @property
+    def ttl(self) -> float:
+        return float(os.environ.get("CACHE_TTL", "120"))
+
+    def _runs_fp(self) -> str:
+        if not RUNS_DIR.is_dir():
+            return ""
+        files = sorted(RUNS_DIR.glob("*.json"))
+        if not files:
+            return ""
+        newest_mtime = max(f.stat().st_mtime for f in files)
+        return f"{len(files)}:{newest_mtime}"
+
+    def get_runs(self) -> list[dict]:
+        fp = self._runs_fp()
+        with self._lock:
+            if fp == self._runs_fingerprint and self._runs:
+                return self._runs
+        runs = _load_runs_from_disk()
+        with self._lock:
+            self._runs = runs
+            self._runs_fingerprint = fp
+        return runs
+
+    def invalidate_runs(self) -> None:
+        with self._lock:
+            self._runs_fingerprint = ""
+            self._runs = []
+
+    def get_prs(self, runs: list[dict]) -> list[dict]:
+        with self._lock:
+            if self._prs and (time.time() - self._prs_ts) < self.ttl:
+                return self._prs
+        prs = _fetch_prs_from_github(runs)
+        with self._lock:
+            self._prs = prs
+            self._prs_ts = time.time()
+        return prs
+
+    def set_prs(self, prs: list[dict]) -> None:
+        with self._lock:
+            self._prs = prs
+            self._prs_ts = time.time()
+
+    def get_polled_sessions(self) -> list[dict] | None:
+        with self._lock:
+            if self._sessions_polled and (time.time() - self._sessions_ts) < self.ttl:
+                return self._sessions_polled
+        return None
+
+    def set_polled_sessions(self, sessions: list[dict]) -> None:
+        with self._lock:
+            self._sessions_polled = sessions
+            self._sessions_ts = time.time()
+
+
+cache = _Cache()
 
 
 def _gh_headers() -> dict:
@@ -61,7 +139,7 @@ def _devin_headers() -> dict:
     return {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
 
 
-def load_runs() -> list[dict]:
+def _load_runs_from_disk() -> list[dict]:
     runs = []
     if not RUNS_DIR.is_dir():
         return runs
@@ -74,6 +152,25 @@ def load_runs() -> list[dict]:
         except (json.JSONDecodeError, OSError):
             continue
     return runs
+
+
+def _paginate(items: list, page: int, per_page: int) -> dict:
+    total = len(items)
+    start = (page - 1) * per_page
+    end = start + per_page
+    return {
+        "items": items[start:end],
+        "page": page,
+        "per_page": per_page,
+        "total": total,
+        "pages": max(1, (total + per_page - 1) // per_page),
+    }
+
+
+def _get_pagination() -> tuple[int, int]:
+    page = max(1, int(flask_request.args.get("page", 1)))
+    per_page = min(200, max(1, int(flask_request.args.get("per_page", 50))))
+    return page, per_page
 
 
 def aggregate_sessions(runs: list[dict]) -> list[dict]:
@@ -138,7 +235,7 @@ def aggregate_stats(runs: list[dict], sessions: list[dict], prs: list[dict]) -> 
     }
 
 
-def fetch_prs_from_github(runs: list[dict]) -> list[dict]:
+def _fetch_prs_from_github(runs: list[dict]) -> list[dict]:
     token = os.environ.get("GITHUB_TOKEN", "")
     if not token:
         return []
@@ -149,36 +246,45 @@ def fetch_prs_from_github(runs: list[dict]) -> list[dict]:
         if "github.com/" in fork_url:
             fork_repos.add(fork_url.rstrip("/").split("github.com/")[1])
 
-    prs = []
+    prs: list[dict] = []
     seen_urls: set[str] = set()
     for repo_full in fork_repos:
-        url = f"https://api.github.com/repos/{repo_full}/pulls?state=all&per_page=100"
-        try:
-            resp = requests.get(url, headers=_gh_headers(), timeout=30)
-            if resp.status_code != 200:
-                continue
-            for pr in resp.json():
-                title = pr.get("title", "")
-                if not re.search(r"fix\(CQLF-", title):
-                    continue
-                html_url = pr.get("html_url", "")
-                if html_url in seen_urls:
-                    continue
-                seen_urls.add(html_url)
-                issue_ids = re.findall(r"CQLF-R\d+-\d+", title)
-                prs.append({
-                    "pr_number": pr.get("number"),
-                    "title": title,
-                    "html_url": html_url,
-                    "state": pr.get("state", ""),
-                    "merged": pr.get("merged_at") is not None,
-                    "created_at": pr.get("created_at", ""),
-                    "repo": repo_full,
-                    "issue_ids": issue_ids,
-                    "user": pr.get("user", {}).get("login", ""),
-                })
-        except requests.RequestException:
-            continue
+        gh_page = 1
+        while True:
+            url = (f"https://api.github.com/repos/{repo_full}/pulls"
+                   f"?state=all&per_page=100&page={gh_page}")
+            try:
+                resp = requests.get(url, headers=_gh_headers(), timeout=30)
+                if resp.status_code != 200:
+                    break
+                batch = resp.json()
+                if not batch:
+                    break
+                for pr in batch:
+                    title = pr.get("title", "")
+                    if not re.search(r"fix\(CQLF-", title):
+                        continue
+                    html_url = pr.get("html_url", "")
+                    if html_url in seen_urls:
+                        continue
+                    seen_urls.add(html_url)
+                    issue_ids = re.findall(r"CQLF-R\d+-\d+", title)
+                    prs.append({
+                        "pr_number": pr.get("number"),
+                        "title": title,
+                        "html_url": html_url,
+                        "state": pr.get("state", ""),
+                        "merged": pr.get("merged_at") is not None,
+                        "created_at": pr.get("created_at", ""),
+                        "repo": repo_full,
+                        "issue_ids": issue_ids,
+                        "user": pr.get("user", {}).get("login", ""),
+                    })
+                if len(batch) < 100:
+                    break
+                gh_page += 1
+            except requests.RequestException:
+                break
     return prs
 
 
@@ -249,6 +355,7 @@ def _save_session_updates(sessions: list[dict]) -> None:
         if changed:
             with open(fp, "w") as f:
                 json.dump(run_data, f, indent=2)
+    cache.invalidate_runs()
 
 
 @app.route("/")
@@ -258,42 +365,51 @@ def index():
 
 @app.route("/api/runs")
 def api_runs():
-    return jsonify(load_runs())
+    runs = cache.get_runs()
+    page, per_page = _get_pagination()
+    sorted_runs = sorted(runs, key=lambda r: r.get("run_number", 0), reverse=True)
+    return jsonify(_paginate(sorted_runs, page, per_page))
 
 
 @app.route("/api/sessions")
 def api_sessions():
-    runs = load_runs()
-    return jsonify(aggregate_sessions(runs))
+    runs = cache.get_runs()
+    sessions = aggregate_sessions(runs)
+    page, per_page = _get_pagination()
+    return jsonify(_paginate(sessions, page, per_page))
 
 
 @app.route("/api/prs")
 def api_prs():
-    runs = load_runs()
-    return jsonify(fetch_prs_from_github(runs))
+    runs = cache.get_runs()
+    prs = cache.get_prs(runs)
+    page, per_page = _get_pagination()
+    return jsonify(_paginate(prs, page, per_page))
 
 
 @app.route("/api/stats")
 def api_stats():
-    runs = load_runs()
+    runs = cache.get_runs()
     sessions = aggregate_sessions(runs)
-    prs = fetch_prs_from_github(runs)
+    prs = cache.get_prs(runs)
     return jsonify(aggregate_stats(runs, sessions, prs))
 
 
 @app.route("/api/poll", methods=["POST"])
 def api_poll():
-    runs = load_runs()
+    runs = cache.get_runs()
     sessions = aggregate_sessions(runs)
     updated = poll_devin_sessions(sessions)
     _save_session_updates(updated)
+    cache.set_polled_sessions(updated)
     return jsonify({"sessions": updated, "polled": len(updated)})
 
 
 @app.route("/api/poll-prs", methods=["POST"])
 def api_poll_prs():
-    runs = load_runs()
-    prs = fetch_prs_from_github(runs)
+    runs = cache.get_runs()
+    prs = _fetch_prs_from_github(runs)
+    cache.set_prs(prs)
     return jsonify({"prs": prs, "total": len(prs)})
 
 
@@ -304,25 +420,37 @@ def api_refresh():
     if not token or not action_repo:
         return jsonify({"error": "GITHUB_TOKEN and ACTION_REPO required"}), 400
 
-    url = f"https://api.github.com/repos/{action_repo}/contents/telemetry/runs"
-    resp = requests.get(url, headers=_gh_headers(), timeout=30)
-    if resp.status_code != 200:
-        return jsonify({"error": f"GitHub API returned {resp.status_code}"}), 502
-
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
     downloaded = 0
-    for item in resp.json():
-        if not item.get("name", "").endswith(".json"):
-            continue
-        local_path = RUNS_DIR / item["name"]
-        if local_path.exists():
-            continue
-        dl_resp = requests.get(item["download_url"], timeout=30)
-        if dl_resp.status_code == 200:
-            local_path.write_text(dl_resp.text)
-            downloaded += 1
+    gh_page = 1
+    while True:
+        url = (f"https://api.github.com/repos/{action_repo}"
+               f"/contents/telemetry/runs?per_page=100&page={gh_page}")
+        resp = requests.get(url, headers=_gh_headers(), timeout=30)
+        if resp.status_code != 200:
+            break
+        items = resp.json()
+        if not items:
+            break
+        for item in items:
+            if not item.get("name", "").endswith(".json"):
+                continue
+            local_path = RUNS_DIR / item["name"]
+            if local_path.exists():
+                continue
+            dl_resp = requests.get(item["download_url"], timeout=30)
+            if dl_resp.status_code == 200:
+                local_path.write_text(dl_resp.text)
+                downloaded += 1
+        if len(items) < 100:
+            break
+        gh_page += 1
 
-    return jsonify({"downloaded": downloaded, "total_files": len(list(RUNS_DIR.glob("*.json")))})
+    cache.invalidate_runs()
+    return jsonify({
+        "downloaded": downloaded,
+        "total_files": len(list(RUNS_DIR.glob("*.json"))),
+    })
 
 
 if __name__ == "__main__":

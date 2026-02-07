@@ -376,19 +376,31 @@ function renderPrsTable(prs) {
   </table>`;
 }
 
+async function fetchAllPages(endpoint) {
+  let all = [];
+  let page = 1;
+  while (true) {
+    const res = await fetch(API + endpoint + '?page=' + page + '&per_page=200').then(r => r.json());
+    all = all.concat(res.items || []);
+    if (page >= (res.pages || 1)) break;
+    page++;
+  }
+  return all;
+}
+
 async function fetchAll() {
   setStatus('Loading data...');
   try {
-    const [runsRes, sessionsRes, statsRes, prsRes] = await Promise.all([
-      fetch(API + '/api/runs').then(r => r.json()),
-      fetch(API + '/api/sessions').then(r => r.json()),
+    const [runsData, sessionsData, statsRes, prsData] = await Promise.all([
+      fetchAllPages('/api/runs'),
+      fetchAllPages('/api/sessions'),
       fetch(API + '/api/stats').then(r => r.json()),
-      fetch(API + '/api/prs').then(r => r.json()),
+      fetchAllPages('/api/prs'),
     ]);
-    allRuns = runsRes;
-    allSessions = sessionsRes;
+    allRuns = runsData;
+    allSessions = sessionsData;
     stats = statsRes;
-    allPrs = prsRes;
+    allPrs = prsData;
     renderAll();
     setStatus('Ready');
     setUpdated();

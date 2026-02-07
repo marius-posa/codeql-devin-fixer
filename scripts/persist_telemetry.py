@@ -87,7 +87,7 @@ def build_telemetry_record(output_dir: str) -> dict:
         batch = next((b for b in batches if b.get("batch_id") == s.get("batch_id")), None)
         if batch:
             session_records[-1]["issue_ids"] = [
-                i.get("issue_id", "") for i in batch.get("issues", [])
+                i.get("id", "") for i in batch.get("issues", [])
             ]
 
     return {
