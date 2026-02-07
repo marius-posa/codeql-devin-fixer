@@ -19,11 +19,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from jinja2 import Environment, FileSystemLoader
 
-from config import RUNS_DIR, gh_headers, get_action_repo
-from github_service import fetch_prs_from_github, link_prs_to_sessions
-from devin_service import poll_devin_sessions, save_session_updates
-from issue_tracking import track_issues_across_runs
-from aggregation import aggregate_sessions, aggregate_stats, build_repos_dict
+from .config import RUNS_DIR, gh_headers, get_action_repo
+from .github_service import fetch_prs_from_github, link_prs_to_sessions
+from .devin_service import poll_devin_sessions, save_session_updates
+from .issue_tracking import track_issues_across_runs
+from .aggregation import aggregate_sessions, aggregate_stats, build_repos_dict
 
 app = FastAPI()
 app.add_middleware(
