@@ -131,6 +131,62 @@ a:hover { text-decoration: underline; }
 .issue-summary { display: flex; gap: 16px; margin-bottom: 12px; font-size: 13px; }
 .issue-summary .count { font-weight: 600; font-size: 16px; }
 
+.modal-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+  z-index: 1000; justify-content: center; align-items: flex-start; padding-top: 60px;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+  background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px;
+  width: 560px; max-height: calc(100vh - 120px); overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+.modal-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
+}
+.modal-header h2 { font-size: 16px; font-weight: 600; }
+.modal-close {
+  background: none; border: none; color: var(--text-muted); cursor: pointer;
+  font-size: 20px; padding: 4px 8px; border-radius: 4px;
+}
+.modal-close:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+.modal-body { padding: 20px; }
+.modal-footer {
+  padding: 16px 20px; border-top: 1px solid var(--border);
+  display: flex; justify-content: flex-end; gap: 8px;
+}
+.form-group { margin-bottom: 16px; }
+.form-group label {
+  display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;
+}
+.form-group .hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+.form-input {
+  width: 100%; padding: 8px 12px; background: var(--bg-tertiary); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text-primary); font-size: 13px; font-family: inherit;
+}
+.form-input:focus { outline: none; border-color: var(--accent-blue); }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-check {
+  display: flex; align-items: center; gap: 8px; cursor: pointer;
+}
+.form-check input[type="checkbox"] {
+  width: 16px; height: 16px; accent-color: var(--accent-blue); cursor: pointer;
+}
+.form-check span { font-size: 13px; color: var(--text-primary); }
+.warning-banner {
+  background: #2d2000; border: 1px solid #5c4400; border-radius: 8px;
+  padding: 12px 16px; margin-bottom: 16px; font-size: 13px; color: var(--accent-orange);
+  display: none;
+}
+.warning-banner.visible { display: block; }
+.warning-banner a { color: var(--accent-orange); text-decoration: underline; }
+.dispatch-result {
+  padding: 12px 16px; border-radius: 8px; margin-top: 12px; font-size: 13px; display: none;
+}
+.dispatch-result.success { display: block; background: #1a3a1a; border: 1px solid #2ea043; color: var(--accent-green); }
+.dispatch-result.error { display: block; background: #3a1a1a; border: 1px solid #f85149; color: var(--accent-red); }
+
 .empty-state {
   text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 14px;
 }
@@ -154,6 +210,7 @@ a:hover { text-decoration: underline; }
   <header>
     <h1><span>{{ repo_short }}</span></h1>
     <div class="header-actions">
+      <button class="btn btn-primary" onclick="openDispatchModal()" style="background:#1f6feb;border-color:#388bfd">Run Action</button>
       <a href="{{ repo_url }}" target="_blank" class="btn">View on GitHub</a>
       <a href="/" class="btn">Back to Dashboard</a>
     </div>
@@ -212,6 +269,94 @@ a:hover { text-decoration: underline; }
       <span id="issues-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
     </div>
     <div class="panel-body" style="overflow-x:auto;" id="issues-table-container"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="dispatch-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Run CodeQL Fixer Action</h2>
+      <button class="modal-close" onclick="closeDispatchModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="warning-banner" id="dispatch-warning"></div>
+      <div class="form-group">
+        <label for="d-target-repo">Target Repository URL *</label>
+        <input class="form-input" id="d-target-repo" type="text" value="" onchange="checkPreflight()">
+        <div class="hint">GitHub repository URL to analyze</div>
+      </div>
+      <div class="form-group">
+        <label for="d-languages">Languages</label>
+        <input class="form-input" id="d-languages" type="text" value="" placeholder="e.g. javascript,python">
+        <div class="hint">Comma-separated CodeQL languages (leave empty for auto-detect)</div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="d-queries">Query Suite</label>
+          <select class="form-input" id="d-queries">
+            <option value="security-extended" selected>security-extended</option>
+            <option value="security-and-quality">security-and-quality</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="d-severity">Severity Threshold</label>
+          <select class="form-input" id="d-severity">
+            <option value="critical">critical</option>
+            <option value="high">high</option>
+            <option value="medium">medium</option>
+            <option value="low" selected>low</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="d-batch-size">Batch Size</label>
+          <input class="form-input" id="d-batch-size" type="number" value="5" min="1">
+          <div class="hint">Max issues per Devin session</div>
+        </div>
+        <div class="form-group">
+          <label for="d-max-sessions">Max Sessions</label>
+          <input class="form-input" id="d-max-sessions" type="number" value="5" min="1">
+          <div class="hint">Max Devin sessions to create</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="d-default-branch">Default Branch</label>
+        <input class="form-input" id="d-default-branch" type="text" value="main">
+        <div class="hint">Default branch of the target repo</div>
+      </div>
+      <div class="form-group">
+        <label for="d-include-paths">Include Paths</label>
+        <input class="form-input" id="d-include-paths" type="text" value="" placeholder="e.g. src/**,lib/**">
+        <div class="hint">Optional comma-separated globs to include</div>
+      </div>
+      <div class="form-group">
+        <label for="d-exclude-paths">Exclude Paths</label>
+        <input class="form-input" id="d-exclude-paths" type="text" value="" placeholder="e.g. test/**,vendor/**">
+        <div class="hint">Optional comma-separated globs to exclude</div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-check">
+            <input type="checkbox" id="d-persist-logs" checked>
+            <span>Persist Logs</span>
+          </label>
+          <div class="hint">Keep logs in GitHub</div>
+        </div>
+        <div class="form-group">
+          <label class="form-check">
+            <input type="checkbox" id="d-dry-run">
+            <span>Dry Run</span>
+          </label>
+          <div class="hint">Generate prompts only (no Devin sessions)</div>
+        </div>
+      </div>
+      <div class="dispatch-result" id="dispatch-result"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeDispatchModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitDispatch()" id="btn-submit-dispatch">Dispatch Workflow</button>
+    </div>
   </div>
 </div>
 
@@ -507,6 +652,105 @@ async function fetchRepoData() {
 }
 
 fetchRepoData();
+
+const REPO_URL = {{ repo_url|tojson }};
+let preflightTimer = null;
+function openDispatchModal() {
+  const modal = document.getElementById('dispatch-modal');
+  modal.classList.add('active');
+  document.getElementById('dispatch-result').className = 'dispatch-result';
+  document.getElementById('dispatch-result').textContent = '';
+  document.getElementById('btn-submit-dispatch').disabled = false;
+  document.getElementById('btn-submit-dispatch').textContent = 'Dispatch Workflow';
+  document.getElementById('d-target-repo').value = REPO_URL;
+  checkPreflight();
+}
+function closeDispatchModal() {
+  document.getElementById('dispatch-modal').classList.remove('active');
+}
+document.getElementById('dispatch-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeDispatchModal();
+});
+
+async function checkPreflight() {
+  const targetRepo = document.getElementById('d-target-repo').value.trim();
+  const warning = document.getElementById('dispatch-warning');
+  warning.className = 'warning-banner';
+  warning.innerHTML = '';
+  if (!targetRepo) return;
+  clearTimeout(preflightTimer);
+  preflightTimer = setTimeout(async () => {
+    try {
+      const res = await fetch(API + '/api/dispatch/preflight?target_repo=' + encodeURIComponent(targetRepo));
+      const data = await res.json();
+      if (data.open_prs > 0) {
+        let html = '\u26a0\ufe0f <strong>' + data.open_prs + ' Devin PR' + (data.open_prs > 1 ? 's are' : ' is') +
+          ' still open</strong> for this repo. Consider merging or closing them before triggering a new run.';
+        if (data.prs && data.prs.length > 0) {
+          html += '<ul style="margin:8px 0 0 16px;padding:0;list-style:disc">';
+          data.prs.forEach(function(p) {
+            html += '<li><a href="' + p.html_url + '" target="_blank">#' + p.pr_number + '</a> ' + p.title + '</li>';
+          });
+          html += '</ul>';
+        }
+        warning.innerHTML = html;
+        warning.className = 'warning-banner visible';
+      }
+    } catch (e) {}
+  }, 500);
+}
+
+async function submitDispatch() {
+  const btn = document.getElementById('btn-submit-dispatch');
+  const resultEl = document.getElementById('dispatch-result');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Dispatching...';
+  resultEl.className = 'dispatch-result';
+  resultEl.textContent = '';
+
+  const payload = {
+    target_repo: document.getElementById('d-target-repo').value.trim(),
+    languages: document.getElementById('d-languages').value.trim(),
+    queries: document.getElementById('d-queries').value,
+    severity_threshold: document.getElementById('d-severity').value,
+    batch_size: parseInt(document.getElementById('d-batch-size').value) || 5,
+    max_sessions: parseInt(document.getElementById('d-max-sessions').value) || 5,
+    default_branch: document.getElementById('d-default-branch').value.trim() || 'main',
+    include_paths: document.getElementById('d-include-paths').value.trim(),
+    exclude_paths: document.getElementById('d-exclude-paths').value.trim(),
+    persist_logs: document.getElementById('d-persist-logs').checked,
+    dry_run: document.getElementById('d-dry-run').checked,
+  };
+
+  if (!payload.target_repo) {
+    resultEl.textContent = 'Target repository URL is required.';
+    resultEl.className = 'dispatch-result error';
+    btn.disabled = false;
+    btn.textContent = 'Dispatch Workflow';
+    return;
+  }
+
+  try {
+    const res = await fetch(API + '/api/dispatch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (data.success) {
+      resultEl.textContent = 'Workflow dispatched successfully! Check GitHub Actions for progress.';
+      resultEl.className = 'dispatch-result success';
+    } else {
+      resultEl.textContent = data.error || 'Failed to dispatch workflow.';
+      resultEl.className = 'dispatch-result error';
+    }
+  } catch (e) {
+    resultEl.textContent = 'Request failed: ' + e.message;
+    resultEl.className = 'dispatch-result error';
+  }
+  btn.disabled = false;
+  btn.textContent = 'Dispatch Workflow';
+}
 </script>
 </body>
 </html>
