@@ -37,6 +37,8 @@ ACTION_REPO    The repo where telemetry lives, e.g. ``your-username/codeql-devin
 CACHE_TTL      Seconds to cache external API results (default 120).
 """
 
+import functools
+import hmac
 import json
 import os
 import pathlib
@@ -55,6 +57,34 @@ from aggregation import aggregate_sessions, aggregate_stats, build_repos_dict
 
 app = Flask(__name__)
 CORS(app)
+
+
+def _get_telemetry_api_key() -> str:
+    return os.environ.get("TELEMETRY_API_KEY", "")
+
+
+def require_api_key(fn):
+    """Decorator that gates mutating endpoints behind TELEMETRY_API_KEY.
+
+    When the key is unset or empty the endpoint is accessible without
+    authentication (backwards-compatible for local development).  When
+    the key IS set, callers must supply it via an ``X-API-Key`` header
+    or an ``Authorization: Bearer <key>`` header.
+    """
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        expected = _get_telemetry_api_key()
+        if not expected:
+            return fn(*args, **kwargs)
+        provided = flask_request.headers.get("X-API-Key", "")
+        if not provided:
+            auth = flask_request.headers.get("Authorization", "")
+            if auth.startswith("Bearer "):
+                provided = auth[7:]
+        if not provided or not hmac.compare_digest(provided, expected):
+            return jsonify({"error": "Unauthorized"}), 401
+        return fn(*args, **kwargs)
+    return wrapper
 
 
 class _Cache:
@@ -279,6 +309,7 @@ def api_repos():
 
 
 @app.route("/api/poll", methods=["POST"])
+@require_api_key
 def api_poll():
     runs = cache.get_runs()
     sessions = aggregate_sessions(runs)
@@ -295,6 +326,7 @@ def api_poll():
 
 
 @app.route("/api/poll-prs", methods=["POST"])
+@require_api_key
 def api_poll_prs():
     runs = cache.get_runs()
     prs = fetch_prs_from_github(runs)
@@ -303,6 +335,7 @@ def api_poll_prs():
 
 
 @app.route("/api/refresh", methods=["POST"])
+@require_api_key
 def api_refresh():
     token = os.environ.get("GITHUB_TOKEN", "")
     action_repo = os.environ.get("ACTION_REPO", "")
@@ -357,10 +390,12 @@ def api_config():
         "github_token_set": bool(os.environ.get("GITHUB_TOKEN", "")),
         "devin_api_key_set": bool(os.environ.get("DEVIN_API_KEY", "")),
         "action_repo": os.environ.get("ACTION_REPO", ""),
+        "auth_required": bool(_get_telemetry_api_key()),
     })
 
 
 @app.route("/api/backfill", methods=["POST"])
+@require_api_key
 def api_backfill():
     runs = cache.get_runs()
     sessions = aggregate_sessions(runs)
@@ -456,6 +491,7 @@ def api_dispatch_preflight():
 
 
 @app.route("/api/dispatch", methods=["POST"])
+@require_api_key
 def api_dispatch():
     token = os.environ.get("GITHUB_TOKEN", "")
     action_repo = os.environ.get("ACTION_REPO", "")

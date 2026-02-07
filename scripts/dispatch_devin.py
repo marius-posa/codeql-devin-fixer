@@ -43,6 +43,7 @@ DRY_RUN : str
 
 import json
 import os
+import re
 import sys
 import time
 from pathlib import PurePosixPath
@@ -65,6 +66,26 @@ except ImportError:
 DEVIN_API_BASE = "https://api.devin.ai/v1"
 
 MAX_RETRIES = 3
+
+_PROMPT_INJECTION_PATTERNS = re.compile(
+    r"(?:ignore\s+(?:all\s+)?(?:previous|above)\s+instructions"
+    r"|you\s+are\s+now\s+(?:a|an)\s+"
+    r"|system\s*:\s*"
+    r"|<\s*/?(?:system|instruction|prompt)\s*>)",
+    re.IGNORECASE,
+)
+
+
+def sanitize_prompt_text(text: str, max_length: int = 500) -> str:
+    """Sanitize text from SARIF before including it in a Devin prompt.
+
+    Truncates to *max_length*, strips characters that could break Markdown
+    formatting, and removes patterns commonly used for prompt injection.
+    """
+    text = text[:max_length]
+    text = _PROMPT_INJECTION_PATTERNS.sub("[REDACTED]", text)
+    text = text.replace("```", "'''")
+    return text.strip()
 
 
 def _extract_code_snippet(target_dir: str, file_path: str, start_line: int, context: int = 5) -> str:
@@ -206,13 +227,13 @@ def build_batch_prompt(
                 f"- Severity: {issue['severity_tier'].upper()} ({issue['severity_score']})",
                 f"- CWE: {cwes}",
                 f"- Location(s): {locs}",
-                f"- Description: {issue['message'][:300]}",
+                f"- Description: {sanitize_prompt_text(issue['message'], 300)}",
             ]
         )
         if issue.get("rule_description"):
-            prompt_parts.append(f"- Rule: {issue['rule_description'][:200]}")
+            prompt_parts.append(f"- Rule: {sanitize_prompt_text(issue['rule_description'], 200)}")
         if issue.get("rule_help"):
-            prompt_parts.append(f"- Guidance: {issue['rule_help'][:500]}")
+            prompt_parts.append(f"- Guidance: {sanitize_prompt_text(issue['rule_help'], 500)}")
 
         if target_dir:
             for loc in issue.get("locations", []):
@@ -224,7 +245,6 @@ def build_batch_prompt(
                         prompt_parts.append(f"- Code context:\n```\n{snippet}\n```")
                     tests = _find_related_test_files(target_dir, f)
                     all_test_files.update(tests)
-
         prompt_parts.append("")
 
     ids_tag = ",".join(issue_ids[:6]) if issue_ids else f"batch-{batch['batch_id']}"

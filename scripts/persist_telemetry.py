@@ -121,13 +121,15 @@ def build_telemetry_record(output_dir: str) -> dict:
             "WARNING: issues.json has entries but none contain a fingerprint. "
             "Cross-run issue tracking will be degraded for this run."
         )
+    redact_urls = os.environ.get("REDACT_TELEMETRY_URLS", "false").lower() == "true"
+
     run_url = ""
-    if action_repo and run_id:
+    if action_repo and run_id and not redact_urls:
         run_url = f"https://github.com/{action_repo}/actions/runs/{run_id}"
 
     return {
         "target_repo": target_repo,
-        "fork_url": fork_url,
+        "fork_url": fork_url if not redact_urls else "",
         "run_number": int(run_number),
         "run_id": run_id,
         "run_url": run_url,

@@ -1,11 +1,12 @@
 """Tests for resilience improvements (MP-16).
 
 Covers retry utilities, exponential backoff, SARIF size limits,
-telemetry file naming, and zero-issue flagging.
+telemetry file naming, zero-issue flagging, and GIT_ASKPASS helper.
 """
 
 import json
 import os
+import stat
 import sys
 import tempfile
 from unittest.mock import MagicMock, patch
@@ -15,6 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
 from scripts.retry_utils import exponential_backoff_delay, request_with_retry
 from scripts.parse_sarif import parse_sarif, SARIF_MAX_SIZE_BYTES
+from scripts.persist_logs import _create_askpass_script
 
 
 class TestExponentialBackoffDelay:
@@ -225,3 +227,34 @@ class TestZeroIssueFlagging:
             }):
                 record = build_telemetry_record(tmpdir)
                 assert record["issues_found"] == 1
+
+
+class TestCreateAskpassScript:
+    def test_creates_executable_file(self):
+        path = _create_askpass_script("ghp_test123")
+        try:
+            assert os.path.isfile(path)
+            mode = os.stat(path).st_mode
+            assert mode & stat.S_IXUSR
+        finally:
+            os.unlink(path)
+
+    def test_script_echoes_token(self):
+        path = _create_askpass_script("ghp_test123")
+        try:
+            with open(path) as f:
+                content = f.read()
+            assert "#!/bin/sh" in content
+            assert 'echo "x-access-token:ghp_test123"' in content
+        finally:
+            os.unlink(path)
+
+    def test_owner_only_permissions(self):
+        path = _create_askpass_script("tok")
+        try:
+            mode = os.stat(path).st_mode
+            assert mode & stat.S_IRWXU
+            assert not (mode & stat.S_IRWXG)
+            assert not (mode & stat.S_IRWXO)
+        finally:
+            os.unlink(path)

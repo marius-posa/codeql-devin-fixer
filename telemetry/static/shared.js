@@ -1,5 +1,34 @@
 const API = window.location.origin;
 
+function _getApiKey() {
+  return sessionStorage.getItem('telemetry_api_key') || '';
+}
+
+function _setApiKey(key) {
+  sessionStorage.setItem('telemetry_api_key', key);
+}
+
+function _authHeaders() {
+  const key = _getApiKey();
+  if (!key) return {};
+  return { 'X-API-Key': key };
+}
+
+function _authedFetch(url, opts) {
+  opts = opts || {};
+  opts.headers = Object.assign({}, opts.headers || {}, _authHeaders());
+  return fetch(url, opts);
+}
+
+function _promptApiKey() {
+  var key = prompt('This dashboard requires an API key (TELEMETRY_API_KEY).\nEnter the key:');
+  if (key) {
+    _setApiKey(key.trim());
+    return true;
+  }
+  return false;
+}
+
 function escapeHtml(str) {
   if (!str) return '';
   const div = document.createElement('div');
@@ -278,7 +307,7 @@ async function fetchAllPages(endpoint) {
   let all = [];
   let page = 1;
   while (true) {
-    const res = await fetch(API + endpoint + '?page=' + page + '&per_page=200');
+    const res = await _authedFetch(API + endpoint + '?page=' + page + '&per_page=200');
     if (!res.ok) throw new Error('API returned ' + res.status);
     const data = await res.json();
     all = all.concat(data.items || []);
@@ -331,7 +360,7 @@ async function checkPreflight() {
   clearTimeout(preflightTimer);
   preflightTimer = setTimeout(async () => {
     try {
-      const res = await fetch(API + '/api/dispatch/preflight?target_repo=' + encodeURIComponent(targetRepo));
+      const res = await _authedFetch(API + '/api/dispatch/preflight?target_repo=' + encodeURIComponent(targetRepo));
       const data = await res.json();
       if (data.open_prs > 0) {
         let html = '\u26a0\ufe0f <strong>' + data.open_prs + ' Devin PR' + (data.open_prs > 1 ? 's are' : ' is') +
@@ -381,7 +410,7 @@ async function submitDispatch() {
   }
 
   try {
-    const res = await fetch(API + '/api/dispatch', {
+    const res = await _authedFetch(API + '/api/dispatch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),

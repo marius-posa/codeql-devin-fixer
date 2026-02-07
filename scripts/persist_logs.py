@@ -36,10 +36,11 @@ RUN_LABEL : str
 
 import json
 import os
-import re
 import shutil
+import stat
 import subprocess
 import sys
+import tempfile
 from urllib.parse import urlparse
 
 from retry_utils import run_git_with_retry
@@ -122,18 +123,25 @@ def main() -> None:
 
     run_git("commit", "-m", f"chore: persist run logs for {run_label}", cwd=repo_dir)
 
-    remote_url = run_git("remote", "get-url", "origin", cwd=repo_dir)
-    parsed_remote = urlparse(remote_url)
-    if parsed_remote.hostname == "github.com" and github_token:
-        authed_url = re.sub(
-            r"https://github\.com/",
-            f"https://x-access-token:{github_token}@github.com/",
-            remote_url,
-        )
-        run_git("remote", "set-url", "origin", authed_url, cwd=repo_dir)
-
     branch = run_git("rev-parse", "--abbrev-ref", "HEAD", cwd=repo_dir)
-    result = run_git_with_retry("push", "origin", branch, cwd=repo_dir)
+
+    env = os.environ.copy()
+    askpass_script = None
+    if github_token:
+        askpass_script = _create_askpass_script(github_token)
+        env["GIT_ASKPASS"] = askpass_script
+        env["GIT_TERMINAL_PROMPT"] = "0"
+        remote_url = run_git("remote", "get-url", "origin", cwd=repo_dir)
+        parsed_remote = urlparse(remote_url)
+        if parsed_remote.hostname == "github.com" and "@" in remote_url:
+            clean_url = f"https://github.com{parsed_remote.path}"
+            run_git("remote", "set-url", "origin", clean_url, cwd=repo_dir)
+
+    try:
+        result = run_git_with_retry("push", "origin", branch, cwd=repo_dir, env=env)
+    finally:
+        if askpass_script and os.path.exists(askpass_script):
+            os.unlink(askpass_script)
     logs_persisted = result.returncode == 0
     if not logs_persisted:
         print(f"WARNING: git push failed after retries: {result.stderr}")
@@ -146,6 +154,20 @@ def main() -> None:
     if github_output:
         with open(github_output, "a") as f:
             f.write(f"logs_persisted={str(logs_persisted).lower()}\n")
+
+
+def _create_askpass_script(token: str) -> str:
+    """Create a temporary GIT_ASKPASS script that supplies the token.
+
+    Using GIT_ASKPASS keeps the token out of remote URLs and process
+    argument lists, preventing accidental exposure in logs or stack traces.
+    """
+    fd, path = tempfile.mkstemp(prefix="git_askpass_", suffix=".sh")
+    with os.fdopen(fd, "w") as f:
+        f.write("#!/bin/sh\n")
+        f.write(f'echo "x-access-token:{token}"\n')
+    os.chmod(path, stat.S_IRWXU)
+    return path
 
 
 if __name__ == "__main__":

@@ -137,11 +137,19 @@ runs:
         if [ -z "$REPO_URL" ]; then
           REPO_URL="${{ steps.normalize.outputs.target_repo }}"
         fi
-        CLONE_URL="$REPO_URL"
-        if [ -n "$GITHUB_TOKEN" ]; then
-          CLONE_URL=$(echo "$REPO_URL" | sed "s|https://github.com/|https://x-access-token:${GITHUB_TOKEN}@github.com/|")
+        if ! echo "$REPO_URL" | grep -qE '^https://github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$'; then
+          echo "ERROR: Invalid repository URL: $REPO_URL" >&2
+          exit 1
         fi
-        git clone --depth 1 --single-branch "$CLONE_URL" "$TARGET_DIR"
+        if [ -n "$GITHUB_TOKEN" ]; then
+          ASKPASS_SCRIPT=$(mktemp "${TMPDIR:-/tmp}/git_askpass_XXXXXX.sh")
+          printf '#!/bin/sh\necho "x-access-token:%s"\n' "$GITHUB_TOKEN" > "$ASKPASS_SCRIPT"
+          chmod 700 "$ASKPASS_SCRIPT"
+          export GIT_ASKPASS="$ASKPASS_SCRIPT"
+          export GIT_TERMINAL_PROMPT=0
+          trap 'rm -f "$ASKPASS_SCRIPT"' EXIT
+        fi
+        git clone --depth 1 --single-branch -- "$REPO_URL" "$TARGET_DIR"
         echo "TARGET_DIR=$TARGET_DIR" >> "$GITHUB_ENV"
         echo "SCAN_REPO_URL=$REPO_URL" >> "$GITHUB_ENV"
 
