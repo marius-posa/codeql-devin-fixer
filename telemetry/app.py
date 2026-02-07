@@ -33,7 +33,7 @@ directory:
 
 GITHUB_TOKEN   PAT with ``repo`` scope (for GitHub API calls).
 DEVIN_API_KEY  Devin API key (for polling session statuses).
-ACTION_REPO    The repo where telemetry lives, e.g. ``marius-posa/codeql-devin-fixer``.
+ACTION_REPO    The repo where telemetry lives, e.g. ``your-username/codeql-devin-fixer``.
 CACHE_TTL      Seconds to cache external API results (default 120).
 """
 

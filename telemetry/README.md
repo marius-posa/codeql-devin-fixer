@@ -16,7 +16,7 @@ Edit `.env` with your credentials:
 |---|---|---|
 | `GITHUB_TOKEN` | Yes | GitHub PAT with `repo` scope. Needed to discover PRs on fork repos and pull telemetry run files. Generate one at https://github.com/settings/tokens (classic token, check `repo` scope). |
 | `DEVIN_API_KEY` | Yes | Devin API bearer token. Used to poll session statuses (finished, working, blocked, etc.). Get yours from the Devin dashboard. |
-| `ACTION_REPO` | Yes | The repo containing the telemetry data, e.g. `marius-posa/codeql-devin-fixer`. |
+| `ACTION_REPO` | Yes | The repo containing the telemetry data, e.g. `your-username/codeql-devin-fixer`. |
 | `CACHE_TTL` | No | Seconds to cache GitHub/Devin API responses (default: 120). Lower values mean fresher data but more API calls. |
 
 ### 2. Install dependencies

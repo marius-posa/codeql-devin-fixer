@@ -15,7 +15,7 @@ Environment variables
 GITHUB_TOKEN : str
     PAT with ``repo`` scope -- needed to push to the action repo.
 ACTION_REPO : str
-    Full name of the action repo, e.g. ``marius-posa/codeql-devin-fixer``.
+    Full name of the action repo, e.g. ``your-username/codeql-devin-fixer``.
 TARGET_REPO : str
     HTTPS URL of the target repo that was scanned.
 FORK_URL : str
