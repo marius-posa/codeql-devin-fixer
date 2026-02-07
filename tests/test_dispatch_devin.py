@@ -6,11 +6,19 @@ Covers: build_batch_prompt, validate_repo_url (extended), create_devin_session (
 import json
 import os
 import sys
+import tempfile
 from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from scripts.dispatch_devin import build_batch_prompt, validate_repo_url, create_devin_session
+from scripts.dispatch_devin import (
+    build_batch_prompt,
+    validate_repo_url,
+    create_devin_session,
+    _extract_code_snippet,
+    _find_related_test_files,
+)
+from scripts.fix_learning import FixLearning
 
 
 class TestBuildBatchPrompt:
@@ -148,6 +156,161 @@ class TestBuildBatchPrompt:
         batch = self._batch(issues=issues)
         prompt = build_batch_prompt(batch, "https://github.com/owner/repo", "main")
         assert "CQLF-R1-0001" in prompt
+
+
+class TestExtractCodeSnippet:
+    def test_reads_snippet_around_line(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            src = os.path.join(tmpdir, "src")
+            os.makedirs(src)
+            with open(os.path.join(src, "app.js"), "w") as f:
+                for i in range(1, 21):
+                    f.write(f"line {i}\n")
+            snippet = _extract_code_snippet(tmpdir, "src/app.js", 10, context=2)
+            assert ">>> " in snippet
+            assert "line 10" in snippet
+            assert "line 8" in snippet
+            assert "line 12" in snippet
+
+    def test_nonexistent_file_returns_empty(self):
+        assert _extract_code_snippet("/tmp", "nonexistent.js", 5) == ""
+
+    def test_line_zero_returns_empty(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with open(os.path.join(tmpdir, "a.js"), "w") as f:
+                f.write("hello\n")
+            assert _extract_code_snippet(tmpdir, "a.js", 0) == ""
+
+
+class TestFindRelatedTestFiles:
+    def test_finds_test_prefix(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            src = os.path.join(tmpdir, "src")
+            os.makedirs(src)
+            with open(os.path.join(src, "app.py"), "w") as f:
+                f.write("")
+            with open(os.path.join(src, "test_app.py"), "w") as f:
+                f.write("")
+            result = _find_related_test_files(tmpdir, "src/app.py")
+            assert any("test_app.py" in r for r in result)
+
+    def test_finds_test_suffix(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            src = os.path.join(tmpdir, "src")
+            os.makedirs(src)
+            with open(os.path.join(src, "app.js"), "w") as f:
+                f.write("")
+            with open(os.path.join(src, "app.test.js"), "w") as f:
+                f.write("")
+            result = _find_related_test_files(tmpdir, "src/app.js")
+            assert any("app.test.js" in r for r in result)
+
+    def test_no_test_files(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            os.makedirs(os.path.join(tmpdir, "src"))
+            with open(os.path.join(tmpdir, "src", "app.js"), "w") as f:
+                f.write("")
+            result = _find_related_test_files(tmpdir, "src/app.js")
+            assert result == []
+
+    def test_empty_source_file(self):
+        assert _find_related_test_files("/tmp", "") == []
+
+
+class TestContextRichPrompt:
+    def _batch(self):
+        return {
+            "batch_id": 1,
+            "cwe_family": "injection",
+            "severity_tier": "critical",
+            "max_severity_score": 9.8,
+            "issue_count": 1,
+            "file_count": 1,
+            "issues": [{
+                "id": "CQLF-R1-0001",
+                "rule_id": "js/sql-injection",
+                "rule_name": "SqlInjection",
+                "rule_description": "SQL injection vulnerability",
+                "rule_help": "Use parameterized queries.",
+                "message": "User input flows to SQL query.",
+                "severity_score": 9.8,
+                "severity_tier": "critical",
+                "cwes": ["cwe-89"],
+                "cwe_family": "injection",
+                "locations": [{"file": "src/db.js", "start_line": 5}],
+            }],
+        }
+
+    def test_fix_hint_included_for_known_family(self):
+        prompt = build_batch_prompt(
+            self._batch(), "https://github.com/o/r", "main",
+        )
+        assert "parameterized" in prompt.lower()
+
+    def test_code_snippet_included_with_target_dir(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            src = os.path.join(tmpdir, "src")
+            os.makedirs(src)
+            with open(os.path.join(src, "db.js"), "w") as f:
+                for i in range(1, 11):
+                    f.write(f"const line{i} = {i};\n")
+            prompt = build_batch_prompt(
+                self._batch(), "https://github.com/o/r", "main",
+                target_dir=tmpdir,
+            )
+            assert "Code context:" in prompt
+            assert "const line5" in prompt
+
+    def test_test_files_listed_when_found(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            src = os.path.join(tmpdir, "src")
+            os.makedirs(src)
+            with open(os.path.join(src, "db.js"), "w") as f:
+                f.write("x = 1\n" * 10)
+            with open(os.path.join(src, "db.test.js"), "w") as f:
+                f.write("")
+            prompt = build_batch_prompt(
+                self._batch(), "https://github.com/o/r", "main",
+                target_dir=tmpdir,
+            )
+            assert "Related test files" in prompt
+            assert "db.test.js" in prompt
+
+    def test_fix_learning_context_included(self):
+        run = {
+            "target_repo": "https://github.com/o/r",
+            "run_number": 1,
+            "timestamp": "2025-01-01T00:00:00Z",
+            "issues_found": 1,
+            "issue_fingerprints": [{
+                "id": "CQLF-R1-0001",
+                "fingerprint": "fp1",
+                "rule_id": "js/sql-injection",
+                "severity_tier": "critical",
+                "cwe_family": "injection",
+                "file": "src/db.js",
+                "start_line": 5,
+            }],
+            "sessions": [{
+                "session_id": "s1",
+                "session_url": "u1",
+                "batch_id": 1,
+                "status": "finished",
+                "issue_ids": ["CQLF-R1-0001"],
+            }],
+        }
+        fl = FixLearning(runs=[run])
+        prompt = build_batch_prompt(
+            self._batch(), "https://github.com/o/r", "main",
+            fix_learning=fl,
+        )
+        assert "Historical fix rate" in prompt
+
+    def test_no_snippet_without_target_dir(self):
+        prompt = build_batch_prompt(
+            self._batch(), "https://github.com/o/r", "main",
+        )
+        assert "Code context:" not in prompt
 
 
 class TestValidateRepoUrlExtended:
