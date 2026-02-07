@@ -189,18 +189,45 @@ When `persist_logs` is enabled (default), the action commits run results to `log
 
 These logs serve as a permanent audit trail and are the data source for the dashboard.
 
-## Dashboard
+## Telemetry Dashboard
 
-When `generate_dashboard` is enabled (default), the action generates a self-contained HTML dashboard at `dashboard/index.html` in the fork. The dashboard shows:
+The telemetry dashboard is a centralized web app that aggregates data from **all** action runs across every target repository. Unlike per-repo dashboards, it gives you a single view of your entire security remediation pipeline.
 
-- **Metric cards** -- total runs, issues found, Devin sessions dispatched, PRs created/merged/open/closed
-- **Severity breakdown** -- horizontal bar chart of issues by severity tier
+### Setup
+
+```bash
+cd telemetry
+cp .env.example .env
+# Edit .env with your GITHUB_TOKEN, DEVIN_API_KEY, and ACTION_REPO
+pip install -r requirements.txt
+python app.py
+```
+
+Then open `http://localhost:5000` in your browser.
+
+### How it works
+
+1. Each action run pushes a JSON telemetry record to `telemetry/runs/` in this repo (via the GitHub Contents API).
+2. The Flask app reads all records, polls the Devin API for session statuses, and queries GitHub for PR outcomes.
+3. The dashboard displays aggregated metrics across all repos and runs.
+
+### Dashboard features
+
+- **Metric cards** -- repos scanned, total runs, issues found, Devin sessions (created/finished), PRs (created/merged/open), fix rate
+- **Severity breakdown** -- horizontal bar chart aggregated across all runs
 - **Category breakdown** -- bar chart of issues by CWE family
-- **Run history** -- table with per-run details (issues, batches, sessions, threshold)
-- **Devin sessions** -- table with session links and status
-- **Pull requests** -- table with PR status badges, issue IDs, and links
+- **Repositories** -- list of all repos scanned by the action
+- **Run history** -- table with per-run details (target, issues, batches, sessions, timestamp)
+- **Devin sessions** -- table with live status, issue IDs, and PR links (click "Poll Sessions" to refresh)
+- **Pull requests** -- table with status badges, issue IDs, and links
 
-The dashboard uses a GitHub-inspired dark theme and requires no JavaScript frameworks -- it's pure HTML/CSS that can be opened as a local file or served via GitHub Pages.
+### Environment variables
+
+| Variable | Purpose |
+|----------|---------|
+| `GITHUB_TOKEN` | PAT with `repo` scope for GitHub API calls |
+| `DEVIN_API_KEY` | Devin API key for polling session statuses |
+| `ACTION_REPO` | This repo's full name (e.g. `marius-posa/codeql-devin-fixer`) |
 
 ## Notes
 
@@ -258,16 +285,26 @@ CodeQL: database create + analyze -> SARIF
 parse_sarif.py: parse -> deduplicate -> assign IDs -> prioritize -> batch
     |
     v
-dispatch_devin.py: create Devin session per batch (optionally wait + collect outcomes)
+dispatch_devin.py: create Devin session per batch
     |
     v
 persist_logs.py: commit run results to logs/run-{label}/ in fork
     |
     v
-generate_dashboard.py: build HTML dashboard from logs + GitHub API
+persist_telemetry.py: push run record to telemetry/runs/ in action repo
     |
     v
 Each Devin session: clone fork -> fix issues -> create PR on fork
+
+                     ~~~  Centralized Telemetry  ~~~
+
+telemetry/runs/*.json  <--  aggregated from all action runs
+    |
+    v
+telemetry/app.py  <--  Flask server (reads runs, polls Devin + GitHub APIs)
+    |
+    v
+Dashboard UI at http://localhost:5000
 ```
 
 ## Troubleshooting

@@ -69,9 +69,9 @@ inputs:
     required: false
     default: "true"
   generate_dashboard:
-    description: "Generate tracking dashboard after the run"
+    description: "Deprecated -- dashboard is now in the telemetry app. Kept for backward compatibility."
     required: false
-    default: "true"
+    default: "false"
 
 outputs:
   total_issues:
@@ -335,45 +335,19 @@ runs:
         python "${{ github.action_path }}/scripts/persist_logs.py" \
           "${{ runner.temp }}/codeql-output"
 
-    - name: Generate dashboard
-      if: inputs.generate_dashboard == 'true'
-      id: dashboard
+    - name: Push telemetry to action repo
+      if: inputs.github_token != ''
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.github_token }}
+        ACTION_REPO: ${{ github.repository }}
         TARGET_REPO: ${{ env.SCAN_REPO_URL }}
-        LOGS_DIR: ${{ runner.temp }}/target-repo/logs
-        DASHBOARD_OUTPUT_DIR: ${{ runner.temp }}/codeql-output/dashboard
+        FORK_URL: ${{ steps.fork.outputs.fork_url }}
+        RUN_NUMBER: ${{ github.run_number }}
+        RUN_LABEL: ${{ steps.parse.outputs.run_label }}
       run: |
-        python "${{ github.action_path }}/scripts/generate_dashboard.py"
-
-    - name: Commit dashboard to repo
-      if: inputs.generate_dashboard == 'true' && inputs.github_token != ''
-      shell: bash
-      env:
-        GITHUB_TOKEN: ${{ inputs.github_token }}
-      run: |
-        REPO_DIR="${{ runner.temp }}/target-repo"
-        DASH_SRC="${{ runner.temp }}/codeql-output/dashboard"
-        DASH_DEST="$REPO_DIR/dashboard"
-        mkdir -p "$DASH_DEST"
-        cp -r "$DASH_SRC"/* "$DASH_DEST/" 2>/dev/null || true
-        cd "$REPO_DIR"
-        git config user.email "codeql-devin-fixer[bot]@users.noreply.github.com"
-        git config user.name "codeql-devin-fixer[bot]"
-        git add dashboard/ || true
-        if git diff --cached --quiet; then
-          echo "No dashboard changes to commit"
-        else
-          git commit -m "chore: update tracking dashboard"
-          BRANCH=$(git rev-parse --abbrev-ref HEAD)
-          if git push origin "$BRANCH" 2>&1; then
-            echo "Dashboard committed and pushed"
-          else
-            echo "WARNING: Could not push dashboard. The GITHUB_TOKEN may lack permission for the target repo."
-            echo "Dashboard was committed locally but not pushed."
-          fi
-        fi
+        python "${{ github.action_path }}/scripts/persist_telemetry.py" \
+          "${{ runner.temp }}/codeql-output"
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
