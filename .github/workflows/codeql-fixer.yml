@@ -21,6 +21,16 @@ on:
           - security-extended
           - security-and-quality
         default: security-extended
+      persist_logs:
+        description: "Keep logs in Github"
+        required: true
+        type: boolean
+        default: true
+      generate_dashboard:
+        description: "Generate dashboard of Action results"
+        required: true
+        type: boolean
+        default: true
       include_paths:
         description: "Optional newline/comma-separated globs to include"
         required: false
@@ -40,7 +50,7 @@ on:
         description: "Max Devin sessions to create"
         required: false
         type: number
-        default: 10
+        default: 5
       severity_threshold:
         description: "Minimum severity: critical, high, medium, low"
         required: false
@@ -78,7 +88,7 @@ on:
         default: 30
 
 permissions:
-  contents: read
+  contents: write
   security-events: write
 
 jobs:
@@ -99,6 +109,7 @@ jobs:
           batch_size: ${{ inputs.batch_size }}
           max_sessions: ${{ inputs.max_sessions }}
           severity_threshold: ${{ inputs.severity_threshold }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           devin_api_key: ${{ secrets.DEVIN_API_KEY }}
           dry_run: ${{ inputs.dry_run }}
           default_branch: ${{ inputs.default_branch }}
