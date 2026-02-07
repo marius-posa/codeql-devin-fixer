@@ -68,6 +68,10 @@ class PipelineConfig:
     logs_dir: str = "logs"
     dashboard_output_dir: str = "dashboard"
 
+    # -- dispatch_devin.py (context-rich prompts / fix learning) --------------
+    target_dir: str = ""
+    telemetry_dir: str = ""
+
     @classmethod
     def from_env(cls) -> PipelineConfig:
         """Build a config from the current environment variables."""
@@ -93,6 +97,8 @@ class PipelineConfig:
             action_repo=os.environ.get("ACTION_REPO", ""),
             logs_dir=os.environ.get("LOGS_DIR", "logs"),
             dashboard_output_dir=os.environ.get("DASHBOARD_OUTPUT_DIR", "dashboard"),
+            target_dir=os.environ.get("TARGET_DIR", ""),
+            telemetry_dir=os.environ.get("TELEMETRY_DIR", ""),
         )
 
     def validate(self, required: list[str]) -> None:

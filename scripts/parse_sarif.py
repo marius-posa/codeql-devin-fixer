@@ -43,11 +43,12 @@ RUN_NUMBER : str
 
 import hashlib
 import json
+import os
 import re
 import sys
-import os
 from collections import defaultdict
 from datetime import datetime, timezone
+from pathlib import PurePosixPath
 from typing import Any
 
 try:
@@ -358,20 +359,90 @@ def prioritize_issues(
     return filtered
 
 
+def _get_issue_dirs(issue: dict[str, Any]) -> set[str]:
+    """Return the set of parent directory paths for an issue's locations."""
+    dirs: set[str] = set()
+    for loc in issue.get("locations", []):
+        f = loc.get("file", "")
+        if f:
+            dirs.add(str(PurePosixPath(f).parent))
+    return dirs
+
+
+def _get_issue_files(issue: dict[str, Any]) -> set[str]:
+    """Return the set of file paths for an issue's locations."""
+    return {
+        loc["file"]
+        for loc in issue.get("locations", [])
+        if loc.get("file")
+    }
+
+
+def _file_proximity_score(issue_a: dict[str, Any], issue_b: dict[str, Any]) -> float:
+    """Score how closely two issues are related by file locality.
+
+    Returns a value between 0.0 and 1.0:
+    * 1.0 -- both issues share at least one file
+    * 0.5 -- both issues share at least one directory
+    * 0.0 -- no file or directory overlap
+    """
+    files_a = _get_issue_files(issue_a)
+    files_b = _get_issue_files(issue_b)
+    if files_a & files_b:
+        return 1.0
+    dirs_a = _get_issue_dirs(issue_a)
+    dirs_b = _get_issue_dirs(issue_b)
+    if dirs_a & dirs_b:
+        return 0.5
+    return 0.0
+
+
+def _sort_by_file_proximity(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Re-order issues within a family group so file-proximate issues are adjacent.
+
+    Uses a greedy nearest-neighbour approach: start with the first issue,
+    then always pick the remaining issue with the highest file-proximity
+    score to the last-placed issue.  Ties are broken by severity (desc).
+    """
+    if len(issues) <= 1:
+        return list(issues)
+    remaining = list(issues)
+    ordered: list[dict[str, Any]] = [remaining.pop(0)]
+    while remaining:
+        last = ordered[-1]
+        best_idx = 0
+        best_score = (-1.0, 0.0)
+        for idx, candidate in enumerate(remaining):
+            prox = _file_proximity_score(last, candidate)
+            sev = candidate["severity_score"]
+            score = (prox, sev)
+            if score > best_score:
+                best_score = score
+                best_idx = idx
+        ordered.append(remaining.pop(best_idx))
+    return ordered
+
+
 def batch_issues(
     issues: list[dict[str, Any]], batch_size: int = 5, max_batches: int = 10
 ) -> list[dict[str, Any]]:
-    """Group issues into batches by CWE family, capped at *batch_size*.
+    """Group issues into batches by CWE family with file-proximity awareness.
+
+    Within each CWE family, issues are re-ordered so that file-proximate
+    issues (same file or same directory) are adjacent.  This means each
+    batch is more likely to contain issues that share context, giving
+    Devin better locality per session.
 
     Families with the highest max-severity score are processed first so
     that the most critical batches get dispatched before hitting the
-    *max_batches* cap.  Within a family, issues are already sorted by
-    severity (from ``prioritize_issues``), so each batch contains the
-    most severe issues first.
+    *max_batches* cap.
     """
     family_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for issue in issues:
         family_groups[issue["cwe_family"]].append(issue)
+
+    for family in family_groups:
+        family_groups[family] = _sort_by_file_proximity(family_groups[family])
 
     family_severity: dict[str, float] = {}
     for family, group in family_groups.items():
@@ -386,11 +457,9 @@ def batch_issues(
             if len(batches) >= max_batches:
                 break
             chunk = group[i : i + batch_size]
-            files_in_batch = set()
+            files_in_batch: set[str] = set()
             for issue in chunk:
-                for loc in issue.get("locations", []):
-                    if loc.get("file"):
-                        files_in_batch.add(loc["file"])
+                files_in_batch.update(_get_issue_files(issue))
             top_severity = max(c["severity_score"] for c in chunk)
             top_tier = classify_severity(top_severity)
             batches.append(

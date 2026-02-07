@@ -46,14 +46,18 @@ import os
 import re
 import sys
 import time
+from pathlib import PurePosixPath
+
 import requests
 
 try:
+    from fix_learning import CWE_FIX_HINTS, FixLearning
     from github_utils import validate_repo_url
     from parse_sarif import BATCHES_SCHEMA_VERSION
     from pipeline_config import PipelineConfig
     from retry_utils import exponential_backoff_delay
 except ImportError:
+    from scripts.fix_learning import CWE_FIX_HINTS, FixLearning
     from scripts.github_utils import validate_repo_url
     from scripts.parse_sarif import BATCHES_SCHEMA_VERSION
     from scripts.pipeline_config import PipelineConfig
@@ -84,8 +88,72 @@ def sanitize_prompt_text(text: str, max_length: int = 500) -> str:
     return text.strip()
 
 
+def _extract_code_snippet(target_dir: str, file_path: str, start_line: int, context: int = 5) -> str:
+    """Read a code snippet from the cloned repo around *start_line*.
+
+    Returns up to *context* lines before and after the target line,
+    prefixed with line numbers.  Returns an empty string if the file
+    cannot be read.
+    """
+    full_path = os.path.join(target_dir, file_path)
+    if not os.path.isfile(full_path):
+        return ""
+    try:
+        with open(full_path, errors="replace") as fh:
+            lines = fh.readlines()
+    except OSError:
+        return ""
+    if not lines or start_line < 1:
+        return ""
+    begin = max(0, start_line - 1 - context)
+    end = min(len(lines), start_line + context)
+    snippet_lines: list[str] = []
+    for i in range(begin, end):
+        marker = ">>>" if i == start_line - 1 else "   "
+        snippet_lines.append(f"{marker} {i + 1:4d} | {lines[i].rstrip()}")
+    return "\n".join(snippet_lines)
+
+
+def _find_related_test_files(target_dir: str, source_file: str) -> list[str]:
+    """Heuristically find test files related to *source_file*.
+
+    Checks common test file naming conventions:
+    * ``test/X.test.ext``, ``tests/X_test.ext``, ``__tests__/X.test.ext``
+    * Same directory with ``test_`` prefix or ``.test.`` / ``.spec.`` infix
+    """
+    if not source_file or not target_dir:
+        return []
+    p = PurePosixPath(source_file)
+    stem = p.stem
+    suffix = p.suffix
+    parent = str(p.parent)
+
+    candidates: list[str] = []
+    patterns = [
+        os.path.join(parent, f"test_{stem}{suffix}"),
+        os.path.join(parent, f"{stem}_test{suffix}"),
+        os.path.join(parent, f"{stem}.test{suffix}"),
+        os.path.join(parent, f"{stem}.spec{suffix}"),
+        os.path.join("test", parent, f"{stem}.test{suffix}"),
+        os.path.join("test", parent, f"{stem}{suffix}"),
+        os.path.join("tests", parent, f"{stem}.test{suffix}"),
+        os.path.join("tests", parent, f"test_{stem}{suffix}"),
+        os.path.join("__tests__", parent, f"{stem}.test{suffix}"),
+    ]
+    for candidate in patterns:
+        full = os.path.join(target_dir, candidate)
+        if os.path.isfile(full):
+            candidates.append(candidate)
+    return candidates
+
+
 def build_batch_prompt(
-    batch: dict, repo_url: str, default_branch: str, is_own_repo: bool = False,
+    batch: dict,
+    repo_url: str,
+    default_branch: str,
+    is_own_repo: bool = False,
+    target_dir: str = "",
+    fix_learning: FixLearning | None = None,
 ) -> str:
     """Construct a detailed, Markdown-formatted prompt for a Devin session.
 
@@ -93,6 +161,14 @@ def build_batch_prompt(
     * identify which files and lines to examine,
     * understand the vulnerability category and severity,
     * create a PR with the correct title and body format.
+
+    When *target_dir* is provided, the prompt is enriched with:
+    * source code snippets around each issue location,
+    * related test file suggestions,
+    * CWE-specific fix pattern hints.
+
+    When *fix_learning* is provided, historical fix-rate context is
+    included to help Devin understand past success patterns.
 
     When *is_own_repo* is True the target repo belongs to the user (not a
     fork of an upstream project) so the prompt omits the "not the upstream"
@@ -102,7 +178,7 @@ def build_batch_prompt(
     tier = batch["severity_tier"]
     issues = batch["issues"]
 
-    file_list = set()
+    file_list: set[str] = set()
     for issue in issues:
         for loc in issue.get("locations", []):
             if loc.get("file"):
@@ -119,9 +195,23 @@ def build_batch_prompt(
         f"Category: {family} | Severity: {tier.upper()} "
         f"(max CVSS: {batch['max_severity_score']})",
         "",
-        "Issues to fix:",
-        "",
     ]
+
+    fix_hint = CWE_FIX_HINTS.get(family)
+    if fix_hint:
+        prompt_parts.extend([f"Fix pattern hint for {family}: {fix_hint}", ""])
+
+    if fix_learning:
+        context = fix_learning.prompt_context_for_family(family)
+        if context:
+            for line in context.split("\n"):
+                if line and not line.startswith("Fix pattern hint"):
+                    prompt_parts.append(line)
+            prompt_parts.append("")
+
+    prompt_parts.extend(["Issues to fix:", ""])
+
+    all_test_files: set[str] = set()
 
     for idx, issue in enumerate(issues, 1):
         issue_id = issue.get("id", f"issue-{idx}")
@@ -144,6 +234,17 @@ def build_batch_prompt(
             prompt_parts.append(f"- Rule: {sanitize_prompt_text(issue['rule_description'], 200)}")
         if issue.get("rule_help"):
             prompt_parts.append(f"- Guidance: {sanitize_prompt_text(issue['rule_help'], 500)}")
+
+        if target_dir:
+            for loc in issue.get("locations", []):
+                f = loc.get("file", "")
+                sl = loc.get("start_line", 0)
+                if f and sl > 0:
+                    snippet = _extract_code_snippet(target_dir, f, sl)
+                    if snippet:
+                        prompt_parts.append(f"- Code context:\n```\n{snippet}\n```")
+                    tests = _find_related_test_files(target_dir, f)
+                    all_test_files.update(tests)
         prompt_parts.append("")
 
     ids_tag = ",".join(issue_ids[:6]) if issue_ids else f"batch-{batch['batch_id']}"
@@ -176,6 +277,11 @@ def build_batch_prompt(
     )
     for f in sorted(file_list):
         prompt_parts.append(f"- {f}")
+
+    if all_test_files:
+        prompt_parts.extend(["", "Related test files (review and update if needed):"])
+        for tf in sorted(all_test_files):
+            prompt_parts.append(f"- {tf}")
 
     return "\n".join(prompt_parts)
 
@@ -256,6 +362,21 @@ def main() -> None:
     fork_url = cfg.fork_url
     is_own_repo = fork_url == repo_url or not fork_url
     max_acu = cfg.max_acu_per_session
+    target_dir = cfg.target_dir
+    if target_dir and not os.path.isdir(target_dir):
+        print(f"WARNING: TARGET_DIR '{target_dir}' does not exist; code snippets disabled")
+        target_dir = ""
+    telemetry_dir = cfg.telemetry_dir
+
+    fix_learn: FixLearning | None = None
+    if telemetry_dir and os.path.isdir(telemetry_dir):
+        fix_learn = FixLearning.from_telemetry_dir(telemetry_dir)
+        rates = fix_learn.prioritized_families()
+        if rates:
+            print("Historical fix rates by CWE family:")
+            for fam, rate in rates:
+                print(f"  {fam}: {rate * 100:.0f}%")
+            print()
 
     if not api_key and not dry_run:
         print("ERROR: DEVIN_API_KEY is required (set DRY_RUN=true to skip)")
@@ -283,15 +404,37 @@ def main() -> None:
         print("No batches to process. Exiting.")
         return
 
+    if fix_learn:
+        skipped_families: list[str] = []
+        kept_batches: list[dict] = []
+        for batch in batches:
+            family = batch["cwe_family"]
+            if fix_learn.should_skip_family(family):
+                skipped_families.append(family)
+            else:
+                kept_batches.append(batch)
+        if skipped_families:
+            print(f"Skipping {len(skipped_families)} batch(es) due to low "
+                  f"historical fix rate: {', '.join(set(skipped_families))}")
+        batches = kept_batches
+        if not batches:
+            print("All batches skipped due to low fix rates. Exiting.")
+            return
+
     print(f"Processing {len(batches)} batches for {repo_url}")
     print(f"Default branch: {default_branch}")
     print(f"Dry run: {dry_run}")
+    if target_dir:
+        print(f"Target dir: {target_dir} (code snippets enabled)")
     print()
 
     sessions: list[dict] = []
 
     for batch in batches:
-        prompt = build_batch_prompt(batch, repo_url, default_branch, is_own_repo)
+        prompt = build_batch_prompt(
+            batch, repo_url, default_branch, is_own_repo,
+            target_dir=target_dir, fix_learning=fix_learn,
+        )
         batch_id = batch["batch_id"]
 
         prompt_path = os.path.join(output_dir, f"prompt_batch_{batch_id}.txt")

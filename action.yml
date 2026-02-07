@@ -319,6 +319,31 @@ runs:
           "${{ runner.temp }}/codeql-results" \
           "${{ runner.temp }}/codeql-output"
 
+    - name: Fetch telemetry for fix learning
+      id: fetch-telemetry
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        ACTION_REPO: ${{ github.repository }}
+      run: |
+        TELEMETRY_DIR="${{ runner.temp }}/telemetry-runs"
+        mkdir -p "$TELEMETRY_DIR"
+        if [ -n "$GITHUB_TOKEN" ] && [ -n "$ACTION_REPO" ]; then
+          TREE_URL="https://api.github.com/repos/${ACTION_REPO}/contents/telemetry/runs"
+          FILES=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" "$TREE_URL" 2>/dev/null | \
+            python3 -c "import sys,json; items=json.load(sys.stdin); [print(i['download_url']) for i in items if i['name'].endswith('.json')]" 2>/dev/null || true)
+          COUNT=0
+          for url in $FILES; do
+            FNAME=$(basename "$url")
+            curl -sL "$url" -o "$TELEMETRY_DIR/$FNAME" 2>/dev/null && COUNT=$((COUNT+1)) || true
+          done
+          echo "Fetched $COUNT telemetry file(s) for fix learning"
+        else
+          echo "No token/repo; skipping telemetry fetch"
+        fi
+        echo "telemetry_dir=$TELEMETRY_DIR" >> "$GITHUB_OUTPUT"
+
     - name: Dispatch Devin sessions
       id: dispatch
       shell: bash
@@ -331,6 +356,8 @@ runs:
         DRY_RUN: ${{ inputs.dry_run }}
         RUN_NUMBER: ${{ github.run_number }}
         RUN_ID: ${{ github.run_id }}
+        TARGET_DIR: ${{ runner.temp }}/target-repo
+        TELEMETRY_DIR: ${{ steps.fetch-telemetry.outputs.telemetry_dir }}
       run: |
         python "${{ github.action_path }}/scripts/dispatch_devin.py"\
           "${{ runner.temp }}/codeql-output/batches.json" \

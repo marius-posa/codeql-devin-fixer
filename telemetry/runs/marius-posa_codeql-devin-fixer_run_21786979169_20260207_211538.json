@@ -1,0 +1,60 @@
+{
+  "target_repo": "https://github.com/marius-posa/codeql-devin-fixer",
+  "fork_url": "https://github.com/marius-posa/codeql-devin-fixer",
+  "run_number": 22,
+  "run_id": "21786979169",
+  "run_url": "https://github.com/marius-posa/codeql-devin-fixer/actions/runs/21786979169",
+  "run_label": "run-22-2026-02-07-211534",
+  "timestamp": "2026-02-07T21:15:38.952506+00:00",
+  "issues_found": 3,
+  "severity_breakdown": {
+    "high": 2,
+    "medium": 1
+  },
+  "category_breakdown": {
+    "info-disclosure": 2,
+    "xss": 1
+  },
+  "batches_created": 1,
+  "sessions": [
+    {
+      "session_id": "devin-94023bac82cc4440b6190b9442ece081",
+      "session_url": "https://app.devin.ai/sessions/94023bac82cc4440b6190b9442ece081",
+      "batch_id": 1,
+      "status": "created",
+      "issue_ids": [
+        "CQLF-R22-0001",
+        "CQLF-R22-0002"
+      ]
+    }
+  ],
+  "issue_fingerprints": [
+    {
+      "id": "CQLF-R22-0001",
+      "fingerprint": "98419b9cd97e8181",
+      "rule_id": "js/clear-text-storage-of-sensitive-data",
+      "severity_tier": "high",
+      "cwe_family": "info-disclosure",
+      "file": "docs/static/api.js",
+      "start_line": 15
+    },
+    {
+      "id": "CQLF-R22-0002",
+      "fingerprint": "7cd37c368f3c7da0",
+      "rule_id": "py/flask-debug",
+      "severity_tier": "high",
+      "cwe_family": "info-disclosure",
+      "file": "telemetry/app.py",
+      "start_line": 509
+    },
+    {
+      "id": "CQLF-R22-0003",
+      "fingerprint": "386e1204f7f4130b",
+      "rule_id": "py/jinja2/autoescape-false",
+      "severity_tier": "medium",
+      "cwe_family": "xss",
+      "file": "scripts/generate_dashboard.py",
+      "start_line": 51
+    }
+  ]
+}
