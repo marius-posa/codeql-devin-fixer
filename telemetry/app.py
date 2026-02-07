@@ -59,8 +59,35 @@ app = Flask(__name__)
 CORS(app)
 
 
+@app.after_request
+def _set_security_headers(response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    if flask_request.is_secure:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
 def _get_telemetry_api_key() -> str:
     return os.environ.get("TELEMETRY_API_KEY", "")
+
+
+def _is_authenticated() -> bool:
+    """Check whether the current request supplies a valid API key.
+
+    Returns ``True`` when ``TELEMETRY_API_KEY`` is unset (no auth required)
+    or when the caller provides a matching key via ``X-API-Key`` or
+    ``Authorization: Bearer`` header.
+    """
+    expected = _get_telemetry_api_key()
+    if not expected:
+        return True
+    provided = flask_request.headers.get("X-API-Key", "")
+    if not provided:
+        auth = flask_request.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            provided = auth[7:]
+    return bool(provided) and hmac.compare_digest(provided, expected)
 
 
 def require_api_key(fn):
@@ -73,15 +100,7 @@ def require_api_key(fn):
     """
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
-        expected = _get_telemetry_api_key()
-        if not expected:
-            return fn(*args, **kwargs)
-        provided = flask_request.headers.get("X-API-Key", "")
-        if not provided:
-            auth = flask_request.headers.get("Authorization", "")
-            if auth.startswith("Bearer "):
-                provided = auth[7:]
-        if not provided or not hmac.compare_digest(provided, expected):
+        if not _is_authenticated():
             return jsonify({"error": "Unauthorized"}), 401
         return fn(*args, **kwargs)
     return wrapper
@@ -386,12 +405,13 @@ def api_refresh():
 
 @app.route("/api/config")
 def api_config():
-    return jsonify({
-        "github_token_set": bool(os.environ.get("GITHUB_TOKEN", "")),
-        "devin_api_key_set": bool(os.environ.get("DEVIN_API_KEY", "")),
-        "action_repo": os.environ.get("ACTION_REPO", ""),
-        "auth_required": bool(_get_telemetry_api_key()),
-    })
+    auth_required = bool(_get_telemetry_api_key())
+    response: dict = {"auth_required": auth_required}
+    if _is_authenticated():
+        response["github_token_set"] = bool(os.environ.get("GITHUB_TOKEN", ""))
+        response["devin_api_key_set"] = bool(os.environ.get("DEVIN_API_KEY", ""))
+        response["action_repo"] = os.environ.get("ACTION_REPO", "")
+    return jsonify(response)
 
 
 @app.route("/api/backfill", methods=["POST"])
@@ -493,6 +513,8 @@ def api_dispatch_preflight():
 @app.route("/api/dispatch", methods=["POST"])
 @require_api_key
 def api_dispatch():
+    if not _get_telemetry_api_key():
+        return jsonify({"error": "TELEMETRY_API_KEY must be configured to use the dispatch endpoint"}), 403
     token = os.environ.get("GITHUB_TOKEN", "")
     action_repo = os.environ.get("ACTION_REPO", "")
     if not token:

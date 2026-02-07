@@ -128,7 +128,7 @@ runs:
         if [ -n "$GITHUB_TOKEN" ]; then
           python "${{ github.action_path }}/scripts/fork_repo.py"
         else
-          echo "fork_url=${{ steps.normalize.outputs.target_repo }}" >> "$GITHUB_OUTPUT"
+          echo "fork_url=$TARGET_REPO" >> "$GITHUB_OUTPUT"
           echo "No GITHUB_TOKEN provided; using original repo URL"
         fi
 
@@ -137,21 +137,24 @@ runs:
       env:
         GIT_LFS_SKIP_SMUDGE: "1"
         GITHUB_TOKEN: ${{ inputs.github_token }}
+        FORK_URL: ${{ steps.fork.outputs.fork_url }}
+        NORMALIZED_REPO: ${{ steps.normalize.outputs.target_repo }}
       run: |
         TARGET_DIR="${{ runner.temp }}/target-repo"
-        REPO_URL="${{ steps.fork.outputs.fork_url }}"
+        REPO_URL="$FORK_URL"
         if [ -z "$REPO_URL" ]; then
-          REPO_URL="${{ steps.normalize.outputs.target_repo }}"
+          REPO_URL="$NORMALIZED_REPO"
         fi
         if ! echo "$REPO_URL" | grep -qE '^https://github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$'; then
           echo "ERROR: Invalid repository URL: $REPO_URL" >&2
           exit 1
         fi
         if [ -n "$GITHUB_TOKEN" ]; then
-          ASKPASS_SCRIPT=$(mktemp "${TMPDIR:-/tmp}/git_askpass_XXXXXX.sh")
-          printf '#!/bin/sh\necho "x-access-token:%s"\n' "$GITHUB_TOKEN" > "$ASKPASS_SCRIPT"
+          ASKPASS_SCRIPT=$(mktemp "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/git_askpass_XXXXXX.sh")
+          printf '#!/bin/sh\necho "$GIT_ASKPASS_TOKEN"\n' > "$ASKPASS_SCRIPT"
           chmod 700 "$ASKPASS_SCRIPT"
           export GIT_ASKPASS="$ASKPASS_SCRIPT"
+          export GIT_ASKPASS_TOKEN="x-access-token:$GITHUB_TOKEN"
           export GIT_TERMINAL_PROMPT=0
           trap 'rm -f "$ASKPASS_SCRIPT"' EXIT
         fi
@@ -162,10 +165,12 @@ runs:
     - name: Detect languages
       id: detect-lang
       shell: bash
+      env:
+        INPUT_LANGUAGES: ${{ inputs.languages }}
       run: |
-        if [ -n "${{ inputs.languages }}" ]; then
-          echo "languages=${{ inputs.languages }}" >> "$GITHUB_OUTPUT"
-          echo "Using specified languages: ${{ inputs.languages }}"
+        if [ -n "$INPUT_LANGUAGES" ]; then
+          echo "languages=$INPUT_LANGUAGES" >> "$GITHUB_OUTPUT"
+          echo "Using specified languages: $INPUT_LANGUAGES"
           exit 0
         fi
 
@@ -279,16 +284,20 @@ runs:
     - name: Prepare CodeQL config
       id: prepare-config
       shell: bash
+      env:
+        INPUT_INCLUDE_PATHS: ${{ inputs.include_paths }}
+        INPUT_EXCLUDE_PATHS: ${{ inputs.exclude_paths }}
+        INPUT_QUERIES: ${{ inputs.queries }}
       run: |
         CONFIG="${{ runner.temp }}/codeql-config.yml"
-        INC="${{ inputs.include_paths }}"
-        EXC="${{ inputs.exclude_paths }}"
+        INC="$INPUT_INCLUDE_PATHS"
+        EXC="$INPUT_EXCLUDE_PATHS"
         sanitize() {
           echo "$1" | tr ',' '\n' | sed '/^\s*$/d' | sed 's/^\s*//;s/\s*$//'
         }
         has_config=false
         echo "version: 2" > "$CONFIG"
-        echo "queries: ${{ inputs.queries }}" >> "$CONFIG"
+        echo "queries: $INPUT_QUERIES" >> "$CONFIG"
         INCL=$(sanitize "$INC")
         EXCL=$(sanitize "$EXC")
         if [ -n "$INCL" ] || [ -n "$EXCL" ]; then

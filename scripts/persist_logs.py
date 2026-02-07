@@ -128,8 +128,9 @@ def main() -> None:
     env = os.environ.copy()
     askpass_script = None
     if github_token:
-        askpass_script = _create_askpass_script(github_token)
+        askpass_script = _create_askpass_script(workspace_dir=repo_dir)
         env["GIT_ASKPASS"] = askpass_script
+        env["GIT_ASKPASS_TOKEN"] = f"x-access-token:{github_token}"
         env["GIT_TERMINAL_PROMPT"] = "0"
         remote_url = run_git("remote", "get-url", "origin", cwd=repo_dir)
         parsed_remote = urlparse(remote_url)
@@ -156,16 +157,22 @@ def main() -> None:
             f.write(f"logs_persisted={str(logs_persisted).lower()}\n")
 
 
-def _create_askpass_script(token: str) -> str:
-    """Create a temporary GIT_ASKPASS script that supplies the token.
+def _create_askpass_script(workspace_dir: str = "") -> str:
+    """Create a temporary GIT_ASKPASS script that reads the token from an env var.
 
-    Using GIT_ASKPASS keeps the token out of remote URLs and process
-    argument lists, preventing accidental exposure in logs or stack traces.
+    The script outputs the value of ``GIT_ASKPASS_TOKEN`` at runtime rather
+    than embedding the token directly, preventing exposure if the temp file
+    is read by a concurrent process.  When *workspace_dir* is provided the
+    temp file is created there instead of the system default to reduce
+    predictability.
     """
-    fd, path = tempfile.mkstemp(prefix="git_askpass_", suffix=".sh")
+    kwargs: dict[str, str] = {"prefix": "git_askpass_", "suffix": ".sh"}
+    if workspace_dir and os.path.isdir(workspace_dir):
+        kwargs["dir"] = workspace_dir
+    fd, path = tempfile.mkstemp(**kwargs)
     with os.fdopen(fd, "w") as f:
         f.write("#!/bin/sh\n")
-        f.write(f'echo "x-access-token:{token}"\n')
+        f.write('echo "$GIT_ASKPASS_TOKEN"\n')
     os.chmod(path, stat.S_IRWXU)
     return path
 
