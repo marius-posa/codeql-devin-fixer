@@ -1,0 +1,886 @@
+{
+  "target_repo": "https://github.com/marius-posa/juice-shop",
+  "fork_url": "https://github.com/marius-posa/juice-shop",
+  "run_number": 21,
+  "run_id": "21786529346",
+  "run_url": "https://github.com/marius-posa/codeql-devin-fixer/actions/runs/21786529346",
+  "run_label": "run-21-2026-02-07-204218",
+  "timestamp": "2026-02-07T20:42:21.846274+00:00",
+  "issues_found": 93,
+  "severity_breakdown": {
+    "critical": 5,
+    "high": 71,
+    "medium": 17
+  },
+  "category_breakdown": {
+    "injection": 10,
+    "path-traversal": 14,
+    "ssrf": 1,
+    "csrf": 1,
+    "crypto": 2,
+    "other": 12,
+    "xss": 3,
+    "race-condition": 1,
+    "info-disclosure": 8,
+    "missing-rate-limiting": 31,
+    "regex-dos": 6,
+    "file-upload": 2,
+    "logging": 1,
+    "redirect": 1
+  },
+  "batches_created": 1,
+  "sessions": [
+    {
+      "session_id": "devin-548468fd932947cb87f7f3a311ecf769",
+      "session_url": "https://app.devin.ai/sessions/548468fd932947cb87f7f3a311ecf769",
+      "batch_id": 1,
+      "status": "created",
+      "issue_ids": [
+        "CQLF-R21-0001",
+        "CQLF-R21-0002",
+        "CQLF-R21-0007",
+        "CQLF-R21-0008",
+        "CQLF-R21-0009"
+      ]
+    }
+  ],
+  "issue_fingerprints": [
+    {
+      "id": "CQLF-R21-0001",
+      "fingerprint": "61853c93146ccb4a",
+      "rule_id": "js/code-injection",
+      "severity_tier": "critical",
+      "cwe_family": "injection",
+      "file": "routes/trackOrder.ts",
+      "start_line": 18
+    },
+    {
+      "id": "CQLF-R21-0002",
+      "fingerprint": "4b69349c9a1f0416",
+      "rule_id": "js/code-injection",
+      "severity_tier": "critical",
+      "cwe_family": "injection",
+      "file": "routes/showProductReviews.ts",
+      "start_line": 36
+    },
+    {
+      "id": "CQLF-R21-0003",
+      "fingerprint": "22c0b9568b7c1e68",
+      "rule_id": "js/template-object-injection",
+      "severity_tier": "critical",
+      "cwe_family": "path-traversal",
+      "file": "routes/dataErasure.ts",
+      "start_line": 72
+    },
+    {
+      "id": "CQLF-R21-0004",
+      "fingerprint": "0c2a6c2b67c01628",
+      "rule_id": "js/template-object-injection",
+      "severity_tier": "critical",
+      "cwe_family": "path-traversal",
+      "file": "routes/dataErasure.ts",
+      "start_line": 87
+    },
+    {
+      "id": "CQLF-R21-0005",
+      "fingerprint": "4be89e0fbf4569e1",
+      "rule_id": "js/request-forgery",
+      "severity_tier": "critical",
+      "cwe_family": "ssrf",
+      "file": "routes/profileImageUrlUpload.ts",
+      "start_line": 24
+    },
+    {
+      "id": "CQLF-R21-0006",
+      "fingerprint": "a52c3de74b029a67",
+      "rule_id": "js/missing-token-validation",
+      "severity_tier": "high",
+      "cwe_family": "csrf",
+      "file": "server.ts",
+      "start_line": 289
+    },
+    {
+      "id": "CQLF-R21-0007",
+      "fingerprint": "c3d31b448278f107",
+      "rule_id": "js/sql-injection",
+      "severity_tier": "high",
+      "cwe_family": "injection",
+      "file": "routes/likeProductReviews.ts",
+      "start_line": 25
+    },
+    {
+      "id": "CQLF-R21-0008",
+      "fingerprint": "e5143579c845742e",
+      "rule_id": "js/sql-injection",
+      "severity_tier": "high",
+      "cwe_family": "injection",
+      "file": "routes/likeProductReviews.ts",
+      "start_line": 36
+    },
+    {
+      "id": "CQLF-R21-0009",
+      "fingerprint": "5f830a8efd51b79e",
+      "rule_id": "js/sql-injection",
+      "severity_tier": "high",
+      "cwe_family": "injection",
+      "file": "routes/likeProductReviews.ts",
+      "start_line": 43
+    },
+    {
+      "id": "CQLF-R21-0010",
+      "fingerprint": "5cf409f2980037ae",
+      "rule_id": "js/sql-injection",
+      "severity_tier": "high",
+      "cwe_family": "injection",
+      "file": "routes/likeProductReviews.ts",
+      "start_line": 51
+    },
+    {
+      "id": "CQLF-R21-0011",
+      "fingerprint": "1923400ada1b5d5d",
+      "rule_id": "js/sql-injection",
+      "severity_tier": "high",
+      "cwe_family": "injection",
+      "file": "routes/login.ts",
+      "start_line": 34
+    },
+    {
+      "id": "CQLF-R21-0012",
+      "fingerprint": "4f2a7426facc3132",
+      "rule_id": "js/sql-injection",
+      "severity_tier": "high",
+      "cwe_family": "injection",
+      "file": "routes/search.ts",
+      "start_line": 24
+    },
+    {
+      "id": "CQLF-R21-0013",
+      "fingerprint": "5922cdbafaa141ab",
+      "rule_id": "js/sql-injection",
+      "severity_tier": "high",
+      "cwe_family": "injection",
+      "file": "routes/updateProductReviews.ts",
+      "start_line": 18
+    },
+    {
+      "id": "CQLF-R21-0014",
+      "fingerprint": "7f40d1ccc0cb8129",
+      "rule_id": "js/insufficient-password-hash",
+      "severity_tier": "high",
+      "cwe_family": "crypto",
+      "file": "lib/insecurity.ts",
+      "start_line": 43
+    },
+    {
+      "id": "CQLF-R21-0015",
+      "fingerprint": "d7a219d11c07c530",
+      "rule_id": "js/insecure-randomness",
+      "severity_tier": "high",
+      "cwe_family": "crypto",
+      "file": "lib/insecurity.ts",
+      "start_line": 55
+    },
+    {
+      "id": "CQLF-R21-0016",
+      "fingerprint": "fb3b2edda026c960",
+      "rule_id": "js/incomplete-url-substring-sanitization",
+      "severity_tier": "high",
+      "cwe_family": "other",
+      "file": "routes/updateUserProfile.ts",
+      "start_line": 31
+    },
+    {
+      "id": "CQLF-R21-0017",
+      "fingerprint": "a3d4e6b71ac209ee",
+      "rule_id": "js/incomplete-url-substring-sanitization",
+      "severity_tier": "high",
+      "cwe_family": "other",
+      "file": "routes/updateUserProfile.ts",
+      "start_line": 32
+    },
+    {
+      "id": "CQLF-R21-0018",
+      "fingerprint": "659a1505c5c2fa78",
+      "rule_id": "js/regex/missing-regexp-anchor",
+      "severity_tier": "high",
+      "cwe_family": "other",
+      "file": "test/cypress/e2e/redirect.spec.ts",
+      "start_line": 19
+    },
+    {
+      "id": "CQLF-R21-0019",
+      "fingerprint": "406eee355f7bfac6",
+      "rule_id": "js/user-controlled-bypass",
+      "severity_tier": "high",
+      "cwe_family": "other",
+      "file": "lib/insecurity.ts",
+      "start_line": 57
+    },
+    {
+      "id": "CQLF-R21-0020",
+      "fingerprint": "5fbda6b7453597e8",
+      "rule_id": "js/user-controlled-bypass",
+      "severity_tier": "high",
+      "cwe_family": "other",
+      "file": "lib/insecurity.ts",
+      "start_line": 191
+    },
+    {
+      "id": "CQLF-R21-0021",
+      "fingerprint": "24426c9b3e9d3a70",
+      "rule_id": "js/user-controlled-bypass",
+      "severity_tier": "high",
+      "cwe_family": "other",
+      "file": "routes/fileServer.ts",
+      "start_line": 27
+    },
+    {
+      "id": "CQLF-R21-0022",
+      "fingerprint": "686fc9d027eaccc7",
+      "rule_id": "js/user-controlled-bypass",
+      "severity_tier": "high",
+      "cwe_family": "other",
+      "file": "routes/verify.ts",
+      "start_line": 110
+    },
+    {
+      "id": "CQLF-R21-0023",
+      "fingerprint": "2c55b42d44f2b9ec",
+      "rule_id": "js/incomplete-sanitization",
+      "severity_tier": "high",
+      "cwe_family": "xss",
+      "file": "data/static/codefixes/unionSqlInjectionChallenge_1.ts",
+      "start_line": 5
+    },
+    {
+      "id": "CQLF-R21-0024",
+      "fingerprint": "8f37aa532a8509cf",
+      "rule_id": "js/incomplete-sanitization",
+      "severity_tier": "high",
+      "cwe_family": "xss",
+      "file": "lib/utils.ts",
+      "start_line": 48
+    },
+    {
+      "id": "CQLF-R21-0025",
+      "fingerprint": "ac9fa14f7652f9bf",
+      "rule_id": "js/incomplete-sanitization",
+      "severity_tier": "high",
+      "cwe_family": "xss",
+      "file": "server.ts",
+      "start_line": 256
+    },
+    {
+      "id": "CQLF-R21-0026",
+      "fingerprint": "1a79d886ff9f9393",
+      "rule_id": "js/file-system-race",
+      "severity_tier": "high",
+      "cwe_family": "race-condition",
+      "file": "lib/codingChallenges.ts",
+      "start_line": 29
+    },
+    {
+      "id": "CQLF-R21-0027",
+      "fingerprint": "0673162993c308c7",
+      "rule_id": "js/clear-text-logging",
+      "severity_tier": "high",
+      "cwe_family": "info-disclosure",
+      "file": "lib/antiCheat.ts",
+      "start_line": 77
+    },
+    {
+      "id": "CQLF-R21-0028",
+      "fingerprint": "12966a0839db4c4b",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 270
+    },
+    {
+      "id": "CQLF-R21-0029",
+      "fingerprint": "04e4e1e9cef47d7b",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 271
+    },
+    {
+      "id": "CQLF-R21-0030",
+      "fingerprint": "0d0654ac15b577cf",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 278
+    },
+    {
+      "id": "CQLF-R21-0031",
+      "fingerprint": "514e523d4e7c44d1",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 283
+    },
+    {
+      "id": "CQLF-R21-0032",
+      "fingerprint": "dde866604dc63e34",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 304
+    },
+    {
+      "id": "CQLF-R21-0033",
+      "fingerprint": "0934aac7680c9e0b",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 305
+    },
+    {
+      "id": "CQLF-R21-0034",
+      "fingerprint": "042b6b6ad8793022",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 306
+    },
+    {
+      "id": "CQLF-R21-0035",
+      "fingerprint": "21a1b8150aee880a",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 425
+    },
+    {
+      "id": "CQLF-R21-0036",
+      "fingerprint": "9b55e7aae68d4694",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 457
+    },
+    {
+      "id": "CQLF-R21-0037",
+      "fingerprint": "a307738df25fa18e",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 589
+    },
+    {
+      "id": "CQLF-R21-0038",
+      "fingerprint": "cf28a1e8a43492bf",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 593
+    },
+    {
+      "id": "CQLF-R21-0039",
+      "fingerprint": "6df08daa24fbb307",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 610
+    },
+    {
+      "id": "CQLF-R21-0040",
+      "fingerprint": "e57bb6f3465dc2cf",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 614
+    },
+    {
+      "id": "CQLF-R21-0041",
+      "fingerprint": "171d5901db90fec8",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 615
+    },
+    {
+      "id": "CQLF-R21-0042",
+      "fingerprint": "68136ba7900da6aa",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 616
+    },
+    {
+      "id": "CQLF-R21-0043",
+      "fingerprint": "db643066838cf2de",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 617
+    },
+    {
+      "id": "CQLF-R21-0044",
+      "fingerprint": "2e8e9ac6ca890544",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 618
+    },
+    {
+      "id": "CQLF-R21-0045",
+      "fingerprint": "89f994afbe2f4ca1",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 622
+    },
+    {
+      "id": "CQLF-R21-0046",
+      "fingerprint": "8a350fa14466ede0",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 627
+    },
+    {
+      "id": "CQLF-R21-0047",
+      "fingerprint": "bc0d1bd31717db57",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 628
+    },
+    {
+      "id": "CQLF-R21-0048",
+      "fingerprint": "004a76f80fac01a4",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 629
+    },
+    {
+      "id": "CQLF-R21-0049",
+      "fingerprint": "609879db13594b3b",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 630
+    },
+    {
+      "id": "CQLF-R21-0050",
+      "fingerprint": "266259cf58f18d9b",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 643
+    },
+    {
+      "id": "CQLF-R21-0051",
+      "fingerprint": "9075d5cd7d680351",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 644
+    },
+    {
+      "id": "CQLF-R21-0052",
+      "fingerprint": "b3e97e848c422363",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 645
+    },
+    {
+      "id": "CQLF-R21-0053",
+      "fingerprint": "03b0cdef030d9493",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 654
+    },
+    {
+      "id": "CQLF-R21-0054",
+      "fingerprint": "b846d0766f2f8518",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 655
+    },
+    {
+      "id": "CQLF-R21-0055",
+      "fingerprint": "669493c266f6af9d",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 658
+    },
+    {
+      "id": "CQLF-R21-0056",
+      "fingerprint": "cd68d71e84fcc2c4",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 659
+    },
+    {
+      "id": "CQLF-R21-0057",
+      "fingerprint": "c2ed17db805033ea",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 663
+    },
+    {
+      "id": "CQLF-R21-0058",
+      "fingerprint": "92aa0a3fd3004c1a",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "server.ts",
+      "start_line": 665
+    },
+    {
+      "id": "CQLF-R21-0059",
+      "fingerprint": "efe60dfc730fb603",
+      "rule_id": "js/zipslip",
+      "severity_tier": "high",
+      "cwe_family": "path-traversal",
+      "file": "routes/fileUpload.ts",
+      "start_line": 41
+    },
+    {
+      "id": "CQLF-R21-0060",
+      "fingerprint": "b407a2987ad45867",
+      "rule_id": "js/path-injection",
+      "severity_tier": "high",
+      "cwe_family": "path-traversal",
+      "file": "routes/fileServer.ts",
+      "start_line": 33
+    },
+    {
+      "id": "CQLF-R21-0061",
+      "fingerprint": "359c6ab0586a028f",
+      "rule_id": "js/path-injection",
+      "severity_tier": "high",
+      "cwe_family": "path-traversal",
+      "file": "routes/keyServer.ts",
+      "start_line": 14
+    },
+    {
+      "id": "CQLF-R21-0062",
+      "fingerprint": "6467aa8becd1ba6a",
+      "rule_id": "js/path-injection",
+      "severity_tier": "high",
+      "cwe_family": "path-traversal",
+      "file": "routes/fileUpload.ts",
+      "start_line": 33
+    },
+    {
+      "id": "CQLF-R21-0063",
+      "fingerprint": "603f8c00f1fd0d26",
+      "rule_id": "js/path-injection",
+      "severity_tier": "high",
+      "cwe_family": "path-traversal",
+      "file": "routes/fileUpload.ts",
+      "start_line": 38
+    },
+    {
+      "id": "CQLF-R21-0064",
+      "fingerprint": "fcc404bb77c744b5",
+      "rule_id": "js/path-injection",
+      "severity_tier": "high",
+      "cwe_family": "path-traversal",
+      "file": "routes/logfileServer.ts",
+      "start_line": 14
+    },
+    {
+      "id": "CQLF-R21-0065",
+      "fingerprint": "bfb358ecd1d4b908",
+      "rule_id": "js/path-injection",
+      "severity_tier": "high",
+      "cwe_family": "path-traversal",
+      "file": "routes/profileImageUrlUpload.ts",
+      "start_line": 29
+    },
+    {
+      "id": "CQLF-R21-0066",
+      "fingerprint": "4fea778150479ba8",
+      "rule_id": "js/path-injection",
+      "severity_tier": "high",
+      "cwe_family": "path-traversal",
+      "file": "routes/quarantineServer.ts",
+      "start_line": 14
+    },
+    {
+      "id": "CQLF-R21-0067",
+      "fingerprint": "6c1e330afd12e21d",
+      "rule_id": "js/path-injection",
+      "severity_tier": "high",
+      "cwe_family": "path-traversal",
+      "file": "routes/vulnCodeFixes.ts",
+      "start_line": 80
+    },
+    {
+      "id": "CQLF-R21-0068",
+      "fingerprint": "bdb3739d045d353f",
+      "rule_id": "js/path-injection",
+      "severity_tier": "high",
+      "cwe_family": "path-traversal",
+      "file": "routes/vulnCodeFixes.ts",
+      "start_line": 81
+    },
+    {
+      "id": "CQLF-R21-0069",
+      "fingerprint": "6c1e330afd12e21d",
+      "rule_id": "js/path-injection",
+      "severity_tier": "high",
+      "cwe_family": "path-traversal",
+      "file": "routes/vulnCodeSnippet.ts",
+      "start_line": 89
+    },
+    {
+      "id": "CQLF-R21-0070",
+      "fingerprint": "bdb3739d045d353f",
+      "rule_id": "js/path-injection",
+      "severity_tier": "high",
+      "cwe_family": "path-traversal",
+      "file": "routes/vulnCodeSnippet.ts",
+      "start_line": 90
+    },
+    {
+      "id": "CQLF-R21-0071",
+      "fingerprint": "03adb92bc1957b8f",
+      "rule_id": "js/server-crash",
+      "severity_tier": "high",
+      "cwe_family": "regex-dos",
+      "file": "routes/videoHandler.ts",
+      "start_line": 54
+    },
+    {
+      "id": "CQLF-R21-0072",
+      "fingerprint": "c513e73ffdeb774a",
+      "rule_id": "js/polynomial-redos",
+      "severity_tier": "high",
+      "cwe_family": "regex-dos",
+      "file": "routes/profileImageUrlUpload.ts",
+      "start_line": 20
+    },
+    {
+      "id": "CQLF-R21-0073",
+      "fingerprint": "a04993c6af575611",
+      "rule_id": "js/remote-property-injection",
+      "severity_tier": "high",
+      "cwe_family": "regex-dos",
+      "file": "lib/accuracy.ts",
+      "start_line": 64
+    },
+    {
+      "id": "CQLF-R21-0074",
+      "fingerprint": "2ff950a9c1935c7e",
+      "rule_id": "js/remote-property-injection",
+      "severity_tier": "high",
+      "cwe_family": "regex-dos",
+      "file": "lib/insecurity.ts",
+      "start_line": 76
+    },
+    {
+      "id": "CQLF-R21-0075",
+      "fingerprint": "c220b2d130e16b2f",
+      "rule_id": "js/remote-property-injection",
+      "severity_tier": "high",
+      "cwe_family": "regex-dos",
+      "file": "lib/insecurity.ts",
+      "start_line": 77
+    },
+    {
+      "id": "CQLF-R21-0076",
+      "fingerprint": "9bde6d421e246e57",
+      "rule_id": "js/remote-property-injection",
+      "severity_tier": "high",
+      "cwe_family": "regex-dos",
+      "file": "routes/vulnCodeFixes.ts",
+      "start_line": 40
+    },
+    {
+      "id": "CQLF-R21-0077",
+      "fingerprint": "10b7eb88302c5fd6",
+      "rule_id": "js/sensitive-get-query",
+      "severity_tier": "medium",
+      "cwe_family": "other",
+      "file": "routes/changePassword.ts",
+      "start_line": 14
+    },
+    {
+      "id": "CQLF-R21-0078",
+      "fingerprint": "df8ef294e660a242",
+      "rule_id": "js/sensitive-get-query",
+      "severity_tier": "medium",
+      "cwe_family": "other",
+      "file": "routes/changePassword.ts",
+      "start_line": 15
+    },
+    {
+      "id": "CQLF-R21-0079",
+      "fingerprint": "3d028378af507be8",
+      "rule_id": "js/sensitive-get-query",
+      "severity_tier": "medium",
+      "cwe_family": "other",
+      "file": "routes/changePassword.ts",
+      "start_line": 17
+    },
+    {
+      "id": "CQLF-R21-0080",
+      "fingerprint": "9bc46607f8b54694",
+      "rule_id": "js/http-to-file-access",
+      "severity_tier": "medium",
+      "cwe_family": "file-upload",
+      "file": "routes/fileUpload.ts",
+      "start_line": 35
+    },
+    {
+      "id": "CQLF-R21-0081",
+      "fingerprint": "19d34defe7dfcf1e",
+      "rule_id": "js/http-to-file-access",
+      "severity_tier": "medium",
+      "cwe_family": "file-upload",
+      "file": "routes/profileImageFileUpload.ts",
+      "start_line": 43
+    },
+    {
+      "id": "CQLF-R21-0082",
+      "fingerprint": "ed2fe77bb8bfb338",
+      "rule_id": "js/prototype-polluting-assignment",
+      "severity_tier": "medium",
+      "cwe_family": "injection",
+      "file": "lib/accuracy.ts",
+      "start_line": 67
+    },
+    {
+      "id": "CQLF-R21-0083",
+      "fingerprint": "f1d2385687c3c6fc",
+      "rule_id": "js/log-injection",
+      "severity_tier": "medium",
+      "cwe_family": "logging",
+      "file": "lib/challengeUtils.ts",
+      "start_line": 86
+    },
+    {
+      "id": "CQLF-R21-0084",
+      "fingerprint": "17780c270ae1aab0",
+      "rule_id": "js/server-side-unvalidated-url-redirection",
+      "severity_tier": "medium",
+      "cwe_family": "redirect",
+      "file": "routes/redirect.ts",
+      "start_line": 19
+    },
+    {
+      "id": "CQLF-R21-0085",
+      "fingerprint": "afc88532f46ef2a1",
+      "rule_id": "js/functionality-from-untrusted-source",
+      "severity_tier": "medium",
+      "cwe_family": "other",
+      "file": "frontend/src/index.html",
+      "start_line": 16
+    },
+    {
+      "id": "CQLF-R21-0086",
+      "fingerprint": "159e18d992d6cd05",
+      "rule_id": "js/functionality-from-untrusted-source",
+      "severity_tier": "medium",
+      "cwe_family": "other",
+      "file": "frontend/src/index.html",
+      "start_line": 15
+    },
+    {
+      "id": "CQLF-R21-0087",
+      "fingerprint": "8e49c4c9bf27640f",
+      "rule_id": "js/stack-trace-exposure",
+      "severity_tier": "medium",
+      "cwe_family": "info-disclosure",
+      "file": "routes/createProductReviews.ts",
+      "start_line": 32
+    },
+    {
+      "id": "CQLF-R21-0088",
+      "fingerprint": "166655a553deb08e",
+      "rule_id": "js/stack-trace-exposure",
+      "severity_tier": "medium",
+      "cwe_family": "info-disclosure",
+      "file": "routes/checkKeys.ts",
+      "start_line": 30
+    },
+    {
+      "id": "CQLF-R21-0089",
+      "fingerprint": "1097c1f653e16a6a",
+      "rule_id": "js/stack-trace-exposure",
+      "severity_tier": "medium",
+      "cwe_family": "info-disclosure",
+      "file": "routes/checkKeys.ts",
+      "start_line": 39
+    },
+    {
+      "id": "CQLF-R21-0090",
+      "fingerprint": "d33303da768c094f",
+      "rule_id": "js/stack-trace-exposure",
+      "severity_tier": "medium",
+      "cwe_family": "info-disclosure",
+      "file": "routes/likeProductReviews.ts",
+      "start_line": 56
+    },
+    {
+      "id": "CQLF-R21-0091",
+      "fingerprint": "f63df942123fb2a8",
+      "rule_id": "js/stack-trace-exposure",
+      "severity_tier": "medium",
+      "cwe_family": "info-disclosure",
+      "file": "routes/nftMint.ts",
+      "start_line": 28
+    },
+    {
+      "id": "CQLF-R21-0092",
+      "fingerprint": "1097c1f653e16a6a",
+      "rule_id": "js/stack-trace-exposure",
+      "severity_tier": "medium",
+      "cwe_family": "info-disclosure",
+      "file": "routes/nftMint.ts",
+      "start_line": 45
+    },
+    {
+      "id": "CQLF-R21-0093",
+      "fingerprint": "1097c1f653e16a6a",
+      "rule_id": "js/stack-trace-exposure",
+      "severity_tier": "medium",
+      "cwe_family": "info-disclosure",
+      "file": "routes/web3Wallet.ts",
+      "start_line": 31
+    }
+  ]
+}
