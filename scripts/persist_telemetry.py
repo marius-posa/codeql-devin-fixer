@@ -38,9 +38,11 @@ import requests
 try:
     from github_utils import gh_headers
     from parse_sarif import ISSUES_SCHEMA_VERSION
+    from retry_utils import request_with_retry
 except ImportError:
     from scripts.github_utils import gh_headers
     from scripts.parse_sarif import ISSUES_SCHEMA_VERSION
+    from scripts.retry_utils import request_with_retry
 
 
 def _repo_short_name(url: str) -> str:
@@ -142,9 +144,9 @@ def build_telemetry_record(output_dir: str) -> dict:
 
 def push_telemetry(token: str, action_repo: str, record: dict) -> bool:
     repo_short = _repo_short_name(record["target_repo"])
-    run_num = record["run_number"]
+    run_id = record.get("run_id", "") or str(record["run_number"])
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    filename = f"{repo_short}_run_{run_num}_{ts}.json"
+    filename = f"{repo_short}_run_{run_id}_{ts}.json"
     path = f"telemetry/runs/{filename}"
 
     content_b64 = base64.b64encode(
@@ -153,11 +155,13 @@ def push_telemetry(token: str, action_repo: str, record: dict) -> bool:
 
     url = f"https://api.github.com/repos/{action_repo}/contents/{path}"
     payload = {
-        "message": f"telemetry: {record['target_repo']} run {run_num}",
+        "message": f"telemetry: {record['target_repo']} run {run_id}",
         "content": content_b64,
     }
 
-    resp = requests.put(url, headers=gh_headers(token), json=payload, timeout=30)
+    resp = request_with_retry(
+        "PUT", url, headers=gh_headers(token), json=payload, timeout=30,
+    )
     if resp.status_code in (200, 201):
         print(f"Telemetry pushed: {path}")
         return True
@@ -183,6 +187,10 @@ def main() -> None:
           f"{record['issues_found']} issues | "
           f"{record['batches_created']} batches | "
           f"{len(record['sessions'])} sessions")
+
+    if record["issues_found"] == 0:
+        print("No issues found in this run. Flagging telemetry as zero-issue run.")
+        record["zero_issue_run"] = True
 
     push_telemetry(token, action_repo, record)
 

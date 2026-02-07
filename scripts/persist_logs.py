@@ -42,6 +42,8 @@ import subprocess
 import sys
 from urllib.parse import urlparse
 
+from retry_utils import run_git_with_retry
+
 
 def run_git(*args: str, cwd: str) -> str:
     """Run a git command and return stdout.  Prints stderr on failure."""
@@ -131,19 +133,19 @@ def main() -> None:
         run_git("remote", "set-url", "origin", authed_url, cwd=repo_dir)
 
     branch = run_git("rev-parse", "--abbrev-ref", "HEAD", cwd=repo_dir)
-    result = subprocess.run(
-        ["git", "push", "origin", branch],
-        cwd=repo_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    if result.returncode != 0:
-        print(f"WARNING: git push failed: {result.stderr}")
+    result = run_git_with_retry("push", "origin", branch, cwd=repo_dir)
+    logs_persisted = result.returncode == 0
+    if not logs_persisted:
+        print(f"WARNING: git push failed after retries: {result.stderr}")
         print("The default GITHUB_TOKEN may not have permission to push to the target repo.")
         print("Logs were committed locally but could not be pushed.")
     else:
         print(f"Logs pushed to {branch}")
+
+    github_output = os.environ.get("GITHUB_OUTPUT")
+    if github_output:
+        with open(github_output, "a") as f:
+            f.write(f"logs_persisted={str(logs_persisted).lower()}\n")
 
 
 if __name__ == "__main__":

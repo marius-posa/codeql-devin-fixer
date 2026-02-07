@@ -43,7 +43,6 @@ DRY_RUN : str
 
 import json
 import os
-import random
 import sys
 import time
 import requests
@@ -52,16 +51,16 @@ try:
     from github_utils import validate_repo_url
     from parse_sarif import BATCHES_SCHEMA_VERSION
     from pipeline_config import PipelineConfig
+    from retry_utils import exponential_backoff_delay
 except ImportError:
     from scripts.github_utils import validate_repo_url
     from scripts.parse_sarif import BATCHES_SCHEMA_VERSION
     from scripts.pipeline_config import PipelineConfig
-
+    from scripts.retry_utils import exponential_backoff_delay
 
 DEVIN_API_BASE = "https://api.devin.ai/v1"
 
 MAX_RETRIES = 3
-RETRY_DELAY = 5
 
 
 def build_batch_prompt(
@@ -217,8 +216,9 @@ def create_devin_session(
         except requests.exceptions.RequestException as e:
             last_err = e
             if attempt < MAX_RETRIES:
-                delay = RETRY_DELAY * (2 ** (attempt - 1)) + random.uniform(0, 1)
-                print(f"  Retry {attempt}/{MAX_RETRIES} after error: {e}")
+                delay = exponential_backoff_delay(attempt)
+                print(f"  Retry {attempt}/{MAX_RETRIES} after error: {e} "
+                      f"(waiting {delay:.1f}s)")
                 time.sleep(delay)
     raise last_err  # type: ignore[misc]
 
