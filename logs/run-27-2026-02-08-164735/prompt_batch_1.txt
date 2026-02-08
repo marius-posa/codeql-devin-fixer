@@ -1,0 +1,251 @@
+Fix 5 CodeQL security issue(s) in https://github.com/marius-posa/codeql-devin-fixer (branch: main).
+
+Issue IDs: CQLF-R27-0001, CQLF-R27-0002, CQLF-R27-0003, CQLF-R27-0004, CQLF-R27-0005
+Category: xss | Severity: MEDIUM (max CVSS: 6.1)
+
+## Playbook: xss (v1)
+
+Fix pattern for Cross-Site Scripting (XSS) vulnerabilities. Covers CWE-79 (reflected/stored XSS), CWE-80 (basic XSS), and related output-encoding issues.
+
+Follow these steps in order:
+
+### Step 1: Identify all entry points for tainted data
+
+Trace the data flow backwards from the vulnerable output location to
+find every entry point where user-controlled data enters:
+- HTTP request parameters (query strings, form bodies, URL fragments)
+- Database fields storing previously submitted user content
+- URL path segments, hash fragments, or referrer headers
+- Third-party API responses that include user-generated content
+- WebSocket messages rendered in the UI
+
+For each entry point, note:
+1. The rendering context where the data appears (HTML body, HTML
+   attribute, JavaScript block, CSS value, URL)
+2. Whether the framework's auto-escaping is active for that template
+3. All intermediate transformations (e.g., Markdown rendering, rich
+   text processing) that could introduce or strip encoding
+
+### Step 2: Apply the canonical fix pattern
+
+Choose the encoding strategy based on the output context:
+
+HTML body context:
+- Use the framework's built-in auto-escaping (Jinja2 `{{ var }}`,
+  React JSX `{var}`, Django `{{ var }}`).
+- If auto-escaping is disabled (e.g., `| safe`, `dangerouslySetInnerHTML`),
+  remove the override or apply manual HTML-entity encoding.
+- Use a trusted sanitization library (DOMPurify, Bleach) when rich
+  HTML is intentionally allowed.
+
+HTML attribute context:
+- Always quote attribute values.
+- Apply HTML-attribute encoding to the value.
+- Never place user data in event handler attributes (`onclick`,
+  `onerror`, etc.) or `javascript:` URLs.
+
+JavaScript context:
+- Use JSON serialization (`JSON.stringify`) to embed values in
+  `<script>` blocks.
+- Avoid inserting user data directly into JavaScript string literals.
+
+URL context:
+- Apply URL encoding (`encodeURIComponent`) for query parameters.
+- Validate that the scheme is `http:` or `https:` to prevent
+  `javascript:` or `data:` URLs.
+
+CSS context:
+- Avoid user data in CSS values entirely. If unavoidable, allowlist
+  specific safe values.
+
+### Step 3: Run the existing test suite
+
+Run the project's full test suite to confirm the fix does not break
+existing functionality:
+- Identify the test runner (pytest, jest, mocha, etc.)
+- Run all tests and verify they pass
+- Pay special attention to tests for views, templates, or rendering
+  components that were modified
+- Verify that legitimate content still renders correctly after
+  encoding changes
+
+### Step 4: Add a test case that would have caught the vulnerability
+
+Write at least one test that:
+- Sends a payload containing `<script>alert(1)</script>` or equivalent
+  through the identified entry point
+- Asserts that the output contains the HTML-encoded version
+  (`&lt;script&gt;`) rather than raw markup
+- Verifies that the rendering context applies proper encoding
+- For React/JSX: verify that `dangerouslySetInnerHTML` is not used
+  with unsanitized data
+- For server-rendered templates: verify auto-escaping is enabled
+
+
+Historical fix rate for xss: 33% (1/3 sessions completed)
+
+Issues to fix:
+
+### CQLF-R27-0001: py/jinja2/autoescape-false (py/jinja2/autoescape-false)
+- Severity: MEDIUM (6.1)
+- CWE: cwe-79
+- Location(s): scripts/dispatch_devin.py:95
+- Description: Using jinja2 templates with autoescape=False can potentially allow XSS attacks.
+- Rule: Jinja2 templating with autoescape=False
+- Guidance: # Jinja2 templating with autoescape=False
+Cross-site scripting (XSS) attacks can occur if untrusted input is not escaped. This applies to templates as well as code. The `jinja2` templates may be vulnerable to XSS if the environment has `autoescape` set to `False`. Unfortunately, `jinja2` sets `autoescape` to `False` by default. Explicitly setting `autoescape` to `True` when creating an `Environment` object will prevent this.
+
+
+## Recommendation
+Avoid setting jinja2 autoescape to False. Jinja2 pr
+- Code context:
+```
+      90 |         return None
+      91 |     if jinja2 is None:
+      92 |         print("WARNING: jinja2 not installed; custom templates disabled")
+      93 |         return None
+      94 |     with open(template_path) as f:
+>>>   95 |         return jinja2.Template(f.read())
+      96 | 
+      97 | 
+      98 | def _render_template_prompt(
+      99 |     template: "jinja2.Template",
+     100 |     batch: dict,
+```
+
+### CQLF-R27-0002: py/jinja2/autoescape-false (py/jinja2/autoescape-false)
+- Severity: MEDIUM (6.1)
+- CWE: cwe-79
+- Location(s): tests/test_dispatch_devin.py:648
+- Description: Using jinja2 templates with autoescape=False can potentially allow XSS attacks.
+- Rule: Jinja2 templating with autoescape=False
+- Guidance: # Jinja2 templating with autoescape=False
+Cross-site scripting (XSS) attacks can occur if untrusted input is not escaped. This applies to templates as well as code. The `jinja2` templates may be vulnerable to XSS if the environment has `autoescape` set to `False`. Unfortunately, `jinja2` sets `autoescape` to `False` by default. Explicitly setting `autoescape` to `True` when creating an `Environment` object will prevent this.
+
+
+## Recommendation
+Avoid setting jinja2 autoescape to False. Jinja2 pr
+- Code context:
+```
+     643 |             }],
+     644 |         }
+     645 | 
+     646 |     def test_renders_template_with_context(self):
+     647 |         import jinja2
+>>>  648 |         template = jinja2.Template("Fix {{ family }} ({{ issue_count }} issues) in {{ repo_url }}")
+     649 |         result = _render_template_prompt(template, self._batch(), "https://github.com/o/r", "main")
+     650 |         assert "Fix injection" in result
+     651 |         assert "1 issues" in result
+     652 |         assert "https://github.com/o/r" in result
+     653 | 
+```
+
+### CQLF-R27-0003: py/jinja2/autoescape-false (py/jinja2/autoescape-false)
+- Severity: MEDIUM (6.1)
+- CWE: cwe-79
+- Location(s): tests/test_dispatch_devin.py:656
+- Description: Using jinja2 templates with autoescape=False can potentially allow XSS attacks.
+- Rule: Jinja2 templating with autoescape=False
+- Guidance: # Jinja2 templating with autoescape=False
+Cross-site scripting (XSS) attacks can occur if untrusted input is not escaped. This applies to templates as well as code. The `jinja2` templates may be vulnerable to XSS if the environment has `autoescape` set to `False`. Unfortunately, `jinja2` sets `autoescape` to `False` by default. Explicitly setting `autoescape` to `True` when creating an `Environment` object will prevent this.
+
+
+## Recommendation
+Avoid setting jinja2 autoescape to False. Jinja2 pr
+- Code context:
+```
+     651 |         assert "1 issues" in result
+     652 |         assert "https://github.com/o/r" in result
+     653 | 
+     654 |     def test_includes_issue_ids(self):
+     655 |         import jinja2
+>>>  656 |         template = jinja2.Template("Issues: {{ issue_ids | join(', ') }}")
+     657 |         result = _render_template_prompt(template, self._batch(), "https://github.com/o/r", "main")
+     658 |         assert "CQLF-R1-0001" in result
+     659 | 
+     660 |     def test_includes_fix_hint(self):
+     661 |         import jinja2
+```
+
+### CQLF-R27-0004: py/jinja2/autoescape-false (py/jinja2/autoescape-false)
+- Severity: MEDIUM (6.1)
+- CWE: cwe-79
+- Location(s): tests/test_dispatch_devin.py:662
+- Description: Using jinja2 templates with autoescape=False can potentially allow XSS attacks.
+- Rule: Jinja2 templating with autoescape=False
+- Guidance: # Jinja2 templating with autoescape=False
+Cross-site scripting (XSS) attacks can occur if untrusted input is not escaped. This applies to templates as well as code. The `jinja2` templates may be vulnerable to XSS if the environment has `autoescape` set to `False`. Unfortunately, `jinja2` sets `autoescape` to `False` by default. Explicitly setting `autoescape` to `True` when creating an `Environment` object will prevent this.
+
+
+## Recommendation
+Avoid setting jinja2 autoescape to False. Jinja2 pr
+- Code context:
+```
+     657 |         result = _render_template_prompt(template, self._batch(), "https://github.com/o/r", "main")
+     658 |         assert "CQLF-R1-0001" in result
+     659 | 
+     660 |     def test_includes_fix_hint(self):
+     661 |         import jinja2
+>>>  662 |         template = jinja2.Template("Hint: {{ fix_hint }}")
+     663 |         result = _render_template_prompt(template, self._batch(), "https://github.com/o/r", "main")
+     664 |         assert result.startswith("Hint: ")
+     665 |         assert len(result) > len("Hint: ")
+     666 | 
+     667 |     def test_includes_batch_metadata(self):
+```
+
+### CQLF-R27-0005: py/jinja2/autoescape-false (py/jinja2/autoescape-false)
+- Severity: MEDIUM (6.1)
+- CWE: cwe-79
+- Location(s): tests/test_dispatch_devin.py:669
+- Description: Using jinja2 templates with autoescape=False can potentially allow XSS attacks.
+- Rule: Jinja2 templating with autoescape=False
+- Guidance: # Jinja2 templating with autoescape=False
+Cross-site scripting (XSS) attacks can occur if untrusted input is not escaped. This applies to templates as well as code. The `jinja2` templates may be vulnerable to XSS if the environment has `autoescape` set to `False`. Unfortunately, `jinja2` sets `autoescape` to `False` by default. Explicitly setting `autoescape` to `True` when creating an `Environment` object will prevent this.
+
+
+## Recommendation
+Avoid setting jinja2 autoescape to False. Jinja2 pr
+- Code context:
+```
+     664 |         assert result.startswith("Hint: ")
+     665 |         assert len(result) > len("Hint: ")
+     666 | 
+     667 |     def test_includes_batch_metadata(self):
+     668 |         import jinja2
+>>>  669 |         template = jinja2.Template("Tier: {{ tier }}, Score: {{ max_severity_score }}")
+     670 |         result = _render_template_prompt(template, self._batch(), "https://github.com/o/r", "main")
+     671 |         assert "Tier: critical" in result
+     672 |         assert "Score: 9.8" in result
+```
+
+Instructions:
+1. Clone https://github.com/marius-posa/codeql-devin-fixer and create a new branch from main.
+2. Fix ALL the issues listed above. Track which issue IDs you are fixing.
+3. Ensure fixes don't break existing functionality.
+4. Run existing tests if available to verify.
+5. Create a PR on https://github.com/marius-posa/codeql-devin-fixer with a clear description listing each issue ID fixed.
+6. Title the PR exactly: 'fix(CQLF-R27-0001,CQLF-R27-0002,CQLF-R27-0003,CQLF-R27-0004,CQLF-R27-0005): resolve xss security issues'
+7. In the PR body, list each issue ID (CQLF-R27-0001, CQLF-R27-0002, CQLF-R27-0003, CQLF-R27-0004, CQLF-R27-0005) and describe the fix applied.
+
+Files to focus on:
+- scripts/dispatch_devin.py
+- tests/test_dispatch_devin.py
+
+## Playbook Improvement Request
+
+You used the **xss** playbook (v1) to fix the issues above. Based on your experience applying it to this codebase, please suggest improvements.
+
+In your PR description, include a section titled **"Playbook Improvements"** with:
+- Any steps that were unclear or missing context
+- Additional sub-steps that would help future fixes
+- Language- or framework-specific tips you discovered
+- Steps that were unnecessary or redundant
+
+Format each suggestion as:
+```
+STEP: <step_id>
+SUGGESTION: <your improvement>
+```
+
+These suggestions will be reviewed and merged into the playbook for future sessions.

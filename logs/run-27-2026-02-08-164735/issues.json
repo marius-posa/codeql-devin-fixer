@@ -1,0 +1,145 @@
+{
+  "schema_version": "1.0",
+  "issues": [
+    {
+      "id": "CQLF-R27-0001",
+      "rule_id": "py/jinja2/autoescape-false",
+      "rule_name": "py/jinja2/autoescape-false",
+      "rule_description": "Jinja2 templating with autoescape=False",
+      "rule_help": "# Jinja2 templating with autoescape=False\nCross-site scripting (XSS) attacks can occur if untrusted input is not escaped. This applies to templates as well as code. The `jinja2` templates may be vulnerable to XSS if the environment has `autoescape` set to `False`. Unfortunately, `jinja2` sets `autoescape` to `False` by default. Explicitly setting `autoescape` to `True` when creating an `Environment` object will prevent this.\n\n\n## Recommendation\nAvoid setting jinja2 autoescape to False. Jinja2 provides the function `select_autoescape` to make sure that the correct auto-escaping is chosen. For example, it can be used when creating an environment `Environment(autoescape=select_autoescape(['html', 'xml'])`\n\n\n## Example\nThe following example is a minimal Flask app which shows a safe and an unsafe way to render the given name back to the page. The first view is unsafe as `first_name` is not escaped, leaving the page vulnerable to cross-site scripting attacks. The second view is safe as `firs",
+      "message": "Using jinja2 templates with autoescape=False can potentially allow XSS attacks.",
+      "severity_score": 6.1,
+      "severity_tier": "medium",
+      "cwes": [
+        "cwe-79"
+      ],
+      "cwe_family": "xss",
+      "locations": [
+        {
+          "file": "scripts/dispatch_devin.py",
+          "start_line": 95,
+          "end_line": 95,
+          "start_column": 16
+        }
+      ],
+      "level": "warning",
+      "partial_fingerprints": {
+        "primaryLocationLineHash": "c2ec561770f55e94:1",
+        "primaryLocationStartColumnFingerprint": "7"
+      },
+      "fingerprint": "a46de6d546eb91d1"
+    },
+    {
+      "id": "CQLF-R27-0002",
+      "rule_id": "py/jinja2/autoescape-false",
+      "rule_name": "py/jinja2/autoescape-false",
+      "rule_description": "Jinja2 templating with autoescape=False",
+      "rule_help": "# Jinja2 templating with autoescape=False\nCross-site scripting (XSS) attacks can occur if untrusted input is not escaped. This applies to templates as well as code. The `jinja2` templates may be vulnerable to XSS if the environment has `autoescape` set to `False`. Unfortunately, `jinja2` sets `autoescape` to `False` by default. Explicitly setting `autoescape` to `True` when creating an `Environment` object will prevent this.\n\n\n## Recommendation\nAvoid setting jinja2 autoescape to False. Jinja2 provides the function `select_autoescape` to make sure that the correct auto-escaping is chosen. For example, it can be used when creating an environment `Environment(autoescape=select_autoescape(['html', 'xml'])`\n\n\n## Example\nThe following example is a minimal Flask app which shows a safe and an unsafe way to render the given name back to the page. The first view is unsafe as `first_name` is not escaped, leaving the page vulnerable to cross-site scripting attacks. The second view is safe as `firs",
+      "message": "Using jinja2 templates with autoescape=False can potentially allow XSS attacks.",
+      "severity_score": 6.1,
+      "severity_tier": "medium",
+      "cwes": [
+        "cwe-79"
+      ],
+      "cwe_family": "xss",
+      "locations": [
+        {
+          "file": "tests/test_dispatch_devin.py",
+          "start_line": 648,
+          "end_line": 648,
+          "start_column": 20
+        }
+      ],
+      "level": "warning",
+      "partial_fingerprints": {
+        "primaryLocationLineHash": "75de2257244d394b:1",
+        "primaryLocationStartColumnFingerprint": "11"
+      },
+      "fingerprint": "18586a9f4c8f3e1c"
+    },
+    {
+      "id": "CQLF-R27-0003",
+      "rule_id": "py/jinja2/autoescape-false",
+      "rule_name": "py/jinja2/autoescape-false",
+      "rule_description": "Jinja2 templating with autoescape=False",
+      "rule_help": "# Jinja2 templating with autoescape=False\nCross-site scripting (XSS) attacks can occur if untrusted input is not escaped. This applies to templates as well as code. The `jinja2` templates may be vulnerable to XSS if the environment has `autoescape` set to `False`. Unfortunately, `jinja2` sets `autoescape` to `False` by default. Explicitly setting `autoescape` to `True` when creating an `Environment` object will prevent this.\n\n\n## Recommendation\nAvoid setting jinja2 autoescape to False. Jinja2 provides the function `select_autoescape` to make sure that the correct auto-escaping is chosen. For example, it can be used when creating an environment `Environment(autoescape=select_autoescape(['html', 'xml'])`\n\n\n## Example\nThe following example is a minimal Flask app which shows a safe and an unsafe way to render the given name back to the page. The first view is unsafe as `first_name` is not escaped, leaving the page vulnerable to cross-site scripting attacks. The second view is safe as `firs",
+      "message": "Using jinja2 templates with autoescape=False can potentially allow XSS attacks.",
+      "severity_score": 6.1,
+      "severity_tier": "medium",
+      "cwes": [
+        "cwe-79"
+      ],
+      "cwe_family": "xss",
+      "locations": [
+        {
+          "file": "tests/test_dispatch_devin.py",
+          "start_line": 656,
+          "end_line": 656,
+          "start_column": 20
+        }
+      ],
+      "level": "warning",
+      "partial_fingerprints": {
+        "primaryLocationLineHash": "1e7e73db24a024f3:1",
+        "primaryLocationStartColumnFingerprint": "11"
+      },
+      "fingerprint": "d9d9d928a36f1b4e"
+    },
+    {
+      "id": "CQLF-R27-0004",
+      "rule_id": "py/jinja2/autoescape-false",
+      "rule_name": "py/jinja2/autoescape-false",
+      "rule_description": "Jinja2 templating with autoescape=False",
+      "rule_help": "# Jinja2 templating with autoescape=False\nCross-site scripting (XSS) attacks can occur if untrusted input is not escaped. This applies to templates as well as code. The `jinja2` templates may be vulnerable to XSS if the environment has `autoescape` set to `False`. Unfortunately, `jinja2` sets `autoescape` to `False` by default. Explicitly setting `autoescape` to `True` when creating an `Environment` object will prevent this.\n\n\n## Recommendation\nAvoid setting jinja2 autoescape to False. Jinja2 provides the function `select_autoescape` to make sure that the correct auto-escaping is chosen. For example, it can be used when creating an environment `Environment(autoescape=select_autoescape(['html', 'xml'])`\n\n\n## Example\nThe following example is a minimal Flask app which shows a safe and an unsafe way to render the given name back to the page. The first view is unsafe as `first_name` is not escaped, leaving the page vulnerable to cross-site scripting attacks. The second view is safe as `firs",
+      "message": "Using jinja2 templates with autoescape=False can potentially allow XSS attacks.",
+      "severity_score": 6.1,
+      "severity_tier": "medium",
+      "cwes": [
+        "cwe-79"
+      ],
+      "cwe_family": "xss",
+      "locations": [
+        {
+          "file": "tests/test_dispatch_devin.py",
+          "start_line": 662,
+          "end_line": 662,
+          "start_column": 20
+        }
+      ],
+      "level": "warning",
+      "partial_fingerprints": {
+        "primaryLocationLineHash": "7f6260e0a19dca6f:1",
+        "primaryLocationStartColumnFingerprint": "11"
+      },
+      "fingerprint": "3aaecccacce2e668"
+    },
+    {
+      "id": "CQLF-R27-0005",
+      "rule_id": "py/jinja2/autoescape-false",
+      "rule_name": "py/jinja2/autoescape-false",
+      "rule_description": "Jinja2 templating with autoescape=False",
+      "rule_help": "# Jinja2 templating with autoescape=False\nCross-site scripting (XSS) attacks can occur if untrusted input is not escaped. This applies to templates as well as code. The `jinja2` templates may be vulnerable to XSS if the environment has `autoescape` set to `False`. Unfortunately, `jinja2` sets `autoescape` to `False` by default. Explicitly setting `autoescape` to `True` when creating an `Environment` object will prevent this.\n\n\n## Recommendation\nAvoid setting jinja2 autoescape to False. Jinja2 provides the function `select_autoescape` to make sure that the correct auto-escaping is chosen. For example, it can be used when creating an environment `Environment(autoescape=select_autoescape(['html', 'xml'])`\n\n\n## Example\nThe following example is a minimal Flask app which shows a safe and an unsafe way to render the given name back to the page. The first view is unsafe as `first_name` is not escaped, leaving the page vulnerable to cross-site scripting attacks. The second view is safe as `firs",
+      "message": "Using jinja2 templates with autoescape=False can potentially allow XSS attacks.",
+      "severity_score": 6.1,
+      "severity_tier": "medium",
+      "cwes": [
+        "cwe-79"
+      ],
+      "cwe_family": "xss",
+      "locations": [
+        {
+          "file": "tests/test_dispatch_devin.py",
+          "start_line": 669,
+          "end_line": 669,
+          "start_column": 20
+        }
+      ],
+      "level": "warning",
+      "partial_fingerprints": {
+        "primaryLocationLineHash": "fc3276ac548f765a:1",
+        "primaryLocationStartColumnFingerprint": "11"
+      },
+      "fingerprint": "2023331a690baa31"
+    }
+  ]
+}
