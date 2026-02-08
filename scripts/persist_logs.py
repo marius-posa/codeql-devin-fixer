@@ -34,6 +34,7 @@ RUN_LABEL : str
     Label for this run (e.g. ``run-11-2025-06-01-120000``).
 """
 
+import base64
 import json
 import os
 import shutil
@@ -125,24 +126,26 @@ def main() -> None:
 
     branch = run_git("rev-parse", "--abbrev-ref", "HEAD", cwd=repo_dir)
 
-    env = os.environ.copy()
-    askpass_script = None
     if github_token:
-        askpass_script = _create_askpass_script(workspace_dir=repo_dir)
-        env["GIT_ASKPASS"] = askpass_script
-        env["GIT_ASKPASS_TOKEN"] = f"x-access-token:{github_token}"
-        env["GIT_TERMINAL_PROMPT"] = "0"
-        remote_url = run_git("remote", "get-url", "origin", cwd=repo_dir)
-        parsed_remote = urlparse(remote_url)
-        if parsed_remote.hostname == "github.com" and "@" in remote_url:
-            clean_url = f"https://github.com{parsed_remote.path}"
-            run_git("remote", "set-url", "origin", clean_url, cwd=repo_dir)
+        creds = base64.b64encode(
+            f"x-access-token:{github_token}".encode()
+        ).decode()
+        run_git(
+            "config", "--local",
+            "http.https://github.com/.extraheader",
+            f"AUTHORIZATION: basic {creds}",
+            cwd=repo_dir,
+        )
 
     try:
-        result = run_git_with_retry("push", "origin", branch, cwd=repo_dir, env=env)
+        result = run_git_with_retry("push", "origin", branch, cwd=repo_dir)
     finally:
-        if askpass_script and os.path.exists(askpass_script):
-            os.unlink(askpass_script)
+        if github_token:
+            run_git(
+                "config", "--local", "--unset-all",
+                "http.https://github.com/.extraheader",
+                cwd=repo_dir,
+            )
     logs_persisted = result.returncode == 0
     if not logs_persisted:
         print(f"WARNING: git push failed after retries: {result.stderr}")
