@@ -5,7 +5,7 @@ on:
     types: [opened, synchronize]
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
   security-events: write
 
@@ -24,6 +24,11 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
+
+      - name: Fetch base branch for original issues
+        shell: bash
+        run: |
+          git fetch origin ${{ github.event.pull_request.base.ref }} --depth=1
 
       - name: Detect languages
         id: detect-lang
@@ -83,15 +88,169 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Compare results with original findings
+      - name: Extract PR metadata
+        id: pr-meta
+        shell: bash
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          python3 << 'PYEOF'
+          import os, re
+
+          pr_title = os.environ.get("PR_TITLE", "")
+          pr_body = os.environ.get("PR_BODY", "")
+          gh_output = os.environ.get("GITHUB_OUTPUT", "/dev/null")
+
+          session_id = ""
+          m = re.search(r"devin\.ai/sessions/([a-f0-9]+)", pr_body)
+          if m:
+              session_id = m.group(1)
+          if not session_id:
+              m = re.search(r"session[_\-]?id[:\s]+([a-f0-9-]+)", pr_body, re.IGNORECASE)
+              if m:
+                  session_id = m.group(1)
+
+          run_number = ""
+          m = re.search(r"CQLF-R(\d+)-\d+", pr_title, re.IGNORECASE)
+          if m:
+              run_number = m.group(1)
+
+          cwe_family = ""
+          m = re.search(r"resolve (\S+) security issues", pr_title)
+          if m:
+              cwe_family = m.group(1)
+
+          with open(gh_output, "a") as f:
+              f.write(f"session_id={session_id}\n")
+              f.write(f"run_number={run_number}\n")
+              f.write(f"cwe_family={cwe_family}\n")
+
+          print(f"Session ID: {session_id}")
+          print(f"Run number: {run_number}")
+          print(f"CWE family: {cwe_family}")
+          PYEOF
+
+      - name: Find original issues
+        id: find-issues
+        shell: bash
+        env:
+          RUN_NUMBER: ${{ steps.pr-meta.outputs.run_number }}
+        run: |
+          ISSUES_FILE=""
+
+          if [ -n "$RUN_NUMBER" ] && [ -d "logs" ]; then
+            for d in logs/run-${RUN_NUMBER}-* logs/run-${RUN_NUMBER}; do
+              if [ -f "$d/issues.json" ]; then
+                ISSUES_FILE="$(realpath "$d/issues.json")"
+                echo "Found issues in logs: $ISSUES_FILE"
+                break
+              fi
+            done
+          fi
+
+          if [ -z "$ISSUES_FILE" ] && [ -n "$RUN_NUMBER" ] && [ -d "telemetry/runs" ]; then
+            ISSUES_FILE=$(python3 << 'PYEOF'
+          import json, os, sys, tempfile
+
+          run_number = os.environ.get("RUN_NUMBER", "")
+          if not run_number:
+              sys.exit(0)
+
+          runs_dir = "telemetry/runs"
+          for fname in sorted(os.listdir(runs_dir)):
+              if not fname.endswith(".json") or fname.startswith("verification_"):
+                  continue
+              try:
+                  with open(os.path.join(runs_dir, fname)) as f:
+                      data = json.load(f)
+                  if str(data.get("run_number", "")) == run_number:
+                      fps = data.get("issue_fingerprints", [])
+                      if fps:
+                          out = os.path.join(
+                              os.environ.get("RUNNER_TEMP", tempfile.gettempdir()),
+                              "original_issues.json",
+                          )
+                          with open(out, "w") as f:
+                              json.dump({"issue_fingerprints": fps}, f, indent=2)
+                          print(out)
+                          sys.exit(0)
+              except (json.JSONDecodeError, OSError):
+                  continue
+          PYEOF
+          )
+            if [ -n "$ISSUES_FILE" ]; then
+              echo "Found issues in telemetry records"
+            fi
+          fi
+
+          if [ -z "$ISSUES_FILE" ]; then
+            echo "No original issues found; verification will use basic comparison"
+          fi
+          echo "issues_file=$ISSUES_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Run verification comparison
         id: compare
+        shell: bash
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          SESSION_ID: ${{ steps.pr-meta.outputs.session_id }}
+          PYTHONPATH: scripts
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+        run: |
+          SARIF_DIR="${{ runner.temp }}/codeql-verify-results"
+          SARIF_FILE=$(find "$SARIF_DIR" -name "*.sarif" -type f | head -1)
+          OUTPUT_DIR="${{ runner.temp }}/verification-output"
+          mkdir -p "$OUTPUT_DIR"
+
+          if [ -z "$SARIF_FILE" ]; then
+            echo "No SARIF file found"
+            echo "status=no-sarif" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          ISSUES_FILE="${{ steps.find-issues.outputs.issues_file }}"
+          if [ -n "$ISSUES_FILE" ]; then
+            python scripts/verify_results.py \
+              "$SARIF_FILE" \
+              "$ISSUES_FILE" \
+              "$OUTPUT_DIR"
+          else
+            python scripts/verify_results.py \
+              "$SARIF_FILE" \
+              "" \
+              "$OUTPUT_DIR" || true
+          fi
+
+          if [ -f "$OUTPUT_DIR/verification_label.txt" ]; then
+            LABEL=$(cat "$OUTPUT_DIR/verification_label.txt")
+            echo "label=$LABEL" >> "$GITHUB_OUTPUT"
+            echo "Verification label: $LABEL"
+          fi
+
+          if [ -f "$OUTPUT_DIR/verification.json" ]; then
+            echo "has_record=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_record=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [ -f "$OUTPUT_DIR/verification_comment.md" ]; then
+            cp "$OUTPUT_DIR/verification_comment.md" \
+               "${{ runner.temp }}/verification_comment.md"
+          fi
+
+      - name: Fallback comparison (no original issues)
+        id: fallback-compare
+        if: steps.find-issues.outputs.issues_file == '' && steps.compare.outputs.status != 'no-sarif'
         shell: bash
         run: |
           SARIF_DIR="${{ runner.temp }}/codeql-verify-results"
           SARIF_FILE=$(find "$SARIF_DIR" -name "*.sarif" -type f | head -1)
 
           if [ -z "$SARIF_FILE" ]; then
-            echo "No SARIF file found"
             echo "status=no-sarif" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -103,7 +262,6 @@ jobs:
           import json
           import os
           import re
-          import sys
 
           sarif_file = os.environ.get("SARIF_FILE", "")
           pr_title = os.environ.get("PR_TITLE", "")
@@ -126,9 +284,6 @@ jobs:
                       locs.append(f"{art.get('uri', '')}:{region.get('startLine', 0)}")
                   remaining.append({"rule_id": rule_id, "message": msg[:200], "locations": locs})
 
-          ids_match = re.search(r'fix\(([^)]+)\)', pr_title)
-          issue_ids = ids_match.group(1).split(",") if ids_match else []
-
           family_match = re.search(r'resolve (\S+) security issues', pr_title)
           family = family_match.group(1) if family_match else ""
 
@@ -146,7 +301,7 @@ jobs:
                   f.write("status=issues-remain\n")
 
           with open(os.environ.get("GITHUB_STEP_SUMMARY", "/dev/null"), "a") as f:
-              f.write(f"## Fix Verification Results\n\n")
+              f.write("## Fix Verification Results\n\n")
               if issue_count == 0:
                   f.write("All CodeQL issues resolved on this branch.\n")
               else:
@@ -159,23 +314,70 @@ jobs:
                       f.write(f"- ... and {len(remaining) - 20} more\n")
           PYEOF
 
+      - name: Persist verification record
+        if: steps.compare.outputs.has_record == 'true'
+        shell: bash
+        env:
+          SESSION_ID: ${{ steps.pr-meta.outputs.session_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          OUTPUT_DIR="${{ runner.temp }}/verification-output"
+          RECORD="$OUTPUT_DIR/verification.json"
+
+          if [ ! -f "$RECORD" ]; then
+            echo "No verification record to persist"
+            exit 0
+          fi
+
+          TS=$(date -u +%Y%m%d_%H%M%S)
+          SID="${SESSION_ID:-unknown}"
+          FILENAME="verification_${SID}_${TS}.json"
+          FILEPATH="telemetry/runs/${FILENAME}"
+
+          CONTENT_B64=$(base64 -w0 < "$RECORD")
+
+          HTTP_CODE=$(curl -s -o /tmp/persist_response.json -w "%{http_code}" \
+            -X PUT \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/contents/${FILEPATH}" \
+            -d "{\"message\":\"chore: verification record for PR #${{ github.event.pull_request.number }}\",\"content\":\"${CONTENT_B64}\"}")
+
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ]; then
+            echo "Verification record persisted: $FILEPATH"
+          else
+            echo "WARNING: Failed to persist verification record (HTTP $HTTP_CODE)"
+            cat /tmp/persist_response.json 2>/dev/null || true
+          fi
+
+      - name: Determine effective label
+        id: effective-label
+        if: steps.compare.outputs.status != 'no-sarif' || steps.fallback-compare.outputs.status != ''
+        shell: bash
+        run: |
+          if [ -n "${{ steps.compare.outputs.label }}" ]; then
+            echo "label=${{ steps.compare.outputs.label }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ steps.fallback-compare.outputs.status }}" = "all-resolved" ]; then
+            echo "label=codeql-verified" >> "$GITHUB_OUTPUT"
+          elif [ "${{ steps.fallback-compare.outputs.status }}" = "family-resolved" ]; then
+            echo "label=codeql-partial-fix" >> "$GITHUB_OUTPUT"
+          else
+            echo "label=codeql-needs-work" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Label PR based on results
-        if: steps.compare.outputs.status != 'no-sarif'
+        if: steps.effective-label.outputs.label != ''
         uses: actions/github-script@v7
         with:
           script: |
-            const status = '${{ steps.compare.outputs.status }}';
+            const label = '${{ steps.effective-label.outputs.label }}';
             const prNumber = context.payload.pull_request.number;
 
-            const labelMap = {
-              'all-resolved': 'codeql-verified',
-              'family-resolved': 'codeql-partial-fix',
-              'issues-remain': 'codeql-needs-work',
-            };
-            const label = labelMap[status] || 'codeql-needs-work';
-
-            const removeLabels = Object.values(labelMap);
-            for (const l of removeLabels) {
+            const allLabels = [
+              'codeql-verified', 'verified-fix',
+              'codeql-partial-fix', 'codeql-needs-work',
+            ];
+            for (const l of allLabels) {
               try {
                 await github.rest.issues.removeLabel({
                   owner: context.repo.owner,
@@ -196,27 +398,38 @@ jobs:
             });
 
       - name: Comment on PR with verification results
-        if: steps.compare.outputs.status != 'no-sarif'
+        if: steps.effective-label.outputs.label != ''
         uses: actions/github-script@v7
         with:
           script: |
-            const status = '${{ steps.compare.outputs.status }}';
-            const total = '${{ steps.compare.outputs.total_remaining }}';
-            const family = '${{ steps.compare.outputs.targeted_family }}';
-            const familyRemaining = '${{ steps.compare.outputs.family_remaining }}';
+            const fs = require('fs');
+            let body = '';
 
-            let body = '## CodeQL Fix Verification\n\n';
-            if (status === 'all-resolved') {
-              body += 'All CodeQL security issues have been resolved on this branch.';
-            } else if (status === 'family-resolved') {
-              body += `The targeted **${family}** issues appear resolved.\n\n`;
-              body += `${total} issue(s) from other categories remain.`;
-            } else {
-              body += `**${total}** CodeQL issue(s) still detected on this branch.\n\n`;
-              if (family) {
-                body += `${familyRemaining} issue(s) from the **${family}** category remain.`;
+            const commentPath = '${{ runner.temp }}/verification_comment.md';
+            try {
+              body = fs.readFileSync(commentPath, 'utf8');
+            } catch (e) {
+              // No detailed comment from verify_results.py; build basic one
+              const status = '${{ steps.fallback-compare.outputs.status }}' || '${{ steps.compare.outputs.status }}';
+              const total = '${{ steps.fallback-compare.outputs.total_remaining }}';
+              const family = '${{ steps.fallback-compare.outputs.targeted_family }}' || '${{ steps.pr-meta.outputs.cwe_family }}';
+              const familyRemaining = '${{ steps.fallback-compare.outputs.family_remaining }}';
+
+              body = '## CodeQL Fix Verification\n\n';
+              if (status === 'all-resolved') {
+                body += 'All CodeQL security issues have been resolved on this branch.';
+              } else if (status === 'family-resolved') {
+                body += `The targeted **${family}** issues appear resolved.\n\n`;
+                body += `${total} issue(s) from other categories remain.`;
+              } else {
+                body += `**${total}** CodeQL issue(s) still detected on this branch.\n\n`;
+                if (family) {
+                  body += `${familyRemaining} issue(s) from the **${family}** category remain.`;
+                }
               }
             }
+
+            if (!body) return;
 
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
