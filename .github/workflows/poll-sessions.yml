@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: pip install requests
 
-      - name: Poll Devin sessions and update telemetry files
+      - name: Poll Devin sessions and update telemetry DB
         working-directory: telemetry
         env:
           DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
@@ -33,43 +33,26 @@ jobs:
           import sys, os
           sys.path.insert(0, '.')
           sys.path.insert(0, os.path.join('..', 'scripts'))
-          from aggregation import aggregate_sessions
-          from devin_service import poll_devin_sessions, save_session_updates
-          from config import RUNS_DIR
-          import json
+          from database import get_connection, init_db, query_all_sessions
+          from devin_service import poll_devin_sessions_db
+          from github_service import link_prs_to_sessions_db
 
-          runs = []
-          for fp in sorted(RUNS_DIR.glob('*.json')):
-              try:
-                  with open(fp) as f:
-                      data = json.load(f)
-                      data['_file'] = fp.name
-                      runs.append(data)
-              except (json.JSONDecodeError, OSError):
-                  continue
-
-          sessions = aggregate_sessions(runs)
-          updated = poll_devin_sessions(sessions)
-
-          changed = 0
-          for s in updated:
-              for run in runs:
-                  for rs in run.get('sessions', []):
-                      if rs.get('session_id') == s.get('session_id'):
-                          if rs.get('status') != s.get('status') or (s.get('pr_url') and rs.get('pr_url') != s.get('pr_url')):
-                              changed += 1
-
-          if save_session_updates(updated):
-              print(f'Updated {changed} session(s) across telemetry files')
-          else:
-              print('No session status changes detected')
+          conn = get_connection()
+          init_db(conn)
+          sessions = query_all_sessions(conn)
+          updated = poll_devin_sessions_db(conn, sessions)
+          conn.commit()
+          link_prs_to_sessions_db(conn)
+          conn.commit()
+          conn.close()
+          print(f'Polled {len(updated)} session(s)')
           "
 
       - name: Commit and push updates
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add telemetry/runs/
+          git add telemetry/telemetry.db
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
