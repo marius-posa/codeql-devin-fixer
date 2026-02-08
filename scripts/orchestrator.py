@@ -66,20 +66,20 @@ class RateLimiter:
     period_hours: int = 24
     created_timestamps: list[str] = field(default_factory=list)
 
-    def can_create_session(self) -> bool:
+    def _recent_timestamps(self) -> list[datetime]:
         cutoff = datetime.now(timezone.utc) - timedelta(hours=self.period_hours)
-        recent = [
-            t for t in self.created_timestamps
-            if _parse_ts(t) and _parse_ts(t) > cutoff  # type: ignore[operator]
-        ]
-        return len(recent) < self.max_sessions
+        result: list[datetime] = []
+        for t in self.created_timestamps:
+            dt = _parse_ts(t)
+            if dt and dt > cutoff:
+                result.append(dt)
+        return result
+
+    def can_create_session(self) -> bool:
+        return len(self._recent_timestamps()) < self.max_sessions
 
     def recent_count(self) -> int:
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=self.period_hours)
-        return sum(
-            1 for t in self.created_timestamps
-            if _parse_ts(t) and _parse_ts(t) > cutoff  # type: ignore[operator]
-        )
+        return len(self._recent_timestamps())
 
     def record_session(self) -> None:
         self.created_timestamps.append(
@@ -215,9 +215,7 @@ def _derive_issue_state(
     fp = issue.get("fingerprint", "")
     base_status = issue.get("status", "new")
 
-    tracking_ids = set()
-    if fp_to_tracking_ids and fp in fp_to_tracking_ids:
-        tracking_ids = fp_to_tracking_ids[fp]
+    tracking_ids = set(fp_to_tracking_ids.get(fp, set())) if fp_to_tracking_ids else set()
     lid = issue.get("latest_issue_id", "")
     if lid:
         tracking_ids.add(lid)
