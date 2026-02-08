@@ -1,0 +1,16 @@
+apiVersion: v2
+name: codeql-devin-fixer-telemetry
+description: Helm chart for the CodeQL Devin Fixer telemetry dashboard
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - codeql
+  - security
+  - telemetry
+  - dashboard
+home: https://github.com/marius-posa/codeql-devin-fixer
+sources:
+  - https://github.com/marius-posa/codeql-devin-fixer
+maintainers:
+  - name: marius-posa

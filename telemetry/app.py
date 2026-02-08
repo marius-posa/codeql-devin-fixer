@@ -177,11 +177,18 @@ class _Cache:
 cache = _Cache()
 
 
+SAMPLE_DATA_DIR = pathlib.Path(__file__).parent / "sample_data"
+
+
 def _load_runs_from_disk() -> list[dict]:
     runs = []
-    if not RUNS_DIR.is_dir():
-        return runs
-    for fp in sorted(RUNS_DIR.glob("*.json")):
+    source = RUNS_DIR
+    if not source.is_dir() or not any(source.glob("*.json")):
+        if SAMPLE_DATA_DIR.is_dir() and any(SAMPLE_DATA_DIR.glob("*.json")):
+            source = SAMPLE_DATA_DIR
+        else:
+            return runs
+    for fp in sorted(source.glob("*.json")):
         try:
             with open(fp) as f:
                 data = json.load(f)
