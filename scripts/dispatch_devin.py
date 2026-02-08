@@ -55,6 +55,7 @@ try:
     from github_utils import validate_repo_url
     from parse_sarif import BATCHES_SCHEMA_VERSION
     from pipeline_config import PipelineConfig
+    from playbook_manager import PlaybookManager
     from repo_context import RepoContext, analyze_repo
     from retry_utils import exponential_backoff_delay
 except ImportError:
@@ -62,6 +63,7 @@ except ImportError:
     from scripts.github_utils import validate_repo_url
     from scripts.parse_sarif import BATCHES_SCHEMA_VERSION
     from scripts.pipeline_config import PipelineConfig
+    from scripts.playbook_manager import PlaybookManager
     from scripts.repo_context import RepoContext, analyze_repo
     from scripts.retry_utils import exponential_backoff_delay
 
@@ -156,6 +158,7 @@ def build_batch_prompt(
     is_own_repo: bool = False,
     target_dir: str = "",
     fix_learning: FixLearning | None = None,
+    playbook_mgr: PlaybookManager | None = None,
     repo_context: RepoContext | None = None,
 ) -> str:
     """Construct a detailed, Markdown-formatted prompt for a Devin session.
@@ -172,6 +175,10 @@ def build_batch_prompt(
 
     When *fix_learning* is provided, historical fix-rate context is
     included to help Devin understand past success patterns.
+
+    When *playbook_mgr* is provided and a playbook exists for the batch's
+    CWE family, structured step-by-step instructions are included in the
+    prompt along with a request for Devin to suggest playbook improvements.
 
     When *is_own_repo* is True the target repo belongs to the user (not a
     fork of an upstream project) so the prompt omits the "not the upstream"
@@ -204,9 +211,14 @@ def build_batch_prompt(
         "",
     ]
 
-    fix_hint = CWE_FIX_HINTS.get(family)
-    if fix_hint:
-        prompt_parts.extend([f"Fix pattern hint for {family}: {fix_hint}", ""])
+    playbook = playbook_mgr.get_playbook(family) if playbook_mgr else None
+    if playbook:
+        prompt_parts.append(playbook_mgr.format_for_prompt(playbook))
+        prompt_parts.append("")
+    else:
+        fix_hint = CWE_FIX_HINTS.get(family)
+        if fix_hint:
+            prompt_parts.extend([f"Fix pattern hint for {family}: {fix_hint}", ""])
 
     if fix_learning:
         context = fix_learning.prompt_context_for_family(family)
@@ -298,6 +310,9 @@ def build_batch_prompt(
         for tf in sorted(all_test_files):
             prompt_parts.append(f"- {tf}")
 
+    if playbook and playbook_mgr:
+        prompt_parts.extend(["", playbook_mgr.format_improvement_request(playbook)])
+
     return "\n".join(prompt_parts)
 
 
@@ -382,6 +397,14 @@ def main() -> None:
         print(f"WARNING: TARGET_DIR '{target_dir}' does not exist; code snippets disabled")
         target_dir = ""
     telemetry_dir = cfg.telemetry_dir
+    playbooks_dir = cfg.playbooks_dir
+
+    playbook_mgr: PlaybookManager | None = None
+    if playbooks_dir and os.path.isdir(playbooks_dir):
+        playbook_mgr = PlaybookManager(playbooks_dir)
+        families = playbook_mgr.available_families
+        if families:
+            print(f"Loaded playbooks for: {', '.join(families)}")
 
     fix_learn: FixLearning | None = None
     if telemetry_dir and os.path.isdir(telemetry_dir):
@@ -456,6 +479,8 @@ def main() -> None:
     print(f"Dry run: {dry_run}")
     if target_dir:
         print(f"Target dir: {target_dir} (code snippets enabled)")
+    if playbook_mgr:
+        print(f"Playbooks dir: {playbooks_dir}")
     print()
 
     sessions: list[dict] = []
@@ -471,6 +496,7 @@ def main() -> None:
         prompt = build_batch_prompt(
             batch, repo_url, default_branch, is_own_repo,
             target_dir=target_dir, fix_learning=fix_learn,
+            playbook_mgr=playbook_mgr,
             repo_context=repo_ctx,
         )
         batch_id = batch["batch_id"]

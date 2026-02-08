@@ -1,0 +1,74 @@
+name: injection
+version: 1
+description: >
+  Fix pattern for SQL injection and command injection vulnerabilities.
+  Covers CWE-89 (SQL injection), CWE-78 (OS command injection), CWE-94
+  (code injection), and related injection families.
+
+steps:
+  - id: identify_entry_points
+    title: Identify all entry points for tainted data
+    instructions: |
+      Trace the data flow backwards from the vulnerable sink to find every
+      entry point where user-controlled data enters the application:
+      - HTTP request parameters (query strings, form bodies, headers, cookies)
+      - File uploads and file-read paths
+      - Database fields that were previously stored from user input
+      - Environment variables or configuration values sourced externally
+      - WebSocket messages, message queue payloads, or IPC inputs
+
+      For each entry point, note:
+      1. The variable name and type
+      2. Whether any validation or sanitization is already applied
+      3. All intermediate transformations before the data reaches the sink
+
+  - id: apply_fix
+    title: Apply the canonical fix pattern
+    instructions: |
+      For SQL injection (CWE-89):
+      - Replace string concatenation / f-strings / template literals with
+        parameterized queries or prepared statements.
+      - Use the ORM's built-in query builder when available (e.g.,
+        SQLAlchemy's `text(:param)`, Django's QuerySet API, Sequelize
+        placeholders).
+      - If raw SQL is required, use the database driver's parameter binding
+        (e.g., `cursor.execute("SELECT * FROM t WHERE id = %s", (user_id,))`).
+      - Never use string formatting to build WHERE, ORDER BY, or LIMIT clauses.
+
+      For OS command injection (CWE-78):
+      - Replace `os.system()`, `subprocess.run(shell=True)`, or backtick
+        execution with safe APIs that accept argument lists:
+        `subprocess.run(["cmd", arg1, arg2], shell=False)`.
+      - Use `shlex.quote()` if shell invocation is truly unavoidable.
+      - Validate inputs against a strict allowlist of permitted values.
+
+      For code injection (CWE-94):
+      - Remove or replace `eval()`, `exec()`, `Function()`, `setTimeout(string)`.
+      - Use a sandboxed execution environment if dynamic evaluation is needed.
+      - Parse structured data with JSON/YAML parsers instead of evaluating it.
+
+  - id: run_tests
+    title: Run the existing test suite
+    instructions: |
+      Run the project's full test suite to confirm the fix does not break
+      existing functionality:
+      - Identify the test runner (pytest, jest, mocha, go test, etc.)
+      - Run all tests and verify they pass
+      - Pay special attention to tests in the same module/package as the
+        changed files
+      - If any tests fail, determine whether the failure is caused by the
+        fix (adjust the fix) or is a pre-existing issue (note it in the PR)
+
+  - id: add_test
+    title: Add a test case that would have caught the vulnerability
+    instructions: |
+      Write at least one test that:
+      - Sends malicious input through the identified entry point (e.g.,
+        `' OR 1=1 --` for SQL injection, `; cat /etc/passwd` for command
+        injection)
+      - Asserts that the malicious payload is NOT executed or interpreted
+      - Verifies the application returns a safe result or appropriate error
+      - If the project uses an ORM, add a test that verifies parameterized
+        query usage (e.g., by inspecting the generated SQL or using a mock)
+
+improvement_log: []
