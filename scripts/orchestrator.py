@@ -1244,11 +1244,11 @@ def cmd_scan(args: argparse.Namespace) -> int:
     dry_run = args.dry_run
     output_json = args.json
 
-    github_token = os.environ.get("GITHUB_TOKEN", "")
+    github_token = os.environ.get("GH_PAT", "") or os.environ.get("GITHUB_TOKEN", "")
     action_repo = os.environ.get("ACTION_REPO", "")
 
     if not github_token and not dry_run:
-        print("ERROR: GITHUB_TOKEN environment variable is required (use --dry-run to skip)", file=sys.stderr)
+        print("ERROR: GH_PAT or GITHUB_TOKEN environment variable is required (use --dry-run to skip)", file=sys.stderr)
         return 1
     if not action_repo and not dry_run:
         print("ERROR: ACTION_REPO environment variable is required (use --dry-run to skip)", file=sys.stderr)
