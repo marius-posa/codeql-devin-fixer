@@ -39,6 +39,7 @@ CACHE_TTL      Seconds to cache external API results (default 120).
 
 import functools
 import hmac
+import io
 import json
 import os
 import pathlib
@@ -47,7 +48,7 @@ import threading
 from datetime import datetime, timedelta, timezone
 
 import requests
-from flask import Flask, jsonify, render_template, request as flask_request
+from flask import Flask, jsonify, render_template, request as flask_request, send_file
 from flask_cors import CORS
 
 from config import RUNS_DIR, gh_headers
@@ -55,11 +56,15 @@ from github_service import fetch_prs_from_github, link_prs_to_sessions
 from devin_service import poll_devin_sessions, save_session_updates
 from issue_tracking import track_issues_across_runs
 from aggregation import aggregate_sessions, aggregate_stats, build_repos_dict
+from oauth import oauth_bp, is_oauth_configured, get_current_user, filter_by_user_access
+from pdf_report import generate_pdf
 
 REGISTRY_PATH = pathlib.Path(__file__).resolve().parent.parent / "repo_registry.json"
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(32).hex())
 CORS(app)
+app.register_blueprint(oauth_bp)
 
 
 @app.after_request
@@ -140,6 +145,8 @@ class _Cache:
             if fp == self._runs_fingerprint and self._runs:
                 return self._runs
         runs = _load_runs_from_disk()
+        if not runs:
+            runs = _load_sample_data()
         with self._lock:
             self._runs = runs
             self._runs_fingerprint = fp
@@ -180,11 +187,30 @@ class _Cache:
 cache = _Cache()
 
 
+SAMPLE_DATA_DIR = pathlib.Path(__file__).parent / "sample_data"
+
+
 def _load_runs_from_disk() -> list[dict]:
     runs = []
     if not RUNS_DIR.is_dir():
         return runs
     for fp in sorted(RUNS_DIR.glob("*.json")):
+        try:
+            with open(fp) as f:
+                data = json.load(f)
+                data["_file"] = fp.name
+                runs.append(data)
+        except (json.JSONDecodeError, OSError):
+            continue
+    return runs
+
+
+def _load_sample_data() -> list[dict]:
+    """Load sample telemetry data for first-run / demo scenarios."""
+    runs = []
+    if not SAMPLE_DATA_DIR.is_dir():
+        return runs
+    for fp in sorted(SAMPLE_DATA_DIR.glob("*.json")):
         try:
             with open(fp) as f:
                 data = json.load(f)
@@ -435,7 +461,33 @@ def api_config():
         response["github_token_set"] = bool(os.environ.get("GITHUB_TOKEN", ""))
         response["devin_api_key_set"] = bool(os.environ.get("DEVIN_API_KEY", ""))
         response["action_repo"] = os.environ.get("ACTION_REPO", "")
+    response["oauth_configured"] = is_oauth_configured()
+    user = get_current_user()
+    if user:
+        response["user"] = user
     return jsonify(response)
+
+
+@app.route("/api/report/pdf")
+def api_report_pdf():
+    runs = cache.get_runs()
+    repo_filter = flask_request.args.get("repo", "")
+    if repo_filter:
+        runs = [r for r in runs if r.get("target_repo") == repo_filter]
+    runs = filter_by_user_access(runs)
+    sessions = aggregate_sessions(runs)
+    prs = cache.get_prs(runs)
+    stats = aggregate_stats(runs, sessions, prs)
+    issues = track_issues_across_runs(runs)
+    pdf_bytes = generate_pdf(stats, issues, repo_filter=repo_filter)
+    buf = io.BytesIO(pdf_bytes)
+    buf.seek(0)
+    filename = "security-report"
+    if repo_filter:
+        short = repo_filter.replace("https://github.com/", "").replace("/", "-")
+        filename += f"-{short}"
+    filename += ".pdf"
+    return send_file(buf, mimetype="application/pdf", as_attachment=True, download_name=filename)
 
 
 @app.route("/api/backfill", methods=["POST"])

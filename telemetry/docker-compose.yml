@@ -1,0 +1,19 @@
+services:
+  dashboard:
+    build:
+      context: ..
+      dockerfile: telemetry/Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - DEVIN_API_KEY=${DEVIN_API_KEY:-}
+      - ACTION_REPO=${ACTION_REPO:-}
+      - TELEMETRY_API_KEY=${TELEMETRY_API_KEY:-}
+      - CACHE_TTL=${CACHE_TTL:-120}
+    volumes:
+      - telemetry-data:/app/runs
+    restart: unless-stopped
+
+volumes:
+  telemetry-data:
