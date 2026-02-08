@@ -69,13 +69,21 @@ def extract_cwe_family_from_title(title: str) -> str:
 def load_original_fingerprints(issues_path: str) -> list[dict[str, Any]]:
     """Load original issue fingerprints from an issues.json file.
 
-    Handles both the envelope format (``{"schema_version": ..., "issues": [...]}``)
-    and the flat list format.
+    Handles multiple formats:
+    - Envelope with ``issues`` key: ``{"schema_version": ..., "issues": [...]}``
+    - Envelope with ``issue_fingerprints`` key (telemetry format)
+    - Flat list of issues
+
+    For each issue, location data (``file``, ``start_line``) is read from
+    ``locations[0]`` if present, otherwise from top-level keys (as stored
+    in telemetry fingerprint records).
     """
     with open(issues_path) as f:
         data = json.load(f)
     if isinstance(data, dict) and "issues" in data:
         issues = data["issues"]
+    elif isinstance(data, dict) and "issue_fingerprints" in data:
+        issues = data["issue_fingerprints"]
     elif isinstance(data, list):
         issues = data
     else:
@@ -86,14 +94,21 @@ def load_original_fingerprints(issues_path: str) -> list[dict[str, Any]]:
         fp = issue.get("fingerprint", "")
         if not fp:
             fp = compute_fingerprint(issue)
+        locs = issue.get("locations") or []
+        if locs:
+            file_val = locs[0].get("file", "")
+            line_val = locs[0].get("start_line", 0)
+        else:
+            file_val = issue.get("file", "")
+            line_val = issue.get("start_line", 0)
         fingerprints.append({
             "id": issue.get("id", ""),
             "fingerprint": fp,
             "rule_id": issue.get("rule_id", ""),
             "severity_tier": issue.get("severity_tier", ""),
             "cwe_family": issue.get("cwe_family", ""),
-            "file": (issue.get("locations") or [{}])[0].get("file", ""),
-            "start_line": (issue.get("locations") or [{}])[0].get("start_line", 0),
+            "file": file_val,
+            "start_line": line_val,
             "message": issue.get("message", ""),
         })
     return fingerprints
@@ -125,6 +140,37 @@ def find_original_issues(logs_dir: str, run_number: str) -> str:
             issues_path = os.path.join(run_dir, "issues.json")
             if os.path.isfile(issues_path):
                 return issues_path
+    return ""
+
+
+def find_original_issues_from_telemetry(
+    telemetry_dir: str, run_number: str,
+) -> str:
+    """Search telemetry records for original issue fingerprints by run number.
+
+    Returns the path to a temporary JSON file containing the fingerprints,
+    or an empty string if no matching record is found.
+    """
+    if not os.path.isdir(telemetry_dir):
+        return ""
+    for fname in sorted(os.listdir(telemetry_dir)):
+        if not fname.endswith(".json") or fname.startswith("verification_"):
+            continue
+        fpath = os.path.join(telemetry_dir, fname)
+        try:
+            with open(fpath) as f:
+                data = json.load(f)
+            if str(data.get("run_number", "")) == str(run_number):
+                fps = data.get("issue_fingerprints", [])
+                if fps:
+                    out = os.path.join(
+                        telemetry_dir, f".tmp_original_{run_number}.json",
+                    )
+                    with open(out, "w") as f:
+                        json.dump({"issue_fingerprints": fps}, f, indent=2)
+                    return out
+        except (json.JSONDecodeError, OSError):
+            continue
     return ""
 
 
@@ -298,13 +344,31 @@ def determine_label(record: dict[str, Any]) -> str:
     return "codeql-needs-work"
 
 
+def extract_session_id_from_body(body: str) -> str:
+    """Extract a Devin session ID from a PR body.
+
+    Looks for ``devin.ai/sessions/<hex>`` URLs or ``session_id: <hex>``
+    patterns commonly found in Devin-generated PR descriptions.
+    """
+    m = re.search(r"devin\.ai/sessions/([a-f0-9]+)", body)
+    if m:
+        return m.group(1)
+    m = re.search(r"session[_\-]?id[:\s]+([a-f0-9-]+)", body, re.IGNORECASE)
+    if m:
+        return m.group(1)
+    return ""
+
+
 def main() -> None:
-    if len(sys.argv) < 3:
-        print("Usage: verify_results.py <new_sarif_path> <original_issues_json> [output_dir]")
+    if len(sys.argv) < 2:
+        print(
+            "Usage: verify_results.py <new_sarif_path> "
+            "[original_issues_json] [output_dir]"
+        )
         sys.exit(1)
 
     sarif_path = sys.argv[1]
-    original_issues_path = sys.argv[2]
+    original_issues_path = sys.argv[2] if len(sys.argv) > 2 else ""
     output_dir = sys.argv[3] if len(sys.argv) > 3 else "output"
     os.makedirs(output_dir, exist_ok=True)
 
@@ -312,10 +376,29 @@ def main() -> None:
     pr_number = os.environ.get("PR_NUMBER", "")
     pr_url = os.environ.get("PR_URL", "")
     session_id = os.environ.get("SESSION_ID", "")
+    pr_body = os.environ.get("PR_BODY", "")
+
+    if not session_id and pr_body:
+        session_id = extract_session_id_from_body(pr_body)
 
     issue_ids = extract_issue_ids_from_title(pr_title)
     run_number = extract_run_number_from_ids(issue_ids)
     cwe_family = extract_cwe_family_from_title(pr_title)
+
+    if not original_issues_path:
+        repo_root = os.environ.get("GITHUB_WORKSPACE", ".")
+        logs_dir = os.path.join(repo_root, "logs")
+        if run_number:
+            original_issues_path = find_original_issues(logs_dir, run_number)
+        if not original_issues_path:
+            telemetry_dir = os.path.join(repo_root, "telemetry", "runs")
+            if run_number:
+                original_issues_path = find_original_issues_from_telemetry(
+                    telemetry_dir, run_number,
+                )
+        if not original_issues_path:
+            print("ERROR: Could not locate original issues")
+            sys.exit(1)
 
     print(f"Verification scan: {sarif_path}")
     print(f"Original issues: {original_issues_path}")
