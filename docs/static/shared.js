@@ -291,6 +291,35 @@ function renderIssuesTable(issues, containerId, countId) {
   _renderIssuesFiltered(issues, issues, containerId, countId);
 }
 
+function renderRegistryTable(registry, containerId, countId) {
+  var el = document.getElementById(containerId);
+  var countEl = document.getElementById(countId);
+  var repos = (registry && registry.repos) || [];
+  if (countEl) countEl.textContent = repos.length + ' repos';
+  if (repos.length === 0) {
+    el.innerHTML = '<div class="empty-state">No repos registered for scheduled scanning.</div>';
+    return;
+  }
+  var rows = '';
+  repos.forEach(function(r) {
+    var short = escapeHtml(repoShort(r.repo));
+    var overrides = r.overrides || {};
+    var overrideKeys = Object.keys(overrides);
+    var overrideStr = overrideKeys.length > 0
+      ? overrideKeys.map(function(k) { return escapeHtml(k) + '=' + escapeHtml(String(overrides[k])); }).join(', ')
+      : '<span style="color:var(--text-muted)">defaults</span>';
+    rows += '<tr>'
+      + '<td><a href="' + escapeHtml(r.repo) + '" target="_blank">' + short + '</a></td>'
+      + '<td><span class="badge ' + (r.enabled !== false ? 'badge-open' : 'badge-closed') + '">' + (r.enabled !== false ? 'enabled' : 'disabled') + '</span></td>'
+      + '<td>' + escapeHtml(r.schedule || 'weekly') + '</td>'
+      + '<td style="font-size:11px">' + overrideStr + '</td>'
+      + '</tr>';
+  });
+  el.innerHTML = '<table><thead><tr>'
+    + '<th>Repository</th><th>Status</th><th>Schedule</th><th>Overrides</th>'
+    + '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
 var _trendMode = 'repo';
 var _trendSeverityHidden = {};
 var _trendContainer = null;

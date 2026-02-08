@@ -278,35 +278,6 @@ function renderMetrics(s) {
   }).join('');
 }
 
-function renderRegistryTable(registry) {
-  var el = document.getElementById('registry-table-container');
-  var countEl = document.getElementById('registry-count');
-  var repos = (registry && registry.repos) || [];
-  if (countEl) countEl.textContent = repos.length + ' repos';
-  if (repos.length === 0) {
-    el.innerHTML = '<div class="empty-state">No repos registered for scheduled scanning.</div>';
-    return;
-  }
-  var rows = '';
-  repos.forEach(function(r) {
-    var short = escapeHtml(repoShort(r.repo));
-    var overrides = r.overrides || {};
-    var overrideKeys = Object.keys(overrides);
-    var overrideStr = overrideKeys.length > 0
-      ? overrideKeys.map(function(k) { return escapeHtml(k) + '=' + escapeHtml(String(overrides[k])); }).join(', ')
-      : '<span style="color:var(--text-muted)">defaults</span>';
-    rows += '<tr>'
-      + '<td><a href="' + escapeHtml(r.repo) + '" target="_blank">' + short + '</a></td>'
-      + '<td><span class="badge ' + (r.enabled !== false ? 'badge-open' : 'badge-closed') + '">' + (r.enabled !== false ? 'enabled' : 'disabled') + '</span></td>'
-      + '<td>' + escapeHtml(r.schedule || 'weekly') + '</td>'
-      + '<td style="font-size:11px">' + overrideStr + '</td>'
-      + '</tr>';
-  });
-  el.innerHTML = '<table><thead><tr>'
-    + '<th>Repository</th><th>Status</th><th>Schedule</th><th>Overrides</th>'
-    + '</tr></thead><tbody>' + rows + '</tbody></table>';
-}
-
 function renderReposTable(repos) {
   const el = document.getElementById('repos-table-container');
   document.getElementById('repo-count').textContent = repos.length;
@@ -371,7 +342,7 @@ function renderAll() {
   renderSessionsTable(allSessions, 'sessions-table-container', 'sessions-count');
   renderPrsTable(allPrs, 'prs-table-container', 'prs-count');
   renderIssuesTable(allIssues, 'issues-table-container', 'issues-count');
-  if (registryData) renderRegistryTable(registryData);
+  if (registryData) renderRegistryTable(registryData, 'registry-table-container', 'registry-count');
 }
 
 async function fetchAll() {
