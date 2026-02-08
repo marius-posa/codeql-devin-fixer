@@ -335,9 +335,9 @@ def api_stats():
     prs = cache.get_prs(runs)
     if period != "all":
         session_ids = {s["session_id"] for s in sessions if s.get("session_id")}
+        all_issue_ids = {iid for s in sessions for iid in s.get("issue_ids", [])}
         prs = [p for p in prs if p.get("session_id") in session_ids
-               or any(iid in {iid for s in sessions for iid in s.get("issue_ids", [])}
-                      for iid in p.get("issue_ids", []))]
+               or any(pid in all_issue_ids for pid in p.get("issue_ids", []))]
     result = aggregate_stats(filtered_runs, sessions, prs)
     result["period"] = period
     return jsonify(result)

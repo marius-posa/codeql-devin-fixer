@@ -1,5 +1,4 @@
 {
-  "$schema": "./repo_registry_schema.json",
   "version": "1.0",
   "defaults": {
     "languages": "",

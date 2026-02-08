@@ -165,7 +165,6 @@ function renderRegistryTable(registry) {
     el.innerHTML = '<div class="empty-state">No repos registered for scheduled scanning. Add repos via the registry API.</div>';
     return;
   }
-  const defaults = registry.defaults || {};
   let rows = '';
   repos.forEach(function(r) {
     const short = escapeHtml(repoShort(r.repo));
