@@ -515,11 +515,16 @@ runs:
       if: inputs.mode == 'orchestrator'
       id: orchestrator-record
       shell: bash
+      env:
+        TARGET_REPO: ${{ env.SCAN_REPO_URL }}
+        RUN_LABEL: ${{ steps.parse.outputs.run_label }}
       run: |
-        echo "Mode: orchestrator -- scan results recorded, session dispatch deferred."
-        echo "Issues: ${{ steps.parse.outputs.total_issues }}"
-        echo "Batches: ${{ steps.parse.outputs.total_batches }}"
-        echo "Dispatch will be handled by the orchestrator engine in a separate step."
+        echo "Mode: orchestrator -- ingesting scan results via orchestrator engine."
+        python "${{ github.action_path }}/scripts/orchestrator.py" ingest \
+          --batches "${{ runner.temp }}/codeql-output/batches.json" \
+          --issues "${{ runner.temp }}/codeql-output/issues.json" \
+          --run-label "$RUN_LABEL" \
+          --target-repo "$TARGET_REPO"
         echo "mode=orchestrator" >> "$GITHUB_OUTPUT"
 
     - name: Persist run logs
