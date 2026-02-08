@@ -731,7 +731,7 @@ def main() -> None:
     print(f"Created {len(batches)} batches")
 
     all_issues_with_ids = assign_issue_ids(
-        list(all_issues), run_number, id_prefix="ALL"
+        [dict(i) for i in all_issues], run_number, id_prefix="ALL"
     )
     all_issues_envelope = {
         "schema_version": ISSUES_SCHEMA_VERSION,
