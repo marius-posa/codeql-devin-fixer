@@ -36,6 +36,7 @@ import hashlib
 import json
 import os
 import pathlib
+import sqlite3
 import sys
 import time
 from dataclasses import dataclass, field
@@ -51,7 +52,8 @@ if str(_SCRIPTS_DIR) not in sys.path:
 if str(_TELEMETRY_DIR) not in sys.path:
     sys.path.insert(0, str(_TELEMETRY_DIR))
 
-from database import get_connection, init_db, insert_run, query_all_sessions, query_all_prs, query_issues  # noqa: E402
+from database import get_connection, init_db, insert_run, is_db_empty, query_all_sessions, query_all_prs, query_issues  # noqa: E402
+from migrate_json_to_sqlite import migrate_json_files  # noqa: E402
 from issue_tracking import _parse_ts  # noqa: E402
 from verification import load_verification_records, build_fingerprint_fix_map  # noqa: E402
 from fix_learning import CWE_FIX_HINTS, FixLearning  # noqa: E402
@@ -436,12 +438,18 @@ def compute_issue_priority(
     return round(score, 4)
 
 
+def _ensure_db_hydrated(conn: sqlite3.Connection) -> None:
+    if is_db_empty(conn) and RUNS_DIR.is_dir():
+        migrate_json_files(RUNS_DIR, conn)
+
+
 def build_global_issue_state(
     repo_filter: str = "",
 ) -> dict[str, Any]:
     conn = get_connection()
     try:
         init_db(conn)
+        _ensure_db_hydrated(conn)
         issues = query_issues(conn, target_repo=repo_filter)
         sessions = query_all_sessions(conn, target_repo=repo_filter)
         prs = query_all_prs(conn)
