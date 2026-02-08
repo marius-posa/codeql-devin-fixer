@@ -8,11 +8,9 @@ import sys
 import time
 from unittest.mock import patch, MagicMock
 
-import pytest
-
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from github_app.auth import GitHubAppAuth, JWT_EXPIRY_SECONDS, TOKEN_EXPIRY_MARGIN_SECONDS
+from github_app.auth import GitHubAppAuth, JWT_EXPIRY_SECONDS
 
 def _generate_test_key():
     from cryptography.hazmat.primitives.asymmetric import rsa
@@ -176,8 +174,8 @@ class TestInstallationToken:
         mock_post.side_effect = side_effect
 
         auth = GitHubAppAuth(app_id=12345, private_key=TEST_PRIVATE_KEY)
-        t1 = auth.get_installation_token(42)
-        t2 = auth.get_installation_token(42)
+        auth.get_installation_token(42)
+        auth.get_installation_token(42)
         assert mock_post.call_count == 2
 
 

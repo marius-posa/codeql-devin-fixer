@@ -21,15 +21,8 @@ GET  /healthz
 from __future__ import annotations
 
 import logging
-import os
-import pathlib
-import sys
 
 from flask import Flask, jsonify, request as flask_request
-
-_SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent.parent / "scripts"
-if str(_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS_DIR))
 
 from github_app.auth import GitHubAppAuth
 from github_app.webhook_handler import verify_signature, route_event

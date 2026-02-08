@@ -5,7 +5,6 @@ Covers: signature verification, event routing, handler logic.
 
 import hashlib
 import hmac
-import json
 import os
 import sys
 
