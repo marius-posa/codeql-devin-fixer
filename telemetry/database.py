@@ -320,6 +320,65 @@ def _run_row_to_dict(row: sqlite3.Row) -> dict:
     return d
 
 
+def _build_run_item(conn: sqlite3.Connection, row: sqlite3.Row) -> dict:
+    d = _run_row_to_dict(row)
+    run_db_id = row["id"]
+    has_issues = conn.execute(
+        "SELECT 1 FROM issues WHERE run_id = ? LIMIT 1", (run_db_id,)
+    ).fetchone()
+    if has_issues:
+        sev_rows = conn.execute(
+            "SELECT severity_tier, COUNT(*) as cnt FROM issues WHERE run_id = ? GROUP BY severity_tier",
+            (run_db_id,),
+        ).fetchall()
+        d["severity_breakdown"] = {r["severity_tier"]: r["cnt"] for r in sev_rows}
+        cat_rows = conn.execute(
+            "SELECT cwe_family, COUNT(*) as cnt FROM issues WHERE run_id = ? GROUP BY cwe_family",
+            (run_db_id,),
+        ).fetchall()
+        d["category_breakdown"] = {r["cwe_family"]: r["cnt"] for r in cat_rows}
+
+    sess_rows = conn.execute(
+        "SELECT * FROM sessions WHERE run_id = ?", (run_db_id,)
+    ).fetchall()
+    sessions_list = []
+    for sr in sess_rows:
+        iid_rows = conn.execute(
+            "SELECT issue_id FROM session_issue_ids WHERE session_id = ?",
+            (sr["id"],),
+        ).fetchall()
+        sessions_list.append({
+            "session_id": sr["session_id"],
+            "session_url": sr["session_url"],
+            "batch_id": sr["batch_id"],
+            "status": sr["status"],
+            "issue_ids": [r["issue_id"] for r in iid_rows],
+            "pr_url": sr["pr_url"],
+        })
+    d["sessions"] = sessions_list
+
+    fps_rows = conn.execute(
+        "SELECT * FROM issues WHERE run_id = ?", (run_db_id,)
+    ).fetchall()
+    d["issue_fingerprints"] = [
+        {
+            "id": fr["issue_ext_id"],
+            "fingerprint": fr["fingerprint"],
+            "rule_id": fr["rule_id"],
+            "severity_tier": fr["severity_tier"],
+            "cwe_family": fr["cwe_family"],
+            "file": fr["file"],
+            "start_line": fr["start_line"],
+            "description": fr["description"],
+            "resolution": fr["resolution"],
+            "code_churn": fr["code_churn"],
+        }
+        for fr in fps_rows
+    ]
+    d.pop("id", None)
+    return d
+
+
 def query_runs(
     conn: sqlite3.Connection,
     page: int = 1,
@@ -347,65 +406,7 @@ def query_runs(
         params_q,
     ).fetchall()
 
-    items = []
-    for row in rows:
-        d = _run_row_to_dict(row)
-        run_db_id = row["id"]
-        has_issues = conn.execute(
-            "SELECT 1 FROM issues WHERE run_id = ? LIMIT 1", (run_db_id,)
-        ).fetchone()
-        if has_issues:
-            sev_rows = conn.execute(
-                "SELECT severity_tier, COUNT(*) as cnt FROM issues WHERE run_id = ? GROUP BY severity_tier",
-                (run_db_id,),
-            ).fetchall()
-            d["severity_breakdown"] = {r["severity_tier"]: r["cnt"] for r in sev_rows}
-            cat_rows = conn.execute(
-                "SELECT cwe_family, COUNT(*) as cnt FROM issues WHERE run_id = ? GROUP BY cwe_family",
-                (run_db_id,),
-            ).fetchall()
-            d["category_breakdown"] = {r["cwe_family"]: r["cnt"] for r in cat_rows}
-
-        sess_rows = conn.execute(
-            "SELECT * FROM sessions WHERE run_id = ?", (run_db_id,)
-        ).fetchall()
-        sessions_list = []
-        for sr in sess_rows:
-            iid_rows = conn.execute(
-                "SELECT issue_id FROM session_issue_ids WHERE session_id = ?",
-                (sr["id"],),
-            ).fetchall()
-            sessions_list.append({
-                "session_id": sr["session_id"],
-                "session_url": sr["session_url"],
-                "batch_id": sr["batch_id"],
-                "status": sr["status"],
-                "issue_ids": [r["issue_id"] for r in iid_rows],
-                "pr_url": sr["pr_url"],
-            })
-        d["sessions"] = sessions_list
-
-        fps_rows = conn.execute(
-            "SELECT * FROM issues WHERE run_id = ?", (run_db_id,)
-        ).fetchall()
-        d["issue_fingerprints"] = [
-            {
-                "id": fr["issue_ext_id"],
-                "fingerprint": fr["fingerprint"],
-                "rule_id": fr["rule_id"],
-                "severity_tier": fr["severity_tier"],
-                "cwe_family": fr["cwe_family"],
-                "file": fr["file"],
-                "start_line": fr["start_line"],
-                "description": fr["description"],
-                "resolution": fr["resolution"],
-                "code_churn": fr["code_churn"],
-            }
-            for fr in fps_rows
-        ]
-        d.pop("id", None)
-        items.append(d)
-
+    items = [_build_run_item(conn, row) for row in rows]
     pages = max(1, (total + per_page - 1) // per_page)
     return {"items": items, "page": page, "per_page": per_page, "total": total, "pages": pages}
 
@@ -419,70 +420,34 @@ def query_all_runs(conn: sqlite3.Connection, target_repo: str = "") -> list[dict
     rows = conn.execute(
         f"SELECT r.* FROM runs r {where} ORDER BY r.run_number DESC", params
     ).fetchall()
-    result = []
-    for row in rows:
-        d = _run_row_to_dict(row)
-        run_db_id = row["id"]
-        has_issues = conn.execute(
-            "SELECT 1 FROM issues WHERE run_id = ? LIMIT 1", (run_db_id,)
-        ).fetchone()
-        if has_issues:
-            sev_rows = conn.execute(
-                "SELECT severity_tier, COUNT(*) as cnt FROM issues WHERE run_id = ? GROUP BY severity_tier",
-                (run_db_id,),
-            ).fetchall()
-            d["severity_breakdown"] = {r["severity_tier"]: r["cnt"] for r in sev_rows}
-            cat_rows = conn.execute(
-                "SELECT cwe_family, COUNT(*) as cnt FROM issues WHERE run_id = ? GROUP BY cwe_family",
-                (run_db_id,),
-            ).fetchall()
-            d["category_breakdown"] = {r["cwe_family"]: r["cnt"] for r in cat_rows}
-
-        sess_rows = conn.execute(
-            "SELECT * FROM sessions WHERE run_id = ?", (run_db_id,)
-        ).fetchall()
-        sessions_list = []
-        for sr in sess_rows:
-            iid_rows = conn.execute(
-                "SELECT issue_id FROM session_issue_ids WHERE session_id = ?",
-                (sr["id"],),
-            ).fetchall()
-            sessions_list.append({
-                "session_id": sr["session_id"],
-                "session_url": sr["session_url"],
-                "batch_id": sr["batch_id"],
-                "status": sr["status"],
-                "issue_ids": [r["issue_id"] for r in iid_rows],
-                "pr_url": sr["pr_url"],
-            })
-        d["sessions"] = sessions_list
-
-        fps_rows = conn.execute(
-            "SELECT * FROM issues WHERE run_id = ?", (run_db_id,)
-        ).fetchall()
-        d["issue_fingerprints"] = [
-            {
-                "id": fr["issue_ext_id"],
-                "fingerprint": fr["fingerprint"],
-                "rule_id": fr["rule_id"],
-                "severity_tier": fr["severity_tier"],
-                "cwe_family": fr["cwe_family"],
-                "file": fr["file"],
-                "start_line": fr["start_line"],
-                "description": fr["description"],
-                "resolution": fr["resolution"],
-                "code_churn": fr["code_churn"],
-            }
-            for fr in fps_rows
-        ]
-        d.pop("id", None)
-        result.append(d)
-    return result
+    return [_build_run_item(conn, row) for row in rows]
 
 
 # ---------------------------------------------------------------------------
 # Read helpers — sessions
 # ---------------------------------------------------------------------------
+
+def _build_session_item(conn: sqlite3.Connection, row: sqlite3.Row) -> dict:
+    iid_rows = conn.execute(
+        "SELECT issue_id FROM session_issue_ids WHERE session_id = ?",
+        (row["id"],),
+    ).fetchall()
+    return {
+        "session_id": row["session_id"],
+        "session_url": row["session_url"],
+        "batch_id": row["batch_id"],
+        "status": row["status"],
+        "issue_ids": [r["issue_id"] for r in iid_rows],
+        "target_repo": row["target_repo"],
+        "fork_url": row["fork_url"],
+        "run_number": row["run_number"],
+        "run_id": row["run_ext_id"],
+        "run_url": row["run_url"],
+        "run_label": row["run_label"],
+        "timestamp": row["timestamp"],
+        "pr_url": row["pr_url"],
+    }
+
 
 def query_sessions(
     conn: sqlite3.Connection,
@@ -515,28 +480,7 @@ def query_sessions(
         params_q,
     ).fetchall()
 
-    items = []
-    for row in rows:
-        iid_rows = conn.execute(
-            "SELECT issue_id FROM session_issue_ids WHERE session_id = ?",
-            (row["id"],),
-        ).fetchall()
-        items.append({
-            "session_id": row["session_id"],
-            "session_url": row["session_url"],
-            "batch_id": row["batch_id"],
-            "status": row["status"],
-            "issue_ids": [r["issue_id"] for r in iid_rows],
-            "target_repo": row["target_repo"],
-            "fork_url": row["fork_url"],
-            "run_number": row["run_number"],
-            "run_id": row["run_ext_id"],
-            "run_url": row["run_url"],
-            "run_label": row["run_label"],
-            "timestamp": row["timestamp"],
-            "pr_url": row["pr_url"],
-        })
-
+    items = [_build_session_item(conn, row) for row in rows]
     pages = max(1, (total + per_page - 1) // per_page)
     return {"items": items, "page": page, "per_page": per_page, "total": total, "pages": pages}
 
@@ -556,33 +500,30 @@ def query_all_sessions(conn: sqlite3.Connection, target_repo: str = "") -> list[
             ORDER BY r.timestamp DESC""",
         params,
     ).fetchall()
-    items = []
-    for row in rows:
-        iid_rows = conn.execute(
-            "SELECT issue_id FROM session_issue_ids WHERE session_id = ?",
-            (row["id"],),
-        ).fetchall()
-        items.append({
-            "session_id": row["session_id"],
-            "session_url": row["session_url"],
-            "batch_id": row["batch_id"],
-            "status": row["status"],
-            "issue_ids": [r["issue_id"] for r in iid_rows],
-            "target_repo": row["target_repo"],
-            "fork_url": row["fork_url"],
-            "run_number": row["run_number"],
-            "run_id": row["run_ext_id"],
-            "run_url": row["run_url"],
-            "run_label": row["run_label"],
-            "timestamp": row["timestamp"],
-            "pr_url": row["pr_url"],
-        })
-    return items
+    return [_build_session_item(conn, row) for row in rows]
 
 
 # ---------------------------------------------------------------------------
 # Read helpers — PRs
 # ---------------------------------------------------------------------------
+
+def _build_pr_item(conn: sqlite3.Connection, row: sqlite3.Row) -> dict:
+    iid_rows = conn.execute(
+        "SELECT issue_id FROM pr_issue_ids WHERE pr_id = ?", (row["id"],)
+    ).fetchall()
+    return {
+        "pr_number": row["pr_number"],
+        "title": row["title"],
+        "html_url": row["html_url"],
+        "state": row["state"],
+        "merged": bool(row["merged"]),
+        "created_at": row["created_at"],
+        "repo": row["repo"],
+        "issue_ids": [r["issue_id"] for r in iid_rows],
+        "user": row["user"],
+        "session_id": row["session_id"],
+    }
+
 
 def query_prs(
     conn: sqlite3.Connection,
@@ -596,47 +537,14 @@ def query_prs(
         "SELECT * FROM prs ORDER BY created_at DESC LIMIT ? OFFSET ?",
         (per_page, offset),
     ).fetchall()
-    items = []
-    for row in rows:
-        iid_rows = conn.execute(
-            "SELECT issue_id FROM pr_issue_ids WHERE pr_id = ?", (row["id"],)
-        ).fetchall()
-        items.append({
-            "pr_number": row["pr_number"],
-            "title": row["title"],
-            "html_url": row["html_url"],
-            "state": row["state"],
-            "merged": bool(row["merged"]),
-            "created_at": row["created_at"],
-            "repo": row["repo"],
-            "issue_ids": [r["issue_id"] for r in iid_rows],
-            "user": row["user"],
-            "session_id": row["session_id"],
-        })
+    items = [_build_pr_item(conn, row) for row in rows]
     pages = max(1, (total + per_page - 1) // per_page)
     return {"items": items, "page": page, "per_page": per_page, "total": total, "pages": pages}
 
 
 def query_all_prs(conn: sqlite3.Connection) -> list[dict]:
     rows = conn.execute("SELECT * FROM prs ORDER BY created_at DESC").fetchall()
-    items = []
-    for row in rows:
-        iid_rows = conn.execute(
-            "SELECT issue_id FROM pr_issue_ids WHERE pr_id = ?", (row["id"],)
-        ).fetchall()
-        items.append({
-            "pr_number": row["pr_number"],
-            "title": row["title"],
-            "html_url": row["html_url"],
-            "state": row["state"],
-            "merged": bool(row["merged"]),
-            "created_at": row["created_at"],
-            "repo": row["repo"],
-            "issue_ids": [r["issue_id"] for r in iid_rows],
-            "user": row["user"],
-            "session_id": row["session_id"],
-        })
-    return items
+    return [_build_pr_item(conn, row) for row in rows]
 
 
 # ---------------------------------------------------------------------------
