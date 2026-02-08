@@ -55,6 +55,12 @@ from github_service import fetch_prs_from_github, link_prs_to_sessions
 from devin_service import poll_devin_sessions, save_session_updates
 from issue_tracking import track_issues_across_runs
 from aggregation import aggregate_sessions, aggregate_stats, build_repos_dict
+from verification import (
+    load_verification_records,
+    build_session_verification_map,
+    build_fingerprint_fix_map,
+    aggregate_verification_stats,
+)
 from oauth import oauth_bp, is_oauth_configured, get_current_user, filter_by_user_access
 from pdf_report import generate_pdf
 
@@ -515,8 +521,33 @@ def api_issues():
     if repo_filter:
         runs = [r for r in runs if r.get("target_repo") == repo_filter]
     issues = track_issues_across_runs(runs)
+
+    verification_records = load_verification_records(RUNS_DIR)
+    fp_fix_map = build_fingerprint_fix_map(verification_records)
+    for issue in issues:
+        fp = issue.get("fingerprint", "")
+        if fp in fp_fix_map:
+            fix_info = fp_fix_map[fp]
+            issue["fixed_by_session"] = fix_info["fixed_by_session"]
+            issue["fixed_by_pr"] = fix_info["fixed_by_pr"]
+            issue["verified_at"] = fix_info["verified_at"]
+
     page, per_page = _get_pagination()
     return jsonify(_paginate(issues, page, per_page))
+
+
+@app.route("/api/verification")
+def api_verification():
+    """Return verification records and aggregate stats."""
+    verification_records = load_verification_records(RUNS_DIR)
+    session_map = build_session_verification_map(verification_records)
+    stats = aggregate_verification_stats(verification_records)
+    page, per_page = _get_pagination()
+    return jsonify({
+        "stats": stats,
+        "records": _paginate(verification_records, page, per_page),
+        "session_map": session_map,
+    })
 
 
 @app.route("/api/dispatch/preflight")

@@ -115,6 +115,9 @@ a:hover { text-decoration: underline; }
 .badge-recurring { background: #3a2a1a; color: var(--accent-orange); }
 .badge-new { background: #1a2a3a; color: var(--accent-cyan); }
 .badge-fixed { background: #1a3a2a; color: var(--accent-green); }
+.badge-verified { background: #1a3a2a; color: var(--accent-green); }
+.badge-partial { background: #3a2a1a; color: var(--accent-orange); }
+.badge-needs-work { background: #4a1a1a; color: var(--accent-red); }
 
 .empty-state {
   text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 14px;

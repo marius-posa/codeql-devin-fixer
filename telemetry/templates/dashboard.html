@@ -84,6 +84,15 @@
     </div>
     <div class="panel-body table-scroll-wrapper" id="issues-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
   </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      Fix Verification
+      <span id="verification-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+    </div>
+    <div class="panel-body" id="verification-stats-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+    <div class="panel-body table-scroll-wrapper" id="verification-table-container"></div>
+  </div>
 </div>
 
 <div class="drawer-overlay" id="drawer-overlay"></div>
@@ -105,6 +114,7 @@ let allPrs = [];
 let allRepos = [];
 let allIssues = [];
 let stats = {};
+let verificationData = {};
 
 function renderMetrics(s) {
   const grid = document.getElementById('metrics-grid');
@@ -403,6 +413,7 @@ async function fetchAll() {
     { key: 'prs', endpoint: '/api/prs' },
     { key: 'repos', endpoint: '/api/repos', single: true },
     { key: 'issues', endpoint: '/api/issues' },
+    { key: 'verification', endpoint: '/api/verification', single: true },
   ];
   const results = {};
   const settled = await Promise.allSettled(
@@ -429,9 +440,54 @@ async function fetchAll() {
   if (results.prs !== undefined) allPrs = results.prs;
   if (results.repos !== undefined) allRepos = results.repos;
   if (results.issues !== undefined) allIssues = results.issues;
+  if (results.verification !== undefined) verificationData = results.verification;
   renderAll();
   setStatus(hasError ? 'Loaded with some errors (check console)' : 'Ready');
   setUpdated();
+}
+
+function renderVerificationPanel(data) {
+  const statsEl = document.getElementById('verification-stats-container');
+  const tableEl = document.getElementById('verification-table-container');
+  const countEl = document.getElementById('verification-count');
+  const vStats = data.stats || {};
+  const records = (data.records || {}).items || [];
+  if (countEl) countEl.textContent = vStats.total_verifications || 0;
+  if (vStats.total_verifications === 0 && records.length === 0) {
+    statsEl.innerHTML = '<div class="empty-state">No verification data yet. Verifications run automatically when Devin creates PRs.</div>';
+    tableEl.innerHTML = '';
+    return;
+  }
+  var fixRate = vStats.overall_fix_rate || 0;
+  statsEl.innerHTML = '<div class="metrics-grid" style="margin-bottom:0">'
+    + '<div class="metric-card green"><div class="label">Issues Fixed</div><div class="value">' + (vStats.total_issues_fixed || 0) + '</div>'
+    + '<div class="sub">of ' + (vStats.total_issues_targeted || 0) + ' targeted</div></div>'
+    + '<div class="metric-card ' + fixRateColorClass(fixRate) + '"><div class="label">Verification Fix Rate</div><div class="value">' + fixRate + '%</div></div>'
+    + '<div class="metric-card blue"><div class="label">Fully Verified PRs</div><div class="value">' + (vStats.fully_verified_prs || 0) + '</div></div>'
+    + '<div class="metric-card orange"><div class="label">Partial Fix PRs</div><div class="value">' + (vStats.partial_fix_prs || 0) + '</div></div>'
+    + '</div>';
+  if (records.length === 0) { tableEl.innerHTML = ''; return; }
+  var rows = records.map(function(r) {
+    var summary = r.summary || {};
+    var fixedCount = summary.fixed_count || 0;
+    var totalTargeted = summary.total_targeted || 0;
+    var label = 'codeql-needs-work';
+    if (totalTargeted > 0) {
+      if (fixedCount === totalTargeted) label = 'verified-fix';
+      else if (fixedCount > 0) label = 'codeql-partial-fix';
+    }
+    var badgeCls = label === 'verified-fix' ? 'badge-verified' : label === 'codeql-partial-fix' ? 'badge-partial' : 'badge-needs-work';
+    return '<tr>'
+      + '<td>' + (r.pr_url ? '<a href="'+escapeHtml(r.pr_url)+'" target="_blank">PR #'+(r.pr_number || '-')+'</a>' : '-') + '</td>'
+      + '<td>' + (r.session_id ? '<span class="issue-id">' + escapeHtml((r.session_id || '').slice(0,8)) + '</span>' : '-') + '</td>'
+      + '<td><span class="badge '+badgeCls+'">'+fixedCount+'/'+totalTargeted+' fixed</span></td>'
+      + '<td>' + (summary.fix_rate || 0) + '%</td>'
+      + '<td>' + formatDate(r.verified_at) + '</td>'
+      + '</tr>';
+  }).join('');
+  tableEl.innerHTML = '<table><thead><tr>'
+    + '<th>PR</th><th>Session</th><th>Result</th><th>Fix Rate</th><th>Verified At</th>'
+    + '</tr></thead><tbody>' + rows + '</tbody></table>';
 }
 
 function renderAll() {
@@ -444,6 +500,7 @@ function renderAll() {
   renderSessionsTable(allSessions, 'sessions-table-container', 'sessions-count');
   renderPrsTable(allPrs, 'prs-table-container', 'prs-count');
   renderIssuesTable(allIssues, 'issues-table-container', 'issues-count');
+  renderVerificationPanel(verificationData);
 }
 
 async function pollSessions() {
