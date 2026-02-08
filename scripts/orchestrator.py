@@ -55,7 +55,7 @@ from database import get_connection, init_db, insert_run, query_all_sessions, qu
 from issue_tracking import _parse_ts  # noqa: E402
 from verification import load_verification_records, build_fingerprint_fix_map  # noqa: E402
 from fix_learning import CWE_FIX_HINTS, FixLearning  # noqa: E402
-from github_utils import gh_headers  # noqa: E402
+from github_utils import gh_headers, parse_repo_url  # noqa: E402
 
 try:
     from dispatch_devin import create_devin_session  # noqa: E402
@@ -1143,6 +1143,52 @@ def _is_scan_due(
     return datetime.now(timezone.utc) - last_scan >= interval
 
 
+def _resolve_target_repo(
+    repo_url: str,
+    github_token: str,
+    action_repo: str,
+) -> str:
+    """Return *repo_url* if the token can access it, otherwise fall back to
+    a same-named fork under the workflow owner's account.
+
+    The workflow owner is derived from *action_repo* (e.g. ``user/codeql-devin-fixer``
+    gives ``user``).  If a fork ``user/{repo_name}`` exists, its URL is returned
+    so that downstream scans operate on a repo the token can actually reach.
+    """
+    try:
+        owner, repo_name = parse_repo_url(repo_url)
+    except ValueError:
+        return repo_url
+
+    headers = gh_headers(github_token)
+
+    check = request_with_retry(
+        "GET",
+        f"https://api.github.com/repos/{owner}/{repo_name}",
+        headers=headers,
+        timeout=30,
+    )
+    if check.status_code == 200:
+        return repo_url
+
+    workflow_owner = action_repo.split("/")[0] if "/" in action_repo else ""
+    if not workflow_owner or workflow_owner.lower() == owner.lower():
+        return repo_url
+
+    fork_check = request_with_retry(
+        "GET",
+        f"https://api.github.com/repos/{workflow_owner}/{repo_name}",
+        headers=headers,
+        timeout=30,
+    )
+    if fork_check.status_code == 200:
+        fork_url = f"https://github.com/{workflow_owner}/{repo_name}"
+        print(f"No access to {repo_url}, using fork: {fork_url}")
+        return fork_url
+
+    return repo_url
+
+
 def _trigger_scan(
     repo_config: dict[str, Any],
     github_token: str,
@@ -1156,8 +1202,10 @@ def _trigger_scan(
     if not _HAS_REQUESTS:
         return {"repo": repo_url, "status": "error", "message": "requests library not available"}
 
+    resolved_url = _resolve_target_repo(repo_url, github_token, action_repo)
+
     inputs = {
-        "target_repo": repo_url,
+        "target_repo": resolved_url,
         "mode": "orchestrator",
         "severity_threshold": repo_config.get("severity_threshold", "low"),
         "dry_run": "false",
@@ -1178,7 +1226,10 @@ def _trigger_scan(
             "POST", url, headers=gh_headers(github_token), json=payload, timeout=30,
         )
         if resp.status_code == 204:
-            return {"repo": repo_url, "status": "triggered"}
+            result: dict[str, Any] = {"repo": repo_url, "status": "triggered"}
+            if resolved_url != repo_url:
+                result["resolved_repo"] = resolved_url
+            return result
         return {
             "repo": repo_url,
             "status": "error",
