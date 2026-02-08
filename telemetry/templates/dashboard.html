@@ -113,8 +113,10 @@
       <span id="orchestrator-status-label" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
       <button class="btn btn-sm" onclick="triggerOrchestratorScan()" style="margin-left:auto" id="btn-orch-scan">Scan Due Repos</button>
       <button class="btn btn-sm" onclick="triggerOrchestratorDispatch()" id="btn-orch-dispatch" style="background:#1f6feb;border-color:#388bfd;color:#fff;margin-left:4px">Dispatch</button>
+      <button class="btn btn-sm" onclick="triggerOrchestratorCycle()" id="btn-orch-cycle" style="background:#238636;border-color:#2ea043;color:#fff;margin-left:4px">Run Cycle</button>
     </div>
     <div class="panel-body" id="orchestrator-panel-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+    <div class="panel-body" id="orchestrator-config-container"></div>
     <div class="panel-body table-scroll-wrapper" id="orchestrator-history-container"></div>
   </div>
 
@@ -183,6 +185,7 @@ let verificationData = {};
 let orchestratorStatus = null;
 let orchestratorHistory = null;
 let orchestratorPlan = null;
+let orchestratorConfig = null;
 
 function setPeriod(period) {
   currentPeriod = period;
@@ -558,6 +561,7 @@ async function fetchAll() {
     { key: 'orchestrator', endpoint: '/api/orchestrator/status', single: true },
     { key: 'orchestratorHistory', endpoint: '/api/orchestrator/history', single: true },
     { key: 'orchestratorPlan', endpoint: '/api/orchestrator/plan', single: true },
+    { key: 'orchestratorConfig', endpoint: '/api/orchestrator/config', single: true },
   ];
   const results = {};
   const settled = await Promise.allSettled(
@@ -590,6 +594,7 @@ async function fetchAll() {
   if (results.orchestrator !== undefined) orchestratorStatus = results.orchestrator;
   if (results.orchestratorHistory !== undefined) orchestratorHistory = results.orchestratorHistory;
   if (results.orchestratorPlan !== undefined) orchestratorPlan = results.orchestratorPlan;
+  if (results.orchestratorConfig !== undefined) orchestratorConfig = results.orchestratorConfig;
   renderAll();
   setStatus(hasError ? 'Loaded with some errors (check console)' : 'Ready');
   setUpdated();
@@ -652,6 +657,7 @@ function renderAll() {
   renderSlaPanel(slaData);
   renderVerificationPanel(verificationData);
   renderOrchestratorPanel();
+  renderOrchestratorConfigPanel();
   renderRegistryPanel();
 }
 
@@ -793,6 +799,97 @@ async function triggerOrchestratorDispatch() {
   }
   btn.disabled = false;
   btn.textContent = 'Dispatch';
+}
+
+async function triggerOrchestratorCycle() {
+  var btn = document.getElementById('btn-orch-cycle');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Running...';
+  setStatus('Running full orchestrator cycle (scan + dispatch)...');
+  try {
+    var res = await _authedFetch(API + '/api/orchestrator/cycle', {
+      method: 'POST',
+      headers: Object.assign({}, _authHeaders(), { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({}),
+    });
+    var data = await res.json();
+    if (data.error) {
+      setStatus('Cycle error: ' + data.error);
+    } else {
+      var scan = data.scan || {};
+      var dispatch = data.dispatch || {};
+      setStatus('Cycle complete: ' + (scan.triggered || 0) + ' scans, ' + (dispatch.sessions_created || 0) + ' sessions');
+    }
+    await fetchAll();
+  } catch (e) {
+    setStatus('Cycle error: ' + e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = 'Run Cycle';
+}
+
+function renderOrchestratorConfigPanel() {
+  var el = document.getElementById('orchestrator-config-container');
+  if (!orchestratorConfig) { el.innerHTML = ''; return; }
+  var c = orchestratorConfig;
+  var html = '<div style="border-top:1px solid var(--border-primary);padding-top:12px">';
+  html += '<div style="display:flex;align-items:center;margin-bottom:8px"><div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px">Configuration</div>';
+  html += '<button class="btn btn-sm" onclick="_toggleOrchestratorConfigEdit()" id="btn-orch-config-edit" style="margin-left:auto">Edit</button></div>';
+  html += '<div id="orch-config-display">';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px">';
+  html += '<div><span style="color:var(--text-muted)">Session limit:</span> ' + (c.global_session_limit || 20) + ' / ' + (c.global_session_limit_period_hours || 24) + 'h</div>';
+  html += '<div><span style="color:var(--text-muted)">Alerts:</span> ' + (c.alert_on_objective_met ? 'Enabled' : 'Disabled') + '</div>';
+  html += '</div>';
+  var objs = c.objectives || [];
+  if (objs.length > 0) {
+    html += '<div style="margin-top:6px;font-size:12px;color:var(--text-muted)">' + objs.length + ' objective(s) configured</div>';
+  }
+  html += '</div>';
+  html += '<div id="orch-config-form" style="display:none">';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">';
+  html += '<div class="form-group" style="margin:0"><label style="font-size:11px;color:var(--text-muted)">Session Limit</label>';
+  html += '<input class="form-input" id="orch-cfg-limit" type="number" value="' + (c.global_session_limit || 20) + '" style="padding:4px 8px"></div>';
+  html += '<div class="form-group" style="margin:0"><label style="font-size:11px;color:var(--text-muted)">Period (hours)</label>';
+  html += '<input class="form-input" id="orch-cfg-period" type="number" value="' + (c.global_session_limit_period_hours || 24) + '" style="padding:4px 8px"></div>';
+  html += '</div>';
+  html += '<div style="display:flex;gap:4px">';
+  html += '<button class="btn btn-sm btn-primary" onclick="_saveOrchestratorConfig()">Save</button>';
+  html += '<button class="btn btn-sm" onclick="_toggleOrchestratorConfigEdit()">Cancel</button>';
+  html += '</div></div></div>';
+  el.innerHTML = html;
+}
+
+function _toggleOrchestratorConfigEdit() {
+  var display = document.getElementById('orch-config-display');
+  var form = document.getElementById('orch-config-form');
+  var btn = document.getElementById('btn-orch-config-edit');
+  if (!display || !form) return;
+  var editing = form.style.display !== 'none';
+  display.style.display = editing ? '' : 'none';
+  form.style.display = editing ? 'none' : '';
+  btn.style.display = editing ? '' : 'none';
+}
+
+async function _saveOrchestratorConfig() {
+  var limit = parseInt(document.getElementById('orch-cfg-limit').value, 10);
+  var period = parseInt(document.getElementById('orch-cfg-period').value, 10);
+  if (isNaN(limit) || limit < 1) { setStatus('Invalid session limit'); return; }
+  if (isNaN(period) || period < 1) { setStatus('Invalid period'); return; }
+  setStatus('Saving orchestrator config...');
+  try {
+    var res = await _authedFetch(API + '/api/orchestrator/config', {
+      method: 'PUT',
+      headers: Object.assign({}, _authHeaders(), { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ global_session_limit: limit, global_session_limit_period_hours: period }),
+    });
+    if (!res.ok) { setStatus('Config save failed: ' + res.status); return; }
+    orchestratorConfig = await res.json();
+    renderOrchestratorConfigPanel();
+    setStatus('Orchestrator config saved');
+    setUpdated();
+  } catch (e) {
+    setStatus('Config save error: ' + e.message);
+  }
 }
 
 function renderRegistryPanel() {

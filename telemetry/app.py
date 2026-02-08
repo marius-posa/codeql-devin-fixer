@@ -565,8 +565,6 @@ def api_dispatch_preflight():
 @app.route("/api/dispatch", methods=["POST"])
 @require_api_key
 def api_dispatch():
-    if not _get_telemetry_api_key():
-        return jsonify({"error": "TELEMETRY_API_KEY must be configured to use the dispatch endpoint"}), 403
     token = os.environ.get("GITHUB_TOKEN", "")
     action_repo = os.environ.get("ACTION_REPO", "")
     if not token:
@@ -655,7 +653,7 @@ def api_orchestrator_status():
     period_hours = orch_config.get("global_session_limit_period_hours", 24)
 
     rl_data = state.get("rate_limiter", {})
-    timestamps = rl_data.get("timestamps", [])
+    timestamps = rl_data.get("created_timestamps", rl_data.get("timestamps", []))
     from datetime import datetime, timedelta, timezone
     cutoff = datetime.now(timezone.utc) - timedelta(hours=period_hours)
     used = 0
@@ -731,9 +729,6 @@ def api_orchestrator_plan():
 @app.route("/api/orchestrator/dispatch", methods=["POST"])
 @require_api_key
 def api_orchestrator_dispatch():
-    if not _get_telemetry_api_key():
-        return jsonify({"error": "TELEMETRY_API_KEY must be configured"}), 403
-
     body = flask_request.get_json(silent=True) or {}
     repo_filter = body.get("repo", "")
     dry_run = body.get("dry_run", False)
@@ -764,9 +759,6 @@ def api_orchestrator_dispatch():
 @app.route("/api/orchestrator/scan", methods=["POST"])
 @require_api_key
 def api_orchestrator_scan():
-    if not _get_telemetry_api_key():
-        return jsonify({"error": "TELEMETRY_API_KEY must be configured"}), 403
-
     body = flask_request.get_json(silent=True) or {}
     repo_filter = body.get("repo", "")
     dry_run = body.get("dry_run", False)
@@ -819,6 +811,88 @@ def api_orchestrator_history():
 
     all_entries.sort(key=lambda e: e.get("dispatched_at", ""), reverse=True)
     return jsonify(_paginate(all_entries, page, per_page))
+
+
+@app.route("/api/orchestrator/cycle", methods=["POST"])
+@require_api_key
+def api_orchestrator_cycle():
+    body = flask_request.get_json(silent=True) or {}
+    repo_filter = body.get("repo", "")
+    dry_run = body.get("dry_run", False)
+
+    if not dry_run:
+        missing = [v for v in ("GITHUB_TOKEN", "ACTION_REPO") if not os.environ.get(v)]
+        if missing:
+            return jsonify({"error": f"Missing env vars: {', '.join(missing)}"}), 400
+        if not os.environ.get("DEVIN_API_KEY"):
+            return jsonify({"error": "DEVIN_API_KEY not configured on server"}), 400
+
+    import subprocess
+    cmd = ["python3", str(_ORCHESTRATOR_DIR / "orchestrator.py"), "cycle", "--json"]
+    if repo_filter:
+        cmd.extend(["--repo", repo_filter])
+    if dry_run:
+        cmd.append("--dry-run")
+
+    result = subprocess.run(
+        cmd, capture_output=True, text=True, timeout=300,
+        cwd=str(_ORCHESTRATOR_DIR.parent),
+        env={**os.environ},
+    )
+    try:
+        return jsonify(json.loads(result.stdout))
+    except (json.JSONDecodeError, ValueError):
+        if result.returncode != 0:
+            return jsonify({"error": "Cycle failed", "stderr": result.stderr[:500]}), 500
+        return jsonify({"error": "Invalid cycle output", "raw": result.stdout[:500]}), 500
+
+
+@app.route("/api/orchestrator/config")
+def api_orchestrator_config():
+    registry = _load_orchestrator_registry()
+    orch_config = registry.get("orchestrator", {})
+    return jsonify({
+        "global_session_limit": orch_config.get("global_session_limit", 20),
+        "global_session_limit_period_hours": orch_config.get("global_session_limit_period_hours", 24),
+        "objectives": orch_config.get("objectives", []),
+        "alert_on_objective_met": orch_config.get("alert_on_objective_met", False),
+        "alert_webhook_url": orch_config.get("alert_webhook_url", ""),
+    })
+
+
+@app.route("/api/orchestrator/config", methods=["PUT"])
+@require_api_key
+def api_orchestrator_config_update():
+    body = flask_request.get_json(silent=True)
+    if not body:
+        return jsonify({"error": "Request body is required"}), 400
+
+    registry = _load_orchestrator_registry()
+    orch_config = registry.get("orchestrator", {})
+
+    allowed_keys = (
+        "global_session_limit",
+        "global_session_limit_period_hours",
+        "objectives",
+        "alert_on_objective_met",
+        "alert_webhook_url",
+    )
+    for key in allowed_keys:
+        if key in body:
+            orch_config[key] = body[key]
+
+    registry["orchestrator"] = orch_config
+    with open(_ORCHESTRATOR_REGISTRY_PATH, "w") as f:
+        json.dump(registry, f, indent=2)
+        f.write("\n")
+
+    return jsonify({
+        "global_session_limit": orch_config.get("global_session_limit", 20),
+        "global_session_limit_period_hours": orch_config.get("global_session_limit_period_hours", 24),
+        "objectives": orch_config.get("objectives", []),
+        "alert_on_objective_met": orch_config.get("alert_on_objective_met", False),
+        "alert_webhook_url": orch_config.get("alert_webhook_url", ""),
+    })
 
 
 def _load_registry() -> dict:
