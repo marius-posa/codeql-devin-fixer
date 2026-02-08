@@ -172,23 +172,23 @@
 
 <!-- Severity breakdown -->
 <h2>Issues by Severity</h2>
-{{ severity_bars }}
+{{ severity_bars|safe }}
 
 <!-- Category breakdown -->
 <h2>Issues by Category</h2>
-{{ category_bars }}
+{{ category_bars|safe }}
 
 <!-- Run history -->
 <h2>Run History</h2>
-{{ runs_table }}
+{{ runs_table|safe }}
 
 <!-- Devin sessions -->
 <h2>Devin Sessions</h2>
-{{ sessions_table }}
+{{ sessions_table|safe }}
 
 <!-- Pull requests -->
 <h2>Pull Requests</h2>
-{{ prs_table }}
+{{ prs_table|safe }}
 
 <div class="footer">
   Powered by <a href="https://github.com/{{ action_repo }}" target="_blank">CodeQL Devin Fixer</a>

@@ -50,7 +50,7 @@ except ImportError:
 _TEMPLATE_DIR = pathlib.Path(__file__).parent / "templates"
 _jinja_env = Environment(
     loader=FileSystemLoader(str(_TEMPLATE_DIR)),
-    autoescape=False,
+    autoescape=True,
 )
 DASHBOARD_TEMPLATE_NAME = "dashboard_static.html"
 
