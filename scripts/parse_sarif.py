@@ -468,6 +468,11 @@ def batch_issues(
     Families with the highest max-severity score are processed first so
     that the most critical batches get dispatched before hitting the
     *max_batches* cap.
+
+    When the single-family pass would drop issues due to *max_batches*,
+    remaining issues are combined into cross-family batches so that no
+    issue above the severity threshold is left unaddressed.  Cross-family
+    batches carry multiple playbooks.
     """
     family_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for issue in issues:
@@ -483,6 +488,8 @@ def batch_issues(
     sorted_families = sorted(family_groups.keys(), key=lambda f: -family_severity[f])
 
     batches: list[dict[str, Any]] = []
+    batched_issue_ids: set[int] = set()
+
     for family in sorted_families:
         group = family_groups[family]
         for i in range(0, len(group), batch_size):
@@ -492,12 +499,15 @@ def batch_issues(
             files_in_batch: set[str] = set()
             for issue in chunk:
                 files_in_batch.update(_get_issue_files(issue))
+                batched_issue_ids.add(id(issue))
             top_severity = max(c["severity_score"] for c in chunk)
             top_tier = classify_severity(top_severity)
             batches.append(
                 {
                     "batch_id": len(batches) + 1,
                     "cwe_family": family,
+                    "cwe_families": [family],
+                    "cross_family": False,
                     "severity_tier": top_tier,
                     "max_severity_score": top_severity,
                     "issue_count": len(chunk),
@@ -507,6 +517,41 @@ def batch_issues(
             )
         if len(batches) >= max_batches:
             break
+
+    remaining = [
+        issue for issue in issues if id(issue) not in batched_issue_ids
+    ]
+    if remaining and len(batches) < max_batches:
+        remaining.sort(key=lambda x: (-x["severity_score"], x["cwe_family"]))
+        for i in range(0, len(remaining), batch_size):
+            if len(batches) >= max_batches:
+                break
+            chunk = remaining[i : i + batch_size]
+            files_in_batch = set()
+            families_in_chunk: list[str] = []
+            seen_families: set[str] = set()
+            for issue in chunk:
+                files_in_batch.update(_get_issue_files(issue))
+                fam = issue["cwe_family"]
+                if fam not in seen_families:
+                    families_in_chunk.append(fam)
+                    seen_families.add(fam)
+            top_severity = max(c["severity_score"] for c in chunk)
+            top_tier = classify_severity(top_severity)
+            primary_family = families_in_chunk[0]
+            batches.append(
+                {
+                    "batch_id": len(batches) + 1,
+                    "cwe_family": primary_family,
+                    "cwe_families": families_in_chunk,
+                    "cross_family": len(families_in_chunk) > 1,
+                    "severity_tier": top_tier,
+                    "max_severity_score": top_severity,
+                    "issue_count": len(chunk),
+                    "file_count": len(files_in_batch),
+                    "issues": chunk,
+                }
+            )
 
     batches.sort(key=lambda b: -b["max_severity_score"])
     for idx, batch in enumerate(batches):
@@ -559,8 +604,12 @@ def generate_summary(
     lines.append("| Batch | Category | Severity | Issues | Files |")
     lines.append("|-------|----------|----------|--------|-------|")
     for batch in batches:
+        if batch.get("cross_family", False):
+            category_label = "+".join(batch.get("cwe_families", [batch["cwe_family"]]))
+        else:
+            category_label = batch["cwe_family"]
         lines.append(
-            f"| {batch['batch_id']} | {batch['cwe_family']} "
+            f"| {batch['batch_id']} | {category_label} "
             f"| {batch['severity_tier'].upper()} | {batch['issue_count']} "
             f"| {batch.get('file_count', '?')} |"
         )
@@ -605,15 +654,21 @@ def compute_fingerprint(issue: dict[str, Any]) -> str:
 
 
 def assign_issue_ids(
-    issues: list[dict[str, Any]], run_number: str = ""
+    issues: list[dict[str, Any]],
+    run_number: str = "",
+    id_prefix: str = "",
 ) -> list[dict[str, Any]]:
     """Assign a unique ID and stable fingerprint to each issue.
 
     The run-specific ID uses the format ``CQLF-R{run}-{seq}`` so IDs are
     unique across workflow runs.  The fingerprint is stable across runs
     so the same vulnerability can be tracked over time.
+
+    When *id_prefix* is provided it is inserted after ``CQLF-`` to
+    distinguish different issue sets (e.g. ``ALL`` for unfiltered issues).
     """
-    prefix = f"R{run_number}-" if run_number else ""
+    run_part = f"R{run_number}-" if run_number else ""
+    prefix = f"{id_prefix}-{run_part}" if id_prefix else run_part
     for idx, issue in enumerate(issues, 1):
         issue["id"] = f"CQLF-{prefix}{idx:04d}"
         issue["fingerprint"] = compute_fingerprint(issue)
@@ -674,6 +729,16 @@ def main() -> None:
 
     batches = batch_issues(prioritized, batch_size, max_batches)
     print(f"Created {len(batches)} batches")
+
+    all_issues_with_ids = assign_issue_ids(
+        list(all_issues), run_number, id_prefix="ALL"
+    )
+    all_issues_envelope = {
+        "schema_version": ISSUES_SCHEMA_VERSION,
+        "issues": all_issues_with_ids,
+    }
+    with open(os.path.join(output_dir, "all_issues.json"), "w") as f:
+        json.dump(all_issues_envelope, f, indent=2)
 
     issues_envelope = {
         "schema_version": ISSUES_SCHEMA_VERSION,
