@@ -356,7 +356,7 @@ def main() -> None:
         f.write(label)
 
     summary = record["summary"]
-    print(f"\nVerification Results:")
+    print("\nVerification Results:")
     print(f"  Targeted: {summary['total_targeted']} issues")
     print(f"  Fixed:    {summary['fixed_count']}")
     print(f"  Remaining: {summary['remaining_count']}")

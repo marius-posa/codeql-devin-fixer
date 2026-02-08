@@ -142,8 +142,10 @@ class TestBuildSessionVerificationMap:
         assert build_session_verification_map([rec]) == {}
 
     def test_preserves_metadata(self):
-        rec = _record(session_id="s1", pr_url="http://pr/1", pr_number="42",
-                       cwe_family="xss", source_run_number="7", fixed=["fp1"])
+        rec = _record(
+            session_id="s1", pr_url="http://pr/1", pr_number="42",
+            cwe_family="xss", source_run_number="7", fixed=["fp1"],
+        )
         result = build_session_verification_map([rec])
         s = result["s1"]
         assert s["pr_url"] == "http://pr/1"
@@ -154,9 +156,11 @@ class TestBuildSessionVerificationMap:
 
 class TestBuildFingerprintFixMap:
     def test_maps_fixed_fingerprints(self):
-        rec = _record(session_id="s1", pr_url="http://pr/1",
-                       verified_at="2026-02-01T00:00:00Z",
-                       fixed=["fp1", "fp2"])
+        rec = _record(
+            session_id="s1", pr_url="http://pr/1",
+            verified_at="2026-02-01T00:00:00Z",
+            fixed=["fp1", "fp2"],
+        )
         result = build_fingerprint_fix_map([rec])
         assert "fp1" in result
         assert result["fp1"]["fixed_by_session"] == "s1"
@@ -278,8 +282,10 @@ class TestApiIssuesVerificationEnrichment:
                 "start_line": 1,
             }],
         }]
-        rec = _record(session_id="s1", pr_url="http://pr/1",
-                       verified_at="2026-02-01T00:00:00Z", fixed=["fp1"])
+        rec = _record(
+            session_id="s1", pr_url="http://pr/1",
+            verified_at="2026-02-01T00:00:00Z", fixed=["fp1"],
+        )
         mock_load.return_value = [rec]
         resp = client.get("/api/issues")
         assert resp.status_code == 200
