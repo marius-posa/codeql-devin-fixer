@@ -28,6 +28,7 @@ from scripts.orchestrator import (
     _form_dispatch_batches,
     _build_orchestrator_prompt,
     _is_scan_due,
+    _resolve_target_repo,
     cmd_ingest,
     cmd_plan,
     cmd_status,
@@ -974,6 +975,61 @@ class TestCmdDispatch:
         assert output["repo_filter"] == "https://github.com/a/b"
         for r in output.get("results", []):
             assert r["target_repo"] == "https://github.com/a/b"
+
+
+class TestResolveTargetRepo:
+    def test_returns_original_when_accessible(self):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        with patch("scripts.orchestrator.request_with_retry", return_value=mock_resp):
+            result = _resolve_target_repo(
+                "https://github.com/juice-shop/juice-shop",
+                "fake-token",
+                "marius-posa/codeql-devin-fixer",
+            )
+        assert result == "https://github.com/juice-shop/juice-shop"
+
+    def test_falls_back_to_fork_when_no_access(self):
+        no_access = MagicMock()
+        no_access.status_code = 403
+        fork_found = MagicMock()
+        fork_found.status_code = 200
+        with patch("scripts.orchestrator.request_with_retry", side_effect=[no_access, fork_found]):
+            result = _resolve_target_repo(
+                "https://github.com/juice-shop/juice-shop",
+                "fake-token",
+                "marius-posa/codeql-devin-fixer",
+            )
+        assert result == "https://github.com/marius-posa/juice-shop"
+
+    def test_returns_original_when_no_fork_exists(self):
+        no_access = MagicMock()
+        no_access.status_code = 403
+        no_fork = MagicMock()
+        no_fork.status_code = 404
+        with patch("scripts.orchestrator.request_with_retry", side_effect=[no_access, no_fork]):
+            result = _resolve_target_repo(
+                "https://github.com/juice-shop/juice-shop",
+                "fake-token",
+                "marius-posa/codeql-devin-fixer",
+            )
+        assert result == "https://github.com/juice-shop/juice-shop"
+
+    def test_skips_fork_check_when_owner_matches(self):
+        no_access = MagicMock()
+        no_access.status_code = 403
+        with patch("scripts.orchestrator.request_with_retry", return_value=no_access) as mock_req:
+            result = _resolve_target_repo(
+                "https://github.com/marius-posa/some-repo",
+                "fake-token",
+                "marius-posa/codeql-devin-fixer",
+            )
+        assert result == "https://github.com/marius-posa/some-repo"
+        assert mock_req.call_count == 1
+
+    def test_handles_invalid_repo_url(self):
+        result = _resolve_target_repo("not-a-url", "token", "owner/repo")
+        assert result == "not-a-url"
 
 
 class TestScheduleIntervals:
