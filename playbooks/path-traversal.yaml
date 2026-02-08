@@ -1,0 +1,83 @@
+name: path-traversal
+version: 1
+description: >
+  Fix pattern for path traversal / directory traversal vulnerabilities.
+  Covers CWE-22 (path traversal), CWE-23 (relative path traversal),
+  CWE-36 (absolute path traversal), and related file-access issues.
+
+steps:
+  - id: identify_entry_points
+    title: Identify all entry points for tainted data
+    instructions: |
+      Trace the data flow backwards from the file-system operation to find
+      every entry point where user-controlled data influences file paths:
+      - HTTP request parameters specifying file names or paths
+      - File upload names or content-disposition headers
+      - API parameters referencing stored files or templates
+      - Archive extraction paths (zip, tar) that may contain traversal sequences
+      - Configuration values or database fields used to construct file paths
+
+      For each entry point, note:
+      1. The file-system operation being performed (read, write, delete, list)
+      2. The expected base directory for the operation
+      3. Whether any path validation or normalization is already applied
+      4. Whether symlink resolution is needed
+
+  - id: apply_fix
+    title: Apply the canonical fix pattern
+    instructions: |
+      Apply defense-in-depth with multiple layers:
+
+      Path canonicalization:
+      - Resolve the full canonical path using `os.path.realpath()` (Python),
+        `path.resolve()` (Node.js), or `filepath.Abs()` + `filepath.Clean()` (Go).
+      - Perform the base-directory check AFTER canonicalization to defeat
+        `..` sequences and symlink tricks.
+
+      Base directory confinement:
+      - Verify that the resolved path starts with the expected base directory:
+        ```python
+        base = os.path.realpath(UPLOAD_DIR)
+        target = os.path.realpath(os.path.join(UPLOAD_DIR, user_input))
+        if not target.startswith(base + os.sep):
+            raise ValueError("Path traversal detected")
+        ```
+      - Use `os.path.commonpath([base, target]) == base` as an alternative.
+
+      Input validation:
+      - Reject paths containing `..` components, absolute path prefixes
+        (`/`, `C:\`), or null bytes.
+      - Strip or reject backslashes on non-Windows systems.
+      - Allowlist permitted file extensions when applicable.
+
+      Archive extraction safety:
+      - When extracting archives, validate each entry's path before writing.
+      - Use libraries with built-in traversal protection (e.g., Python 3.12+
+        `tarfile` data filter, `zip-slip` safe extractors).
+
+  - id: run_tests
+    title: Run the existing test suite
+    instructions: |
+      Run the project's full test suite to confirm the fix does not break
+      existing functionality:
+      - Identify the test runner (pytest, jest, mocha, go test, etc.)
+      - Run all tests and verify they pass
+      - Pay special attention to tests involving file operations, uploads,
+        downloads, or template rendering
+      - Verify that legitimate file paths still resolve correctly
+
+  - id: add_test
+    title: Add a test case that would have caught the vulnerability
+    instructions: |
+      Write at least one test that:
+      - Sends a path containing `../` sequences (e.g., `../../etc/passwd`)
+        through the identified entry point
+      - Asserts that the application rejects the path or confines access to
+        the base directory
+      - Tests absolute path injection (e.g., `/etc/passwd` as file name)
+      - Tests null-byte injection if the language is susceptible (e.g.,
+        `file.txt%00.png`)
+      - Verifies that the error response does not leak the real file-system
+        structure
+
+improvement_log: []

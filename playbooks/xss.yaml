@@ -1,0 +1,85 @@
+name: xss
+version: 1
+description: >
+  Fix pattern for Cross-Site Scripting (XSS) vulnerabilities.
+  Covers CWE-79 (reflected/stored XSS), CWE-80 (basic XSS), and
+  related output-encoding issues.
+
+steps:
+  - id: identify_entry_points
+    title: Identify all entry points for tainted data
+    instructions: |
+      Trace the data flow backwards from the vulnerable output location to
+      find every entry point where user-controlled data enters:
+      - HTTP request parameters (query strings, form bodies, URL fragments)
+      - Database fields storing previously submitted user content
+      - URL path segments, hash fragments, or referrer headers
+      - Third-party API responses that include user-generated content
+      - WebSocket messages rendered in the UI
+
+      For each entry point, note:
+      1. The rendering context where the data appears (HTML body, HTML
+         attribute, JavaScript block, CSS value, URL)
+      2. Whether the framework's auto-escaping is active for that template
+      3. All intermediate transformations (e.g., Markdown rendering, rich
+         text processing) that could introduce or strip encoding
+
+  - id: apply_fix
+    title: Apply the canonical fix pattern
+    instructions: |
+      Choose the encoding strategy based on the output context:
+
+      HTML body context:
+      - Use the framework's built-in auto-escaping (Jinja2 `{{ var }}`,
+        React JSX `{var}`, Django `{{ var }}`).
+      - If auto-escaping is disabled (e.g., `| safe`, `dangerouslySetInnerHTML`),
+        remove the override or apply manual HTML-entity encoding.
+      - Use a trusted sanitization library (DOMPurify, Bleach) when rich
+        HTML is intentionally allowed.
+
+      HTML attribute context:
+      - Always quote attribute values.
+      - Apply HTML-attribute encoding to the value.
+      - Never place user data in event handler attributes (`onclick`,
+        `onerror`, etc.) or `javascript:` URLs.
+
+      JavaScript context:
+      - Use JSON serialization (`JSON.stringify`) to embed values in
+        `<script>` blocks.
+      - Avoid inserting user data directly into JavaScript string literals.
+
+      URL context:
+      - Apply URL encoding (`encodeURIComponent`) for query parameters.
+      - Validate that the scheme is `http:` or `https:` to prevent
+        `javascript:` or `data:` URLs.
+
+      CSS context:
+      - Avoid user data in CSS values entirely. If unavoidable, allowlist
+        specific safe values.
+
+  - id: run_tests
+    title: Run the existing test suite
+    instructions: |
+      Run the project's full test suite to confirm the fix does not break
+      existing functionality:
+      - Identify the test runner (pytest, jest, mocha, etc.)
+      - Run all tests and verify they pass
+      - Pay special attention to tests for views, templates, or rendering
+        components that were modified
+      - Verify that legitimate content still renders correctly after
+        encoding changes
+
+  - id: add_test
+    title: Add a test case that would have caught the vulnerability
+    instructions: |
+      Write at least one test that:
+      - Sends a payload containing `<script>alert(1)</script>` or equivalent
+        through the identified entry point
+      - Asserts that the output contains the HTML-encoded version
+        (`&lt;script&gt;`) rather than raw markup
+      - Verifies that the rendering context applies proper encoding
+      - For React/JSX: verify that `dangerouslySetInnerHTML` is not used
+        with unsanitized data
+      - For server-rendered templates: verify auto-escaping is enabled
+
+improvement_log: []
