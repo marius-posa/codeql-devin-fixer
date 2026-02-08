@@ -12,6 +12,7 @@ Configuration (environment variables):
 
 import os
 import logging
+import secrets
 
 import requests
 from flask import (
@@ -119,18 +120,23 @@ def filter_by_user_access(items: list[dict], repo_key: str = "target_repo") -> l
 def login():
     if not is_oauth_configured():
         return jsonify({"error": "OAuth not configured"}), 400
+    state = secrets.token_urlsafe(32)
+    session["oauth_state"] = state
     scope = "read:org,repo"
     callback = url_for("oauth.callback", _external=True)
     return redirect(
         f"{_GITHUB_AUTHORIZE_URL}?client_id={_client_id()}"
-        f"&redirect_uri={callback}&scope={scope}"
+        f"&redirect_uri={callback}&scope={scope}&state={state}"
     )
 
 
 @oauth_bp.route("/callback")
 def callback():
     code = flask_request.args.get("code")
-    if not code:
+    state = flask_request.args.get("state", "")
+    expected_state = session.pop("oauth_state", None)
+    if not code or not expected_state or state != expected_state:
+        log.warning("OAuth callback: missing code or state mismatch")
         return redirect(url_for("index"))
 
     resp = requests.post(
