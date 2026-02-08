@@ -209,8 +209,7 @@ The existing `track_issues_across_runs()` in `telemetry/issue_tracking.py` class
       "auto_dispatch": true,
       "tags": ["production", "web-app"],
       "overrides": {
-        "languages": "javascript",
-        "severity_threshold": "medium"
+        "languages": "javascript"
       }
     },
     {
@@ -224,7 +223,9 @@ The existing `track_issues_across_runs()` in `telemetry/issue_tracking.py` class
       "auto_scan": true,
       "auto_dispatch": true,
       "tags": ["production", "api", "pci"],
-      "overrides": {}
+      "overrides": {
+        "languages": "java"
+      }
     }
   ]
 }
