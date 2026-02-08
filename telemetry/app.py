@@ -137,6 +137,8 @@ class _Cache:
             if fp == self._runs_fingerprint and self._runs:
                 return self._runs
         runs = _load_runs_from_disk()
+        if not runs:
+            runs = _load_sample_data()
         with self._lock:
             self._runs = runs
             self._runs_fingerprint = fp
@@ -177,11 +179,30 @@ class _Cache:
 cache = _Cache()
 
 
+SAMPLE_DATA_DIR = pathlib.Path(__file__).parent / "sample_data"
+
+
 def _load_runs_from_disk() -> list[dict]:
     runs = []
     if not RUNS_DIR.is_dir():
         return runs
     for fp in sorted(RUNS_DIR.glob("*.json")):
+        try:
+            with open(fp) as f:
+                data = json.load(f)
+                data["_file"] = fp.name
+                runs.append(data)
+        except (json.JSONDecodeError, OSError):
+            continue
+    return runs
+
+
+def _load_sample_data() -> list[dict]:
+    """Load sample telemetry data for first-run / demo scenarios."""
+    runs = []
+    if not SAMPLE_DATA_DIR.is_dir():
+        return runs
+    for fp in sorted(SAMPLE_DATA_DIR.glob("*.json")):
         try:
             with open(fp) as f:
                 data = json.load(f)

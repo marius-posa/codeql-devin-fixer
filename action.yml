@@ -1,6 +1,10 @@
 name: "CodeQL Devin Fixer"
 description: "Run CodeQL analysis, prioritize security issues, and dispatch Devin sessions to fix them in batches"
 
+branding:
+  icon: "shield"
+  color: "purple"
+
 inputs:
   target_repo:
     description: "GitHub repository to analyze. Accepts full URL (https://github.com/owner/repo) or owner/repo shorthand."
@@ -56,10 +60,30 @@ inputs:
     description: "Persist run logs to the fork repository"
     required: false
     default: "true"
+  exclude_paths:
+    description: "Comma-separated glob patterns to exclude from CodeQL analysis"
+    required: false
+    default: ""
   max_failure_rate:
     description: "Maximum session failure rate (0-100) before the dispatch step exits non-zero"
     required: false
     default: "50"
+  config_file:
+    description: "Path to a .codeql-fixer.yml config file in the target repo (auto-detected if empty)"
+    required: false
+    default: ""
+  prompt_template:
+    description: "Path to a custom Jinja2 prompt template file (overrides default prompt generation)"
+    required: false
+    default: ""
+  webhook_url:
+    description: "URL to receive lifecycle webhook notifications (scan started, completed, session created)"
+    required: false
+    default: ""
+  webhook_secret:
+    description: "Shared secret for signing webhook payloads (HMAC-SHA256)"
+    required: false
+    default: ""
 
 outputs:
   total_issues:
@@ -161,6 +185,52 @@ runs:
         git clone --depth 1 --single-branch -- "$REPO_URL" "$TARGET_DIR"
         echo "TARGET_DIR=$TARGET_DIR" >> "$GITHUB_ENV"
         echo "SCAN_REPO_URL=$REPO_URL" >> "$GITHUB_ENV"
+
+    - name: Load per-repo config
+      id: repo-config
+      shell: bash
+      env:
+        CONFIG_FILE_INPUT: ${{ inputs.config_file }}
+        INPUT_BATCH_SIZE: ${{ inputs.batch_size }}
+        INPUT_MAX_SESSIONS: ${{ inputs.max_sessions }}
+        INPUT_SEVERITY_THRESHOLD: ${{ inputs.severity_threshold }}
+        INPUT_EXCLUDE_PATHS: ${{ inputs.exclude_paths }}
+      run: |
+        TARGET_DIR="${{ runner.temp }}/target-repo"
+        CONFIG_PATH=""
+        if [ -n "$CONFIG_FILE_INPUT" ]; then
+          CONFIG_PATH="$TARGET_DIR/$CONFIG_FILE_INPUT"
+        elif [ -f "$TARGET_DIR/.codeql-fixer.yml" ]; then
+          CONFIG_PATH="$TARGET_DIR/.codeql-fixer.yml"
+        elif [ -f "$TARGET_DIR/.codeql-fixer.yaml" ]; then
+          CONFIG_PATH="$TARGET_DIR/.codeql-fixer.yaml"
+        fi
+
+        if [ -n "$CONFIG_PATH" ] && [ -f "$CONFIG_PATH" ]; then
+          echo "Found per-repo config: $CONFIG_PATH"
+          python3 "${{ github.action_path }}/scripts/load_repo_config.py" "$CONFIG_PATH"
+        else
+          echo "No per-repo config found; using action inputs"
+          echo "batch_size=$INPUT_BATCH_SIZE" >> "$GITHUB_OUTPUT"
+          echo "max_sessions=$INPUT_MAX_SESSIONS" >> "$GITHUB_OUTPUT"
+          echo "severity_threshold=$INPUT_SEVERITY_THRESHOLD" >> "$GITHUB_OUTPUT"
+          echo "exclude_paths=$INPUT_EXCLUDE_PATHS" >> "$GITHUB_OUTPUT"
+          echo "custom_cwe_families=" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Send webhook (scan_started)
+      if: inputs.webhook_url != ''
+      shell: bash
+      env:
+        WEBHOOK_URL: ${{ inputs.webhook_url }}
+        WEBHOOK_SECRET: ${{ inputs.webhook_secret }}
+        TARGET_REPO: ${{ steps.normalize.outputs.target_repo }}
+        RUN_ID: ${{ github.run_id }}
+      run: |
+        python3 "${{ github.action_path }}/scripts/webhook.py" \
+          --event scan_started \
+          --target-repo "$TARGET_REPO" \
+          --run-id "$RUN_ID"
 
     - name: Detect languages
       id: detect-lang
@@ -362,10 +432,11 @@ runs:
       id: parse
       shell: bash
       env:
-        BATCH_SIZE: ${{ inputs.batch_size }}
-        MAX_SESSIONS: ${{ inputs.max_sessions }}
-        SEVERITY_THRESHOLD: ${{ inputs.severity_threshold }}
+        BATCH_SIZE: ${{ steps.repo-config.outputs.batch_size || inputs.batch_size }}
+        MAX_SESSIONS: ${{ steps.repo-config.outputs.max_sessions || inputs.max_sessions }}
+        SEVERITY_THRESHOLD: ${{ steps.repo-config.outputs.severity_threshold || inputs.severity_threshold }}
         RUN_NUMBER: ${{ github.run_number }}
+        CUSTOM_CWE_FAMILIES: ${{ steps.repo-config.outputs.custom_cwe_families }}
       run: |
         python "${{ github.action_path }}/scripts/parse_sarif.py" \
           "${{ runner.temp }}/codeql-results" \
@@ -396,6 +467,24 @@ runs:
         fi
         echo "telemetry_dir=$TELEMETRY_DIR" >> "$GITHUB_OUTPUT"
 
+    - name: Send webhook (scan_completed)
+      if: inputs.webhook_url != ''
+      shell: bash
+      env:
+        WEBHOOK_URL: ${{ inputs.webhook_url }}
+        WEBHOOK_SECRET: ${{ inputs.webhook_secret }}
+        TARGET_REPO: ${{ steps.normalize.outputs.target_repo }}
+        RUN_ID: ${{ github.run_id }}
+        TOTAL_ISSUES: ${{ steps.parse.outputs.total_issues }}
+        TOTAL_BATCHES: ${{ steps.parse.outputs.total_batches }}
+      run: |
+        python3 "${{ github.action_path }}/scripts/webhook.py" \
+          --event scan_completed \
+          --target-repo "$TARGET_REPO" \
+          --run-id "$RUN_ID" \
+          --total-issues "$TOTAL_ISSUES" \
+          --total-batches "$TOTAL_BATCHES"
+
     - name: Dispatch Devin sessions
       id: dispatch
       shell: bash
@@ -412,6 +501,9 @@ runs:
         TELEMETRY_DIR: ${{ steps.fetch-telemetry.outputs.telemetry_dir }}
         PLAYBOOKS_DIR: ${{ github.action_path }}/playbooks
         MAX_FAILURE_RATE: ${{ inputs.max_failure_rate }}
+        PROMPT_TEMPLATE: ${{ inputs.prompt_template }}
+        WEBHOOK_URL: ${{ inputs.webhook_url }}
+        WEBHOOK_SECRET: ${{ inputs.webhook_secret }}
       run: |
         python "${{ github.action_path }}/scripts/dispatch_devin.py"\
           "${{ runner.temp }}/codeql-output/batches.json" \
