@@ -29,18 +29,20 @@ Stores one row per action run. Replaces the per-file JSON records in `telemetry/
 
 ```sql
 CREATE TABLE runs (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    target_repo     TEXT    NOT NULL,
-    fork_url        TEXT    NOT NULL DEFAULT '',
-    run_number      INTEGER NOT NULL,
-    run_id          TEXT    NOT NULL DEFAULT '',
-    run_url         TEXT    NOT NULL DEFAULT '',
-    run_label       TEXT    NOT NULL DEFAULT '',
-    timestamp       TEXT    NOT NULL,  -- ISO 8601
-    issues_found    INTEGER NOT NULL DEFAULT 0,
-    batches_created INTEGER NOT NULL DEFAULT 0,
-    zero_issue_run  INTEGER NOT NULL DEFAULT 0,  -- boolean
-    source_file     TEXT    NOT NULL DEFAULT '',  -- original JSON filename for traceability
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_repo         TEXT    NOT NULL,
+    fork_url            TEXT    NOT NULL DEFAULT '',
+    run_number          INTEGER NOT NULL,
+    run_id              TEXT    NOT NULL DEFAULT '',
+    run_url             TEXT    NOT NULL DEFAULT '',
+    run_label           TEXT    NOT NULL DEFAULT '',
+    timestamp           TEXT    NOT NULL,  -- ISO 8601
+    issues_found        INTEGER NOT NULL DEFAULT 0,
+    batches_created     INTEGER NOT NULL DEFAULT 0,
+    zero_issue_run      INTEGER NOT NULL DEFAULT 0,  -- boolean
+    severity_breakdown  TEXT    NOT NULL DEFAULT '{}',  -- JSON dict, see design note below
+    category_breakdown  TEXT    NOT NULL DEFAULT '{}',  -- JSON dict, see design note below
+    source_file         TEXT    NOT NULL DEFAULT '',  -- original JSON filename for traceability
     UNIQUE(run_label)
 );
 
@@ -50,7 +52,7 @@ CREATE INDEX idx_runs_run_number  ON runs(run_number);
 ```
 
 **Design notes:**
-- `severity_breakdown` and `category_breakdown` are denormalized dicts in JSON. Rather than a separate table, these are derived from the `issues` table via `GROUP BY` queries, which is more correct (single source of truth) and enables filtering.
+- `severity_breakdown` and `category_breakdown` are stored as JSON text columns on the `runs` table **in addition to** the normalized `issues` table. This is necessary because some older runs (e.g., `juice-shop_run_12` through `_run_14`) have breakdown data and `issues_found > 0` but no `issue_fingerprints` array. Deriving breakdowns solely from the `issues` table would produce empty dicts for these runs. The JSON columns preserve the original data losslessly. For runs **with** fingerprints, the `issues` table is the canonical source and can be used for filtering/aggregation; the JSON columns serve as a fast denormalized read cache and as the fallback for fingerprint-less runs.
 - `run_label` is unique per run (format: `run-{number}-{date}-{time}`) and serves as the natural key for idempotent migration.
 - `source_file` preserves the original JSON filename for debugging and rollback.
 
@@ -66,13 +68,17 @@ CREATE TABLE sessions (
     session_url  TEXT    NOT NULL DEFAULT '',
     batch_id     INTEGER,
     status       TEXT    NOT NULL DEFAULT 'unknown',
-    pr_url       TEXT    NOT NULL DEFAULT '',
-    UNIQUE(session_id)
+    pr_url       TEXT    NOT NULL DEFAULT ''
 );
 
-CREATE INDEX idx_sessions_run_id     ON sessions(run_id);
-CREATE INDEX idx_sessions_session_id ON sessions(session_id);
-CREATE INDEX idx_sessions_status     ON sessions(status);
+-- Partial unique index: only enforce uniqueness on non-empty session IDs.
+-- Future runs could theoretically produce empty session_id values (e.g., failed
+-- session creation), and multiple such rows must be allowed.
+CREATE UNIQUE INDEX idx_sessions_session_id_unique
+    ON sessions(session_id) WHERE session_id != '';
+
+CREATE INDEX idx_sessions_run_id  ON sessions(run_id);
+CREATE INDEX idx_sessions_status  ON sessions(status);
 ```
 
 ### 1.3 `session_issue_ids` Table
@@ -538,7 +544,30 @@ ORDER BY
     fa.timestamp DESC
 ```
 
-This replaces the entire `issue_tracking.py` module with a single query.
+**Preserving `has_older_runs_without_fps` logic**: The current Python code in `issue_tracking.py` has a nuanced heuristic: if a repo has runs that predate fingerprinting (i.e., runs without `issue_fingerprints`), then even a single-appearance fingerprint is classified as `recurring` rather than `new`, because the issue may have existed in those earlier un-fingerprinted runs. The SQL query above preserves this by adding a subquery:
+
+```sql
+-- Add to the CTE chain:
+runs_without_fps_per_repo AS (
+    SELECT r.target_repo, COUNT(*) as cnt
+    FROM runs r
+    WHERE r.id NOT IN (SELECT DISTINCT run_id FROM issues)
+    AND r.issues_found > 0
+    GROUP BY r.target_repo
+)
+```
+
+The status classification then becomes:
+```sql
+CASE
+    WHEN lf.fingerprint IS NULL THEN 'fixed'
+    WHEN fa.appearance_count > 1 THEN 'recurring'
+    WHEN rwf.cnt > 0 THEN 'recurring'  -- older runs without fingerprints exist
+    ELSE 'new'
+END as status
+```
+
+This matches the existing Python behavior and is important because 3 of the 10 current runs (juice-shop runs 12-14) have `issues_found > 0` but no `issue_fingerprints`.
 
 ### 4.7 `/api/repo/<path:repo_url>` (app.py:225-285)
 
