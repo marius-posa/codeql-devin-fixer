@@ -1,7 +1,202 @@
 {
-  "last_cycle": "2026-02-08T22:50:30.776937+00:00",
-  "rate_limiter": {},
-  "dispatch_history": {},
+  "last_cycle": "2026-02-08T23:21:52.313046+00:00",
+  "rate_limiter": {
+    "max_sessions": 20,
+    "period_hours": 24,
+    "created_timestamps": [
+      "2026-02-08T23:21:53.100125+00:00",
+      "2026-02-08T23:21:55.589300+00:00",
+      "2026-02-08T23:21:58.146112+00:00",
+      "2026-02-08T23:22:00.687498+00:00",
+      "2026-02-08T23:22:03.203230+00:00",
+      "2026-02-08T23:22:05.733673+00:00",
+      "2026-02-08T23:22:08.208944+00:00"
+    ]
+  },
+  "dispatch_history": {
+    "4be89e0fbf4569e1d682": {
+      "dispatch_count": 1,
+      "fingerprint": "4be89e0fbf4569e1d682",
+      "last_dispatched": "2026-02-08T23:21:53.100142+00:00",
+      "last_session_id": "devin-b1d94073dc1f4485882e7234e1da6475",
+      "consecutive_failures": 0
+    },
+    "0673162993c308c72864": {
+      "dispatch_count": 1,
+      "fingerprint": "0673162993c308c72864",
+      "last_dispatched": "2026-02-08T23:21:55.589316+00:00",
+      "last_session_id": "devin-79763900ffc74833aacc15acdfb2111c",
+      "consecutive_failures": 0
+    },
+    "166655a553deb08e6df9": {
+      "dispatch_count": 1,
+      "fingerprint": "166655a553deb08e6df9",
+      "last_dispatched": "2026-02-08T23:21:55.589321+00:00",
+      "last_session_id": "devin-79763900ffc74833aacc15acdfb2111c",
+      "consecutive_failures": 0
+    },
+    "1097c1f653e16a6aa604": {
+      "dispatch_count": 1,
+      "fingerprint": "1097c1f653e16a6aa604",
+      "last_dispatched": "2026-02-08T23:21:55.589323+00:00",
+      "last_session_id": "devin-79763900ffc74833aacc15acdfb2111c",
+      "consecutive_failures": 0
+    },
+    "8e49c4c9bf27640ff9ea": {
+      "dispatch_count": 1,
+      "fingerprint": "8e49c4c9bf27640ff9ea",
+      "last_dispatched": "2026-02-08T23:21:55.589325+00:00",
+      "last_session_id": "devin-79763900ffc74833aacc15acdfb2111c",
+      "consecutive_failures": 0
+    },
+    "d33303da768c094f8a35": {
+      "dispatch_count": 1,
+      "fingerprint": "d33303da768c094f8a35",
+      "last_dispatched": "2026-02-08T23:21:55.589328+00:00",
+      "last_session_id": "devin-79763900ffc74833aacc15acdfb2111c",
+      "consecutive_failures": 0
+    },
+    "fb3b2edda026c9603e93": {
+      "dispatch_count": 1,
+      "fingerprint": "fb3b2edda026c9603e93",
+      "last_dispatched": "2026-02-08T23:21:58.146129+00:00",
+      "last_session_id": "devin-cca982034f6c4974aff3150af46eec34",
+      "consecutive_failures": 0
+    },
+    "a3d4e6b71ac209eea1dc": {
+      "dispatch_count": 1,
+      "fingerprint": "a3d4e6b71ac209eea1dc",
+      "last_dispatched": "2026-02-08T23:21:58.146133+00:00",
+      "last_session_id": "devin-cca982034f6c4974aff3150af46eec34",
+      "consecutive_failures": 0
+    },
+    "659a1505c5c2fa782197": {
+      "dispatch_count": 1,
+      "fingerprint": "659a1505c5c2fa782197",
+      "last_dispatched": "2026-02-08T23:21:58.146137+00:00",
+      "last_session_id": "devin-cca982034f6c4974aff3150af46eec34",
+      "consecutive_failures": 0
+    },
+    "406eee355f7bfac61bde": {
+      "dispatch_count": 1,
+      "fingerprint": "406eee355f7bfac61bde",
+      "last_dispatched": "2026-02-08T23:21:58.146139+00:00",
+      "last_session_id": "devin-cca982034f6c4974aff3150af46eec34",
+      "consecutive_failures": 0
+    },
+    "5fbda6b7453597e83c5d": {
+      "dispatch_count": 1,
+      "fingerprint": "5fbda6b7453597e83c5d",
+      "last_dispatched": "2026-02-08T23:21:58.146142+00:00",
+      "last_session_id": "devin-cca982034f6c4974aff3150af46eec34",
+      "consecutive_failures": 0
+    },
+    "1923400ada1b5d5d47db": {
+      "dispatch_count": 1,
+      "fingerprint": "1923400ada1b5d5d47db",
+      "last_dispatched": "2026-02-08T23:22:00.687514+00:00",
+      "last_session_id": "devin-fb893230090c4d9da685abba0297566e",
+      "consecutive_failures": 0
+    },
+    "4f2a7426facc31325fbb": {
+      "dispatch_count": 1,
+      "fingerprint": "4f2a7426facc31325fbb",
+      "last_dispatched": "2026-02-08T23:22:00.687518+00:00",
+      "last_session_id": "devin-fb893230090c4d9da685abba0297566e",
+      "consecutive_failures": 0
+    },
+    "5922cdbafaa141ab3657": {
+      "dispatch_count": 1,
+      "fingerprint": "5922cdbafaa141ab3657",
+      "last_dispatched": "2026-02-08T23:22:00.687520+00:00",
+      "last_session_id": "devin-fb893230090c4d9da685abba0297566e",
+      "consecutive_failures": 0
+    },
+    "ed2fe77bb8bfb338c692": {
+      "dispatch_count": 1,
+      "fingerprint": "ed2fe77bb8bfb338c692",
+      "last_dispatched": "2026-02-08T23:22:00.687522+00:00",
+      "last_session_id": "devin-fb893230090c4d9da685abba0297566e",
+      "consecutive_failures": 0
+    },
+    "22c0b9568b7c1e68010a": {
+      "dispatch_count": 1,
+      "fingerprint": "22c0b9568b7c1e68010a",
+      "last_dispatched": "2026-02-08T23:22:03.203247+00:00",
+      "last_session_id": "devin-75f25b0b45b344b8a2339930c942072d",
+      "consecutive_failures": 0
+    },
+    "0c2a6c2b67c016284bab": {
+      "dispatch_count": 1,
+      "fingerprint": "0c2a6c2b67c016284bab",
+      "last_dispatched": "2026-02-08T23:22:03.203251+00:00",
+      "last_session_id": "devin-75f25b0b45b344b8a2339930c942072d",
+      "consecutive_failures": 0
+    },
+    "efe60dfc730fb6034892": {
+      "dispatch_count": 1,
+      "fingerprint": "efe60dfc730fb6034892",
+      "last_dispatched": "2026-02-08T23:22:03.203254+00:00",
+      "last_session_id": "devin-75f25b0b45b344b8a2339930c942072d",
+      "consecutive_failures": 0
+    },
+    "b407a2987ad458672a3b": {
+      "dispatch_count": 1,
+      "fingerprint": "b407a2987ad458672a3b",
+      "last_dispatched": "2026-02-08T23:22:03.203256+00:00",
+      "last_session_id": "devin-75f25b0b45b344b8a2339930c942072d",
+      "consecutive_failures": 0
+    },
+    "359c6ab0586a028f3828": {
+      "dispatch_count": 1,
+      "fingerprint": "359c6ab0586a028f3828",
+      "last_dispatched": "2026-02-08T23:22:03.203259+00:00",
+      "last_session_id": "devin-75f25b0b45b344b8a2339930c942072d",
+      "consecutive_failures": 0
+    },
+    "bbc3c6f669b187f8": {
+      "dispatch_count": 1,
+      "fingerprint": "bbc3c6f669b187f8",
+      "last_dispatched": "2026-02-08T23:22:05.733688+00:00",
+      "last_session_id": "devin-9079081b5d91472b838f02035725c180",
+      "consecutive_failures": 0
+    },
+    "c329a38c14ad6991": {
+      "dispatch_count": 1,
+      "fingerprint": "c329a38c14ad6991",
+      "last_dispatched": "2026-02-08T23:22:05.733693+00:00",
+      "last_session_id": "devin-9079081b5d91472b838f02035725c180",
+      "consecutive_failures": 0
+    },
+    "9fe54db59c216e1f": {
+      "dispatch_count": 1,
+      "fingerprint": "9fe54db59c216e1f",
+      "last_dispatched": "2026-02-08T23:22:05.733696+00:00",
+      "last_session_id": "devin-9079081b5d91472b838f02035725c180",
+      "consecutive_failures": 0
+    },
+    "539df72e1bf719ae": {
+      "dispatch_count": 1,
+      "fingerprint": "539df72e1bf719ae",
+      "last_dispatched": "2026-02-08T23:22:05.733698+00:00",
+      "last_session_id": "devin-9079081b5d91472b838f02035725c180",
+      "consecutive_failures": 0
+    },
+    "772a6bb456c430c5": {
+      "dispatch_count": 1,
+      "fingerprint": "772a6bb456c430c5",
+      "last_dispatched": "2026-02-08T23:22:05.733700+00:00",
+      "last_session_id": "devin-9079081b5d91472b838f02035725c180",
+      "consecutive_failures": 0
+    },
+    "4c61cb3f3f1109b4": {
+      "dispatch_count": 1,
+      "fingerprint": "4c61cb3f3f1109b4",
+      "last_dispatched": "2026-02-08T23:22:08.208961+00:00",
+      "last_session_id": "devin-6d0011cc47ee4c76b65ca3eab6c40321",
+      "consecutive_failures": 0
+    }
+  },
   "objective_progress": [],
   "scan_schedule": {
     "https://github.com/juice-shop/juice-shop": {
