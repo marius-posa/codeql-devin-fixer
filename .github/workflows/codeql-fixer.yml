@@ -35,7 +35,7 @@ on:
         description: "Optional newline/comma-separated globs to exclude"
         required: false
         type: string
-        default: "" 
+        default: ""
       batch_size:
         description: "Max issues per Devin session"
         required: false
@@ -66,6 +66,14 @@ on:
         required: false
         type: string
         default: "main"
+      mode:
+        description: "Pipeline mode: basic (scan+dispatch), orchestrator (scan only, defer dispatch)"
+        required: false
+        type: choice
+        options:
+          - basic
+          - orchestrator
+        default: "basic"
 
 permissions:
   contents: write
@@ -97,3 +105,4 @@ jobs:
           include_paths: ${{ inputs.include_paths }}
           exclude_paths: ${{ inputs.exclude_paths }}
           persist_logs: ${{ inputs.persist_logs }}
+          mode: ${{ inputs.mode }}
