@@ -1,10 +1,12 @@
 """Unit tests for the telemetry Flask application (telemetry/app.py).
 
-Covers: API endpoints, pagination, cache behaviour, auth decorator.
+Covers: API endpoints, pagination, auth decorator.
+Updated for SQLite-backed storage.
 """
 
 import json
 import os
+import pathlib
 import sys
 import tempfile
 from pathlib import Path
@@ -13,7 +15,46 @@ from unittest.mock import patch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "telemetry"))
 
 import pytest
-from app import app, _paginate, _Cache, _load_runs_from_disk, _filter_by_period, _load_registry, _save_registry, REGISTRY_PATH
+
+_tmp_dir = tempfile.mkdtemp()
+_test_db_path = os.path.join(_tmp_dir, "test_app.db")
+os.environ["TELEMETRY_DB_PATH"] = _test_db_path
+
+import database
+database.DB_PATH = pathlib.Path(_test_db_path)
+from database import get_connection, init_db, insert_run, upsert_pr
+from app import app, _paginate, _load_registry, _save_registry
+
+
+def _seed_db(runs=None, prs=None):
+    conn = get_connection(pathlib.Path(_test_db_path))
+    init_db(conn)
+    if runs:
+        for r in runs:
+            insert_run(conn, r, r.get("_file", "test.json"))
+    if prs:
+        for p in prs:
+            upsert_pr(conn, p)
+    conn.commit()
+    conn.close()
+
+
+def _clear_db():
+    conn = get_connection(pathlib.Path(_test_db_path))
+    for tbl in ["pr_issue_ids", "prs", "session_issue_ids", "sessions", "issues", "runs", "metadata"]:
+        try:
+            conn.execute(f"DELETE FROM {tbl}")
+        except Exception:
+            pass
+    conn.commit()
+    conn.close()
+
+
+@pytest.fixture(autouse=True)
+def clean_db():
+    _clear_db()
+    yield
+    _clear_db()
 
 
 @pytest.fixture
@@ -79,108 +120,39 @@ class TestPaginate:
         assert result["items"] == []
 
 
-class TestCache:
-    def test_invalidate_clears_runs(self):
-        c = _Cache()
-        c._runs = [{"a": 1}]
-        c._runs_fingerprint = "something"
-        c.invalidate_runs()
-        assert c._runs == []
-        assert c._runs_fingerprint == ""
-
-    def test_set_and_get_prs(self):
-        c = _Cache()
-        c.set_prs([{"pr": 1}])
-        assert c._prs == [{"pr": 1}]
-        assert c._prs_ts > 0
-
-    def test_set_and_get_polled_sessions(self):
-        c = _Cache()
-        assert c.get_polled_sessions() is None
-        c.set_polled_sessions([{"s": 1}])
-        assert c._sessions_polled == [{"s": 1}]
-        assert c._sessions_ts > 0
-
-
-class TestLoadRunsFromDisk:
-    def test_loads_json_files(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            runs_dir = Path(tmpdir)
-            (runs_dir / "run1.json").write_text(json.dumps({"run_number": 1}))
-            (runs_dir / "run2.json").write_text(json.dumps({"run_number": 2}))
-            with patch("app.RUNS_DIR", runs_dir):
-                runs = _load_runs_from_disk()
-                assert len(runs) == 2
-                assert all("_file" in r for r in runs)
-
-    def test_skips_invalid_json(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            runs_dir = Path(tmpdir)
-            (runs_dir / "good.json").write_text(json.dumps({"run_number": 1}))
-            (runs_dir / "bad.json").write_text("not json{{{")
-            with patch("app.RUNS_DIR", runs_dir):
-                runs = _load_runs_from_disk()
-                assert len(runs) == 1
-
-    def test_empty_directory(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            runs_dir = Path(tmpdir)
-            with patch("app.RUNS_DIR", runs_dir):
-                runs = _load_runs_from_disk()
-                assert runs == []
-
-    def test_nonexistent_directory(self):
-        with patch("app.RUNS_DIR", Path("/nonexistent/path")):
-            runs = _load_runs_from_disk()
-            assert runs == []
-
-
 class TestApiEndpoints:
-    @patch("app.cache")
-    def test_api_runs_returns_paginated(self, mock_cache, client):
-        mock_cache.get_runs.return_value = [
-            {"run_number": i, "timestamp": f"2026-01-0{i}T00:00:00Z"}
+    def test_api_runs_returns_paginated(self, client, sample_run):
+        _seed_db(runs=[
+            {**sample_run, "run_label": f"run-{i}", "run_number": i}
             for i in range(1, 4)
-        ]
+        ])
         resp = client.get("/api/runs?page=1&per_page=2")
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["total"] == 3
         assert len(data["items"]) == 2
 
-    @patch("app.cache")
-    def test_api_stats_returns_json(self, mock_cache, client):
-        mock_cache.get_runs.return_value = []
-        mock_cache.get_prs.return_value = []
+    def test_api_stats_returns_json(self, client):
         resp = client.get("/api/stats")
         assert resp.status_code == 200
         data = resp.get_json()
         assert "repos_scanned" in data
         assert "total_issues" in data
 
-    @patch("app.cache")
-    def test_api_repos_returns_list(self, mock_cache, client):
-        mock_cache.get_runs.return_value = []
-        mock_cache.get_prs.return_value = []
+    def test_api_repos_returns_list(self, client):
         resp = client.get("/api/repos")
         assert resp.status_code == 200
         data = resp.get_json()
         assert isinstance(data, list)
 
-    @patch("app.cache")
-    def test_api_sessions_returns_paginated(self, mock_cache, client):
-        mock_cache.get_runs.return_value = []
-        mock_cache.get_prs.return_value = []
+    def test_api_sessions_returns_paginated(self, client):
         resp = client.get("/api/sessions")
         assert resp.status_code == 200
         data = resp.get_json()
         assert "items" in data
         assert "total" in data
 
-    @patch("app.cache")
-    def test_api_prs_returns_paginated(self, mock_cache, client):
-        mock_cache.get_runs.return_value = []
-        mock_cache.get_prs.return_value = []
+    def test_api_prs_returns_paginated(self, client):
         resp = client.get("/api/prs")
         assert resp.status_code == 200
         data = resp.get_json()
@@ -193,17 +165,13 @@ class TestApiEndpoints:
         assert "github_token_set" in data
         assert "auth_required" in data
 
-    @patch("app.cache")
-    def test_api_issues_returns_paginated(self, mock_cache, client):
-        mock_cache.get_runs.return_value = []
+    def test_api_issues_returns_paginated(self, client):
         resp = client.get("/api/issues")
         assert resp.status_code == 200
         data = resp.get_json()
         assert "items" in data
 
-    @patch("app.cache")
-    def test_api_sla_returns_json(self, mock_cache, client):
-        mock_cache.get_runs.return_value = []
+    def test_api_sla_returns_json(self, client):
         resp = client.get("/api/sla")
         assert resp.status_code == 200
         data = resp.get_json()
@@ -211,22 +179,23 @@ class TestApiEndpoints:
         assert "total_on_track" in data
         assert "time_to_fix_by_severity" in data
 
-    @patch("app.cache")
-    def test_api_dispatch_preflight_requires_target_repo(self, mock_cache, client):
+    def test_api_dispatch_preflight_requires_target_repo(self, client):
         resp = client.get("/api/dispatch/preflight")
         assert resp.status_code == 400
         data = resp.get_json()
         assert "error" in data
 
-    @patch("app.cache")
-    def test_api_stats_accepts_period(self, mock_cache, client):
-        mock_cache.get_runs.return_value = [
-            {"run_number": 1, "timestamp": "2020-01-01T00:00:00Z", "issues_found": 1,
-             "severity_breakdown": {}, "category_breakdown": {}, "sessions": []},
-            {"run_number": 2, "timestamp": "2099-01-01T00:00:00Z", "issues_found": 2,
-             "severity_breakdown": {}, "category_breakdown": {}, "sessions": []},
-        ]
-        mock_cache.get_prs.return_value = []
+    def test_api_stats_accepts_period(self, client):
+        _seed_db(runs=[
+            {"target_repo": "r", "fork_url": "", "run_number": 1,
+             "run_label": "old", "timestamp": "2020-01-01T00:00:00Z",
+             "issues_found": 1, "severity_breakdown": {}, "category_breakdown": {},
+             "batches_created": 0, "sessions": [], "issue_fingerprints": []},
+            {"target_repo": "r", "fork_url": "", "run_number": 2,
+             "run_label": "new", "timestamp": "2099-01-01T00:00:00Z",
+             "issues_found": 2, "severity_breakdown": {}, "category_breakdown": {},
+             "batches_created": 0, "sessions": [], "issue_fingerprints": []},
+        ])
         resp = client.get("/api/stats?period=7d")
         assert resp.status_code == 200
         data = resp.get_json()
@@ -247,49 +216,23 @@ class TestApiEndpoints:
         data = resp.get_json()
         assert "oauth_configured" in data
 
-    @patch("app.cache")
-    def test_api_report_pdf_returns_pdf(self, mock_cache, client):
-        mock_cache.get_runs.return_value = []
-        mock_cache.get_prs.return_value = []
+    def test_api_report_pdf_returns_pdf(self, client):
         resp = client.get("/api/report/pdf")
         assert resp.status_code == 200
         assert resp.content_type == "application/pdf"
         assert resp.data[:5] == b"%PDF-"
 
-    @patch("app.cache")
-    def test_api_report_pdf_with_repo_filter(self, mock_cache, client):
-        mock_cache.get_runs.return_value = [
-            {"target_repo": "https://github.com/owner/repo", "timestamp": "2026-01-01T00:00:00Z",
-             "issues_found": 1, "severity_breakdown": {"high": 1}, "category_breakdown": {},
-             "sessions": [], "issue_fingerprints": [], "zero_issue_run": False},
-        ]
-        mock_cache.get_prs.return_value = []
+    def test_api_report_pdf_with_repo_filter(self, client, sample_run):
+        _seed_db(runs=[sample_run])
         resp = client.get("/api/report/pdf?repo=https://github.com/owner/repo")
         assert resp.status_code == 200
         assert "owner-repo" in resp.headers.get("Content-Disposition", "")
 
-
-class TestFilterByPeriod:
-    def test_all_returns_everything(self):
-        runs = [{"timestamp": "2020-01-01T00:00:00Z"}, {"timestamp": "2099-01-01T00:00:00Z"}]
-        assert len(_filter_by_period(runs, "all")) == 2
-
-    def test_empty_period_returns_everything(self):
-        runs = [{"timestamp": "2020-01-01T00:00:00Z"}]
-        assert len(_filter_by_period(runs, "")) == 1
-
-    def test_7d_filters_old(self):
-        runs = [
-            {"timestamp": "2020-01-01T00:00:00Z"},
-            {"timestamp": "2099-12-31T00:00:00Z"},
-        ]
-        result = _filter_by_period(runs, "7d")
-        assert len(result) == 1
-        assert result[0]["timestamp"] == "2099-12-31T00:00:00Z"
-
-    def test_invalid_period_returns_everything(self):
-        runs = [{"timestamp": "2020-01-01T00:00:00Z"}]
-        assert len(_filter_by_period(runs, "invalid")) == 1
+    def test_api_issues_search_requires_q(self, client):
+        resp = client.get("/api/issues/search")
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert "error" in data
 
 
 class TestRegistryEndpoints:

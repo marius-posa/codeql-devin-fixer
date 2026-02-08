@@ -5,3 +5,11 @@ telemetry/.env
 __pycache__/
 *.pyc
 *.pyo
+
+# SQLite database (generated from JSON migration)
+telemetry/telemetry.db
+telemetry/telemetry.db-wal
+telemetry/telemetry.db-shm
+*.db
+*.db-wal
+*.db-shm
