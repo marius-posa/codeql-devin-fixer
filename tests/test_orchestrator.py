@@ -867,8 +867,8 @@ class TestCmdDispatch:
 
         result = cmd_dispatch(args)
         assert result == 1
-        output = capsys.readouterr().out
-        assert "DEVIN_API_KEY" in output
+        captured = capsys.readouterr()
+        assert "DEVIN_API_KEY" in captured.err
 
     def test_dispatch_max_sessions_override(self, tmp_env, capsys):
         conn = get_connection(tmp_env["db_path"])

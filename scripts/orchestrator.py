@@ -762,7 +762,8 @@ def _form_dispatch_batches(
         if repos_session_count.get(repo_url, 0) >= repo_limit:
             continue
 
-        batch_issues = group_issues[:batch_size]
+        sorted_issues = sorted(group_issues, key=lambda i: i.get("priority_score", 0), reverse=True)
+        batch_issues = sorted_issues[:batch_size]
 
         best_severity = max(
             (i.get("severity_tier", "low") for i in batch_issues),
@@ -808,7 +809,14 @@ def _build_orchestrator_prompt(
     repo_config: dict[str, Any],
     fl: FixLearning,
 ) -> str:
-    """Build a Devin session prompt from orchestrator batch data."""
+    """Build a Devin session prompt from orchestrator batch data.
+
+    Intentionally separate from dispatch_devin.build_batch_prompt because the
+    orchestrator operates on aggregated issue state (merged across runs) rather
+    than raw SARIF batches.  The two prompt builders share the same essential
+    elements (IDs, files, severity, fix hints) but accept different input
+    schemas.
+    """
     repo_url = batch["target_repo"]
     family = batch["cwe_family"]
     default_branch = repo_config.get("default_branch", "main")
@@ -938,11 +946,11 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
 
     api_key = os.environ.get("DEVIN_API_KEY", "")
     if not api_key and not dry_run:
-        print("ERROR: DEVIN_API_KEY environment variable is required (use --dry-run to skip)")
+        print("ERROR: DEVIN_API_KEY environment variable is required (use --dry-run to skip)", file=sys.stderr)
         return 1
 
     if not _HAS_DISPATCH and not dry_run:
-        print("ERROR: dispatch_devin module not available (missing requests library)")
+        print("ERROR: dispatch_devin module not available (missing requests library)", file=sys.stderr)
         return 1
 
     data = _compute_eligible_issues(repo_filter)
@@ -1002,7 +1010,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
 
         if not rate_limiter.can_create_session():
             if not output_json:
-                print(f"Rate limit reached, skipping batch {batch['batch_id']}")
+                print(f"Rate limit reached, skipping batch {batch['batch_id']}", file=sys.stderr)
             results.append({
                 "batch_id": batch["batch_id"],
                 "target_repo": repo_url,
@@ -1051,7 +1059,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
 
         except Exception as e:
             if not output_json:
-                print(f"ERROR creating session for batch {batch['batch_id']}: {e}")
+                print(f"ERROR creating session for batch {batch['batch_id']}: {e}", file=sys.stderr)
             results.append({
                 "batch_id": batch["batch_id"],
                 "target_repo": repo_url,
