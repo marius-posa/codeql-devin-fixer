@@ -682,7 +682,8 @@ function renderRegistryTable(registry, containerId, countId, callbacks) {
   if (countEl) countEl.textContent = repos.length + ' repos';
   _registryCallbacks = callbacks || {};
 
-  var schedulerUrl = 'https://github.com/marius-posa/codeql-devin-fixer/actions/workflows/scheduled-scan.yml';
+  var actionRepo = _registryCallbacks.actionRepo || 'marius-posa/codeql-devin-fixer';
+  var schedulerUrl = 'https://github.com/' + actionRepo + '/actions/workflows/scheduled-scan.yml';
 
   var toolbar = '<div class="registry-toolbar">';
   toolbar += '<a href="' + escapeHtml(schedulerUrl) + '" target="_blank" class="btn registry-link-btn" title="View scheduler workflow on GitHub">View Scheduler Action</a>';

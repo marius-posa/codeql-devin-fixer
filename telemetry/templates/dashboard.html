@@ -636,6 +636,7 @@ function renderAll() {
 
 function renderRegistryPanel() {
   var callbacks = {
+    actionRepo: _flaskActionRepo,
     onToggle: function(idx) { _flaskRegistryToggle(idx); },
     onScheduleChange: function(idx, val) { _flaskRegistrySchedule(idx, val); },
     onRemove: function(idx) { _flaskRegistryRemove(idx); },
@@ -665,30 +666,41 @@ async function _saveRegistryFlask() {
 
 async function _flaskRegistryToggle(idx) {
   var repo = registryData.repos[idx];
+  var prev = repo.enabled;
   repo.enabled = repo.enabled === false ? true : false;
   renderRegistryPanel();
-  await _saveRegistryFlask();
+  var ok = await _saveRegistryFlask();
+  if (!ok) { repo.enabled = prev; renderRegistryPanel(); }
 }
 
 async function _flaskRegistrySchedule(idx, val) {
+  var prev = registryData.repos[idx].schedule;
   registryData.repos[idx].schedule = val;
-  await _saveRegistryFlask();
+  var ok = await _saveRegistryFlask();
+  if (!ok) { registryData.repos[idx].schedule = prev; renderRegistryPanel(); }
 }
 
 async function _flaskRegistryRemove(idx) {
-  var repoUrl = registryData.repos[idx].repo;
+  var removed = registryData.repos[idx];
   registryData.repos.splice(idx, 1);
   renderRegistryPanel();
   try {
     var res = await _authedFetch(API + '/api/registry/repos', {
       method: 'DELETE',
       headers: Object.assign({}, _authHeaders(), { 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ repo: repoUrl }),
+      body: JSON.stringify({ repo: removed.repo }),
     });
-    if (!res.ok) { setStatus('Remove failed: ' + res.status); return; }
+    if (!res.ok) {
+      registryData.repos.splice(idx, 0, removed);
+      renderRegistryPanel();
+      setStatus('Remove failed: ' + res.status);
+      return;
+    }
     setStatus('Repo removed');
     setUpdated();
   } catch (e) {
+    registryData.repos.splice(idx, 0, removed);
+    renderRegistryPanel();
     setStatus('Remove error: ' + e.message);
   }
 }
@@ -762,10 +774,12 @@ async function refreshData() {
 }
 
 let configWarning = '';
+let _flaskActionRepo = '';
 async function checkConfig() {
   try {
     const res = await fetch(API + '/api/config');
     const cfg = await res.json();
+    _flaskActionRepo = cfg.action_repo || '';
     const warnings = [];
     if (!cfg.github_token_set) warnings.push('GITHUB_TOKEN not set in .env \u2014 PR discovery disabled');
     if (!cfg.devin_api_key_set) warnings.push('DEVIN_API_KEY not set in .env \u2014 session polling disabled');
