@@ -38,11 +38,8 @@ import base64
 import json
 import os
 import shutil
-import stat
 import subprocess
 import sys
-import tempfile
-from urllib.parse import urlparse
 
 from retry_utils import run_git_with_retry
 
@@ -158,26 +155,6 @@ def main() -> None:
     if github_output:
         with open(github_output, "a") as f:
             f.write(f"logs_persisted={str(logs_persisted).lower()}\n")
-
-
-def _create_askpass_script(workspace_dir: str = "") -> str:
-    """Create a temporary GIT_ASKPASS script that reads the token from an env var.
-
-    The script outputs the value of ``GIT_ASKPASS_TOKEN`` at runtime rather
-    than embedding the token directly, preventing exposure if the temp file
-    is read by a concurrent process.  When *workspace_dir* is provided the
-    temp file is created there instead of the system default to reduce
-    predictability.
-    """
-    kwargs: dict[str, str] = {"prefix": "git_askpass_", "suffix": ".sh"}
-    if workspace_dir and os.path.isdir(workspace_dir):
-        kwargs["dir"] = workspace_dir
-    fd, path = tempfile.mkstemp(**kwargs)
-    with os.fdopen(fd, "w") as f:
-        f.write("#!/bin/sh\n")
-        f.write('echo "$GIT_ASKPASS_TOKEN"\n')
-    os.chmod(path, stat.S_IRWXU)
-    return path
 
 
 if __name__ == "__main__":
