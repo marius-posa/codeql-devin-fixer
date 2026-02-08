@@ -11,6 +11,8 @@ import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from unittest.mock import patch
+
 from scripts.parse_sarif import (
     classify_severity,
     extract_cwes,
@@ -26,6 +28,9 @@ from scripts.parse_sarif import (
     _sort_by_file_proximity,
     _get_issue_files,
     _get_issue_dirs,
+    _load_custom_cwe_families,
+    _CWE_FAMILY_INDEX,
+    CWE_FAMILIES,
 )
 
 
@@ -724,3 +729,45 @@ class TestGenerateSummary:
         assert "HIGH" in summary
         assert "injection" in summary
         assert "Batches Created: 1" in summary
+
+
+class TestLoadCustomCweFamilies:
+    def _cleanup_custom(self, families_to_remove, cwes_to_remove):
+        for f in families_to_remove:
+            CWE_FAMILIES.pop(f, None)
+        for c in cwes_to_remove:
+            _CWE_FAMILY_INDEX.pop(c, None)
+
+    @patch.dict(os.environ, {"CUSTOM_CWE_FAMILIES": ""})
+    def test_empty_env_var_is_noop(self):
+        _load_custom_cwe_families()
+
+    @patch.dict(os.environ, {"CUSTOM_CWE_FAMILIES": '{"custom-family": ["cwe-9999"]}'})
+    def test_adds_new_family(self):
+        _load_custom_cwe_families()
+        assert _CWE_FAMILY_INDEX.get("cwe-9999") == "custom-family"
+        assert "cwe-9999" in CWE_FAMILIES.get("custom-family", [])
+        self._cleanup_custom(["custom-family"], ["cwe-9999"])
+
+    @patch.dict(os.environ, {"CUSTOM_CWE_FAMILIES": '{"injection": ["cwe-8888"]}'})
+    def test_extends_existing_family(self):
+        _load_custom_cwe_families()
+        assert _CWE_FAMILY_INDEX.get("cwe-8888") == "injection"
+        assert "cwe-8888" in CWE_FAMILIES["injection"]
+        CWE_FAMILIES["injection"].remove("cwe-8888")
+        _CWE_FAMILY_INDEX.pop("cwe-8888", None)
+
+    @patch.dict(os.environ, {"CUSTOM_CWE_FAMILIES": "not-json"})
+    def test_invalid_json_ignored(self, capsys):
+        _load_custom_cwe_families()
+        assert "WARNING" in capsys.readouterr().out
+
+    @patch.dict(os.environ, {"CUSTOM_CWE_FAMILIES": '["not", "a", "dict"]'})
+    def test_non_dict_json_ignored(self, capsys):
+        _load_custom_cwe_families()
+        assert "WARNING" in capsys.readouterr().out
+
+    @patch.dict(os.environ, {"CUSTOM_CWE_FAMILIES": '{"bad": "not-a-list"}'})
+    def test_non_list_members_skipped(self):
+        _load_custom_cwe_families()
+        assert "bad" not in CWE_FAMILIES
