@@ -170,7 +170,7 @@ runs:
           exit 1
         fi
         if [ -n "$GITHUB_TOKEN" ]; then
-          CREDS=$(printf "x-access-token:%s" "$GITHUB_TOKEN" | base64)
+          CREDS=$(printf "x-access-token:%s" "$GITHUB_TOKEN" | base64 -w0)
           git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $CREDS" \
             clone --depth 1 --single-branch -- "$REPO_URL" "$TARGET_DIR"
         else
