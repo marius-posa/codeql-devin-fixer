@@ -66,7 +66,6 @@ def _collect_fix_examples(
     output_dir: str,
     sessions: list,
     batches: list,
-    issues: list,
 ) -> list[dict]:
     """Collect fix diffs from successful sessions to store as fix examples.
 
@@ -86,7 +85,7 @@ def _collect_fix_examples(
     for s in sessions:
         sid = s.get("session_id", "")
         status = s.get("status", "")
-        if status in ("finished", "stopped", "created"):
+        if status in ("finished", "stopped"):
             finished_session_ids.add(sid)
         bid = s.get("batch_id")
         if bid is not None:
@@ -202,7 +201,7 @@ def build_telemetry_record(output_dir: str) -> dict:
                 i.get("id", "") for i in batch.get("issues", [])
             ]
 
-    fix_examples = _collect_fix_examples(output_dir, sessions, batches, issues)
+    fix_examples = _collect_fix_examples(output_dir, sessions, batches)
 
     if issues and not issue_fingerprints:
         print(
