@@ -55,6 +55,7 @@ from database import get_connection, init_db, insert_run, query_all_sessions, qu
 from issue_tracking import _parse_ts  # noqa: E402
 from verification import load_verification_records, build_fingerprint_fix_map  # noqa: E402
 from fix_learning import CWE_FIX_HINTS, FixLearning  # noqa: E402
+from github_utils import gh_headers  # noqa: E402
 
 try:
     from dispatch_devin import create_devin_session  # noqa: E402
@@ -63,10 +64,9 @@ except ImportError:
     _HAS_DISPATCH = False
 
 try:
-    import requests as _requests
+    from retry_utils import request_with_retry  # noqa: E402
     _HAS_REQUESTS = True
 except ImportError:
-    _requests = None  # type: ignore[assignment]
     _HAS_REQUESTS = False
 
 REGISTRY_PATH = _ROOT_DIR / "repo_registry.json"
@@ -1171,14 +1171,12 @@ def _trigger_scan(
         inputs["default_branch"] = default_branch
 
     url = f"https://api.github.com/repos/{action_repo}/actions/workflows/codeql-fixer.yml/dispatches"
-    headers = {
-        "Accept": "application/vnd.github+json",
-        "Authorization": f"token {github_token}",
-    }
     payload = {"ref": "main", "inputs": inputs}
 
     try:
-        resp = _requests.post(url, headers=headers, json=payload, timeout=30)
+        resp = request_with_retry(
+            "POST", url, headers=gh_headers(github_token), json=payload, timeout=30,
+        )
         if resp.status_code == 204:
             return {"repo": repo_url, "status": "triggered"}
         return {
