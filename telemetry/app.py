@@ -39,6 +39,7 @@ CACHE_TTL      Seconds to cache external API results (default 120).
 
 import functools
 import hmac
+import io
 import json
 import os
 import pathlib
@@ -46,7 +47,7 @@ import time
 import threading
 
 import requests
-from flask import Flask, jsonify, render_template, request as flask_request
+from flask import Flask, jsonify, render_template, request as flask_request, send_file
 from flask_cors import CORS
 
 from config import RUNS_DIR, gh_headers
@@ -54,9 +55,13 @@ from github_service import fetch_prs_from_github, link_prs_to_sessions
 from devin_service import poll_devin_sessions, save_session_updates
 from issue_tracking import track_issues_across_runs
 from aggregation import aggregate_sessions, aggregate_stats, build_repos_dict
+from oauth import oauth_bp, is_oauth_configured, get_current_user, filter_by_user_access
+from pdf_report import generate_pdf
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(32).hex())
 CORS(app)
+app.register_blueprint(oauth_bp)
 
 
 @app.after_request
@@ -432,7 +437,33 @@ def api_config():
         response["github_token_set"] = bool(os.environ.get("GITHUB_TOKEN", ""))
         response["devin_api_key_set"] = bool(os.environ.get("DEVIN_API_KEY", ""))
         response["action_repo"] = os.environ.get("ACTION_REPO", "")
+    response["oauth_configured"] = is_oauth_configured()
+    user = get_current_user()
+    if user:
+        response["user"] = user
     return jsonify(response)
+
+
+@app.route("/api/report/pdf")
+def api_report_pdf():
+    runs = cache.get_runs()
+    repo_filter = flask_request.args.get("repo", "")
+    if repo_filter:
+        runs = [r for r in runs if r.get("target_repo") == repo_filter]
+    runs = filter_by_user_access(runs)
+    sessions = aggregate_sessions(runs)
+    prs = cache.get_prs(runs)
+    stats = aggregate_stats(runs, sessions, prs)
+    issues = track_issues_across_runs(runs)
+    pdf_bytes = generate_pdf(stats, issues, repo_filter=repo_filter)
+    buf = io.BytesIO(pdf_bytes)
+    buf.seek(0)
+    filename = "security-report"
+    if repo_filter:
+        short = repo_filter.replace("https://github.com/", "").replace("/", "-")
+        filename += f"-{short}"
+    filename += ".pdf"
+    return send_file(buf, mimetype="application/pdf", as_attachment=True, download_name=filename)
 
 
 @app.route("/api/backfill", methods=["POST"])
