@@ -23,7 +23,7 @@ os.environ["TELEMETRY_DB_PATH"] = _test_db_path
 import database
 database.DB_PATH = pathlib.Path(_test_db_path)
 from database import get_connection, init_db, insert_run, upsert_pr
-from app import app, _paginate, _load_registry, _save_registry
+from app import app, _paginate, _load_registry, _save_registry, _load_orchestrator_state, _load_orchestrator_registry
 
 
 def _seed_db(runs=None, prs=None):
@@ -347,3 +347,114 @@ class TestFilterByUserAccess:
                 result = filter_by_user_access(items)
                 assert len(result) == 1
                 assert result[0]["target_repo"] == "owner/repo"
+
+
+class TestOrchestratorEndpoints:
+    def test_orchestrator_status_returns_json(self, client):
+        resp = client.get("/api/orchestrator/status")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "issue_state_breakdown" in data
+        assert "rate_limit" in data
+        assert "objective_progress" in data
+        assert "timestamp" in data
+
+    def test_orchestrator_status_rate_limit_shape(self, client):
+        resp = client.get("/api/orchestrator/status")
+        data = resp.get_json()
+        rl = data["rate_limit"]
+        assert "used" in rl
+        assert "max" in rl
+        assert "remaining" in rl
+        assert "period_hours" in rl
+        assert rl["remaining"] == rl["max"] - rl["used"]
+
+    def test_orchestrator_history_returns_paginated(self, client):
+        resp = client.get("/api/orchestrator/history")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "items" in data
+        assert "total" in data
+        assert "page" in data
+
+    def test_orchestrator_history_with_fingerprint(self, client):
+        resp = client.get("/api/orchestrator/history?fingerprint=abc123")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["fingerprint"] == "abc123"
+        assert "entries" in data
+
+    def test_orchestrator_plan_runs(self, client):
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = type("R", (), {
+                "returncode": 0,
+                "stdout": json.dumps({"eligible_issues": 0, "batches": []}),
+                "stderr": "",
+            })()
+            resp = client.get("/api/orchestrator/plan")
+            assert resp.status_code == 200
+
+    def test_orchestrator_plan_failure(self, client):
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = type("R", (), {
+                "returncode": 1,
+                "stdout": "",
+                "stderr": "error",
+            })()
+            resp = client.get("/api/orchestrator/plan")
+            assert resp.status_code == 500
+
+    def test_orchestrator_scan_requires_env(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.delenv("ACTION_REPO", raising=False)
+        resp = client.post(
+            "/api/orchestrator/scan",
+            headers={"X-API-Key": "test-key"},
+            json={},
+        )
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert "Missing env vars" in data["error"]
+
+    def test_orchestrator_dispatch_requires_env(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        monkeypatch.delenv("DEVIN_API_KEY", raising=False)
+        resp = client.post(
+            "/api/orchestrator/dispatch",
+            headers={"X-API-Key": "test-key"},
+            json={},
+        )
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert "DEVIN_API_KEY" in data["error"]
+
+    def test_orchestrator_scan_dry_run_bypasses_env_check(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.delenv("ACTION_REPO", raising=False)
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = type("R", (), {
+                "returncode": 0,
+                "stdout": json.dumps({"dry_run": True, "total_repos": 0, "results": []}),
+                "stderr": "",
+            })()
+            resp = client.post(
+                "/api/orchestrator/scan",
+                headers={"X-API-Key": "test-key"},
+                json={"dry_run": True},
+            )
+            assert resp.status_code == 200
+
+    def test_load_orchestrator_state_missing_file(self):
+        with patch("app._ORCHESTRATOR_STATE_PATH") as mock_path:
+            mock_path.exists.return_value = False
+            state = _load_orchestrator_state()
+            assert state["last_cycle"] is None
+            assert state["dispatch_history"] == {}
+
+    def test_load_orchestrator_registry_missing_file(self):
+        with patch("app._ORCHESTRATOR_REGISTRY_PATH") as mock_path:
+            mock_path.exists.return_value = False
+            reg = _load_orchestrator_registry()
+            assert reg["repos"] == []

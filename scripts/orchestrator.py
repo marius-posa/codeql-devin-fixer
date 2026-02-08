@@ -36,7 +36,6 @@ import hashlib
 import json
 import os
 import pathlib
-import re
 import sys
 import time
 from dataclasses import dataclass, field
@@ -1165,7 +1164,8 @@ def _trigger_scan(
     }
     overrides = repo_config.get("overrides", {})
     if overrides.get("languages"):
-        inputs["languages"] = overrides["languages"]
+        langs = overrides["languages"]
+        inputs["languages"] = ",".join(langs) if isinstance(langs, list) else langs
     default_branch = repo_config.get("default_branch", "main")
     if default_branch:
         inputs["default_branch"] = default_branch

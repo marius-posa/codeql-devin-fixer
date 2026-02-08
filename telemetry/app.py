@@ -658,8 +658,14 @@ def api_orchestrator_status():
     timestamps = rl_data.get("timestamps", [])
     from datetime import datetime, timedelta, timezone
     cutoff = datetime.now(timezone.utc) - timedelta(hours=period_hours)
-    recent = [t for t in timestamps if t > cutoff.isoformat()]
-    used = len(recent)
+    used = 0
+    for t in timestamps:
+        try:
+            ts = datetime.fromisoformat(t.replace("Z", "+00:00")) if isinstance(t, str) else None
+            if ts and ts > cutoff:
+                used += 1
+        except (ValueError, TypeError):
+            pass
 
     conn = get_connection()
     try:
@@ -732,6 +738,9 @@ def api_orchestrator_dispatch():
     repo_filter = body.get("repo", "")
     dry_run = body.get("dry_run", False)
 
+    if not dry_run and not os.environ.get("DEVIN_API_KEY"):
+        return jsonify({"error": "DEVIN_API_KEY not configured on server"}), 400
+
     import subprocess
     cmd = ["python3", str(_ORCHESTRATOR_DIR / "orchestrator.py"), "dispatch", "--json"]
     if repo_filter:
@@ -761,6 +770,11 @@ def api_orchestrator_scan():
     body = flask_request.get_json(silent=True) or {}
     repo_filter = body.get("repo", "")
     dry_run = body.get("dry_run", False)
+
+    if not dry_run:
+        missing = [v for v in ("GITHUB_TOKEN", "ACTION_REPO") if not os.environ.get(v)]
+        if missing:
+            return jsonify({"error": f"Missing env vars: {', '.join(missing)}"}), 400
 
     import subprocess
     cmd = ["python3", str(_ORCHESTRATOR_DIR / "orchestrator.py"), "scan", "--json"]
