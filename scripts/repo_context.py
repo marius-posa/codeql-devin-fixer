@@ -250,7 +250,7 @@ def _detect_style_configs(target_dir: str) -> list[str]:
                     found.append(cfg)
             elif cfg in ("setup.cfg", "tox.ini"):
                 data = _read_lines_safe(os.path.join(target_dir, cfg))
-                style_sections = ["[flake8]", "[isort]", "[mypy]", "[pylint"]
+                style_sections = ["[flake8]", "[isort]", "[mypy]", "[pylint]"]
                 if any(section in line for line in data for section in style_sections):
                     found.append(cfg)
             else:
