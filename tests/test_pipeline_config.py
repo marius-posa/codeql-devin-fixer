@@ -16,6 +16,7 @@ class TestPipelineConfigDefaults:
         assert cfg.github_token == ""
         assert cfg.target_repo == ""
         assert cfg.default_branch == "main"
+        assert cfg.mode == "basic"
         assert cfg.batch_size == 5
         assert cfg.max_sessions == 25
         assert cfg.severity_threshold == "low"
@@ -36,6 +37,7 @@ class TestPipelineConfigFromEnv:
         monkeypatch.setenv("SEVERITY_THRESHOLD", "high")
         monkeypatch.setenv("DRY_RUN", "true")
         monkeypatch.setenv("MAX_ACU_PER_SESSION", "50")
+        monkeypatch.setenv("MODE", "orchestrator")
         cfg = PipelineConfig.from_env()
         assert cfg.github_token == "tok123"
         assert cfg.target_repo == "owner/repo"
@@ -43,18 +45,21 @@ class TestPipelineConfigFromEnv:
         assert cfg.severity_threshold == "high"
         assert cfg.dry_run is True
         assert cfg.max_acu_per_session == 50
+        assert cfg.mode == "orchestrator"
 
     def test_missing_env_uses_defaults(self, monkeypatch):
         for k in ("GITHUB_TOKEN", "TARGET_REPO", "BATCH_SIZE", "MAX_SESSIONS",
                    "SEVERITY_THRESHOLD", "RUN_NUMBER", "DEVIN_API_KEY",
                    "MAX_ACU_PER_SESSION", "DRY_RUN", "FORK_URL", "RUN_ID",
                    "FORK_OWNER", "REPO_DIR", "RUN_LABEL", "ACTION_REPO",
-                   "LOGS_DIR", "DASHBOARD_OUTPUT_DIR", "DEFAULT_BRANCH"):
+                   "LOGS_DIR", "DASHBOARD_OUTPUT_DIR", "DEFAULT_BRANCH",
+                   "MODE"):
             monkeypatch.delenv(k, raising=False)
         cfg = PipelineConfig.from_env()
         assert cfg.batch_size == 5
         assert cfg.max_sessions == 25
         assert cfg.dry_run is False
+        assert cfg.mode == "basic"
 
 
 class TestPipelineConfigValidate:

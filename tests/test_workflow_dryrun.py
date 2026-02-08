@@ -19,6 +19,7 @@ from scripts.parse_sarif import (
     batch_issues,
     assign_issue_ids,
     generate_summary,
+    FINGERPRINT_LENGTH,
 )
 from scripts.dispatch_devin import build_batch_prompt, validate_repo_url
 
@@ -49,7 +50,7 @@ class TestDryRunSmokeTest:
         filtered = assign_issue_ids(filtered, run_number)
         for issue in filtered:
             assert issue["id"].startswith("CQLF-R99-")
-            assert len(issue["fingerprint"]) == 16
+            assert len(issue["fingerprint"]) == FINGERPRINT_LENGTH
 
         batches = batch_issues(filtered, batch_size, max_batches)
         assert len(batches) > 0, "Batching should create at least one batch"
