@@ -83,6 +83,10 @@ function badgeClass(status) {
   if (s === 'recurring') return 'badge-recurring';
   if (s === 'new') return 'badge-new';
   if (s === 'fixed') return 'badge-fixed';
+  if (s === 'on-track') return 'badge-on-track';
+  if (s === 'at-risk') return 'badge-at-risk';
+  if (s === 'breached') return 'badge-breached';
+  if (s === 'met') return 'badge-met';
   return 'badge-unknown';
 }
 
@@ -282,12 +286,13 @@ function _renderIssuesContent(filtered, allIssues, containerId, countId) {
   html += '<th><input type="checkbox" class="bulk-checkbox" onchange="_toggleBulkAll(this.checked)"></th>';
   html += '<th>Status</th><th>Rule</th><th>Severity</th><th>Category</th>';
   if (showRepo) html += '<th>Repo</th>';
-  html += '<th>File</th><th>Line</th><th>First Seen</th><th>Last Seen</th><th>Runs</th>';
+  html += '<th>File</th><th>Line</th><th>SLA</th><th>First Seen</th><th>Last Seen</th><th>Runs</th>';
   html += '</tr></thead><tbody>';
   filtered.forEach(function(i, idx) {
     var firstDate = i.first_seen_date ? formatDate(i.first_seen_date) : 'Run #' + i.first_seen_run;
     var lastDate = i.last_seen_date ? formatDate(i.last_seen_date) : 'Run #' + i.last_seen_run;
-    html += '<tr style="cursor:pointer" onclick="_openDrawerByFp(\'' + escapeHtml(i.fingerprint) + '\')">';
+    var rowClass = (i.sla_status === 'breached') ? ' class="sla-breached"' : '';
+    html += '<tr style="cursor:pointer"' + rowClass + ' onclick="_openDrawerByFp(\'' + escapeHtml(i.fingerprint) + '\')">';
     html += '<td onclick="event.stopPropagation()"><input type="checkbox" class="bulk-checkbox issue-row-checkbox" data-fingerprint="' + escapeHtml(i.fingerprint) + '" onchange="_toggleBulkCheckbox(this.dataset.fingerprint)"' + (_bulkSelected.has(i.fingerprint) ? ' checked' : '') + '></td>';
     html += '<td><span class="badge ' + badgeClass(i.status) + '">' + escapeHtml(i.status) + '</span></td>';
     html += '<td style="font-family:monospace;font-size:11px">' + escapeHtml(i.rule_id || i.fingerprint.slice(0,12) + '...') + '</td>';
@@ -296,6 +301,8 @@ function _renderIssuesContent(filtered, allIssues, containerId, countId) {
     if (showRepo) html += '<td>' + escapeHtml(repoShort(i.target_repo)) + '</td>';
     html += '<td style="font-family:monospace;font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtml(i.file) + '">' + (i.file ? escapeHtml(i.file.split('/').pop()) : '-') + '</td>';
     html += '<td>' + (i.start_line || '-') + '</td>';
+    var slaLabel = i.sla_status || 'unknown';
+    html += '<td><span class="badge ' + badgeClass(slaLabel) + '">' + escapeHtml(slaLabel) + '</span></td>';
     html += '<td title="Run #' + i.first_seen_run + '">' + firstDate + '</td>';
     html += '<td title="Run #' + i.last_seen_run + '">' + lastDate + '</td>';
     html += '<td>' + i.appearances + 'x</td>';
@@ -564,6 +571,18 @@ function openIssueDrawer(issue) {
   }
   if (issue.fix_duration_hours != null) html += _drawerField('Fix Duration', issue.fix_duration_hours + 'h');
   html += '</div>';
+  if (issue.sla_status && issue.sla_status !== 'unknown') {
+    html += '<div class="drawer-section">';
+    html += '<div class="drawer-section-title">SLA</div>';
+    html += _drawerField('Status', '<span class="badge ' + badgeClass(issue.sla_status) + '">' + escapeHtml(issue.sla_status) + '</span>');
+    if (issue.sla_limit_hours) html += _drawerField('SLA Limit', issue.sla_limit_hours + 'h');
+    if (issue.sla_hours_elapsed != null) html += _drawerField('Time Elapsed', issue.sla_hours_elapsed + 'h');
+    if (issue.sla_hours_remaining != null) {
+      var remainColor = issue.sla_hours_remaining < 0 ? 'var(--accent-red)' : (issue.sla_status === 'at-risk' ? 'var(--accent-orange)' : 'var(--accent-green)');
+      html += _drawerField('Time Remaining', '<span style="color:' + remainColor + '">' + issue.sla_hours_remaining + 'h</span>');
+    }
+    html += '</div>';
+  }
   body.innerHTML = html;
 }
 function _drawerField(label, value) {

@@ -54,7 +54,7 @@ from config import RUNS_DIR, gh_headers
 from github_service import fetch_prs_from_github, link_prs_to_sessions
 from devin_service import poll_devin_sessions, save_session_updates
 from issue_tracking import track_issues_across_runs
-from aggregation import aggregate_sessions, aggregate_stats, build_repos_dict
+from aggregation import aggregate_sessions, aggregate_stats, build_repos_dict, compute_sla_summary
 from verification import (
     load_verification_records,
     build_session_verification_map,
@@ -536,6 +536,16 @@ def api_issues():
     return jsonify(_paginate(issues, page, per_page))
 
 
+@app.route("/api/sla")
+def api_sla():
+    runs = cache.get_runs()
+    repo_filter = flask_request.args.get("repo", "")
+    if repo_filter:
+        runs = [r for r in runs if r.get("target_repo") == repo_filter]
+    issues = track_issues_across_runs(runs)
+    return jsonify(compute_sla_summary(issues))
+
+
 @app.route("/api/verification")
 def api_verification():
     """Return verification records and aggregate stats."""
@@ -548,6 +558,7 @@ def api_verification():
         "records": _paginate(verification_records, page, per_page),
         "session_map": session_map,
     })
+
 
 
 @app.route("/api/dispatch/preflight")

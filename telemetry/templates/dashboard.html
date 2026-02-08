@@ -77,6 +77,11 @@
   </div>
 
   <div class="panel">
+    <div class="panel-header">SLA Compliance</div>
+    <div class="panel-body" id="sla-panel-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+  </div>
+
+  <div class="panel">
     <div class="panel-header">
       Issue Tracking
       <span id="issues-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
@@ -114,7 +119,69 @@ let allPrs = [];
 let allRepos = [];
 let allIssues = [];
 let stats = {};
+let slaData = {};
 let verificationData = {};
+
+function renderSlaPanel(sla) {
+  var el = document.getElementById('sla-panel-container');
+  if (!sla || (!sla.total_on_track && !sla.total_at_risk && !sla.total_breached && !sla.total_met)) {
+    el.innerHTML = '<div class="empty-state"><span class="empty-state-icon">&#x23F1;</span><div class="empty-state-text">No SLA data available yet. Run scans to see SLA compliance.</div></div>';
+    return;
+  }
+  var html = '<div class="sla-summary">';
+  html += '<div class="sla-card sla-on-track"><div class="sla-card-count">' + (sla.total_on_track || 0) + '</div><div class="sla-card-label">On Track</div></div>';
+  html += '<div class="sla-card sla-at-risk"><div class="sla-card-count">' + (sla.total_at_risk || 0) + '</div><div class="sla-card-label">At Risk</div></div>';
+  html += '<div class="sla-card sla-breached"><div class="sla-card-count">' + (sla.total_breached || 0) + '</div><div class="sla-card-label">Breached</div></div>';
+  html += '<div class="sla-card sla-met"><div class="sla-card-count">' + (sla.total_met || 0) + '</div><div class="sla-card-label">Met (Fixed)</div></div>';
+  html += '</div>';
+
+  var ttf = sla.time_to_fix_by_severity || {};
+  var sevs = Object.keys(ttf);
+  var sevOrder = ['critical','high','medium','low'];
+  sevs.sort(function(a, b) {
+    var ia = sevOrder.indexOf(a), ib = sevOrder.indexOf(b);
+    if (ia === -1) ia = 99;
+    if (ib === -1) ib = 99;
+    return ia - ib;
+  });
+  if (sevs.length > 0) {
+    html += '<div style="margin-top:12px"><div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Time to Fix by Severity</div>';
+    html += '<table class="ttf-table"><thead><tr><th>Severity</th><th>Fixed</th><th>Min</th><th>Avg</th><th>Median</th><th>Max</th></tr></thead><tbody>';
+    sevs.forEach(function(sev) {
+      var t = ttf[sev];
+      html += '<tr><td><span class="badge ' + badgeClass(sev) + '">' + escapeHtml(sev) + '</span></td>';
+      html += '<td>' + t.count + '</td>';
+      html += '<td>' + t.min + 'h</td>';
+      html += '<td>' + t.avg + 'h</td>';
+      html += '<td>' + t.median + 'h</td>';
+      html += '<td>' + t.max + 'h</td></tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+
+  var bySev = sla.by_severity || {};
+  var bsKeys = Object.keys(bySev);
+  bsKeys.sort(function(a, b) {
+    var ia = sevOrder.indexOf(a), ib = sevOrder.indexOf(b);
+    if (ia === -1) ia = 99;
+    if (ib === -1) ib = 99;
+    return ia - ib;
+  });
+  if (bsKeys.length > 0) {
+    html += '<div style="margin-top:16px"><div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">SLA Status by Severity</div>';
+    html += '<table class="ttf-table"><thead><tr><th>Severity</th><th>On Track</th><th>At Risk</th><th>Breached</th><th>Met</th></tr></thead><tbody>';
+    bsKeys.forEach(function(sev) {
+      var s = bySev[sev];
+      html += '<tr><td><span class="badge ' + badgeClass(sev) + '">' + escapeHtml(sev) + '</span></td>';
+      html += '<td>' + (s['on-track'] || 0) + '</td>';
+      html += '<td>' + (s['at-risk'] || 0) + '</td>';
+      html += '<td style="' + ((s['breached'] || 0) > 0 ? 'color:var(--accent-red);font-weight:600' : '') + '">' + (s['breached'] || 0) + '</td>';
+      html += '<td>' + (s['met'] || 0) + '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+  el.innerHTML = html;
+}
 
 function renderMetrics(s) {
   const grid = document.getElementById('metrics-grid');
@@ -413,6 +480,7 @@ async function fetchAll() {
     { key: 'prs', endpoint: '/api/prs' },
     { key: 'repos', endpoint: '/api/repos', single: true },
     { key: 'issues', endpoint: '/api/issues' },
+    { key: 'sla', endpoint: '/api/sla', single: true },
     { key: 'verification', endpoint: '/api/verification', single: true },
   ];
   const results = {};
@@ -440,6 +508,7 @@ async function fetchAll() {
   if (results.prs !== undefined) allPrs = results.prs;
   if (results.repos !== undefined) allRepos = results.repos;
   if (results.issues !== undefined) allIssues = results.issues;
+  if (results.sla !== undefined) slaData = results.sla;
   if (results.verification !== undefined) verificationData = results.verification;
   renderAll();
   setStatus(hasError ? 'Loaded with some errors (check console)' : 'Ready');
@@ -500,6 +569,7 @@ function renderAll() {
   renderSessionsTable(allSessions, 'sessions-table-container', 'sessions-count');
   renderPrsTable(allPrs, 'prs-table-container', 'prs-count');
   renderIssuesTable(allIssues, 'issues-table-container', 'issues-count');
+  renderSlaPanel(slaData);
   renderVerificationPanel(verificationData);
 }
 
