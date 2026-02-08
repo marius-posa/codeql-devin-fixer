@@ -21,7 +21,10 @@
     "global_session_limit_period_hours": 24,
     "objectives": [],
     "alert_on_verified_fix": true,
-    "alert_severities": ["critical", "high"]
+    "alert_severities": [
+      "critical",
+      "high"
+    ]
   },
   "repos": [
     {
@@ -33,11 +36,19 @@
       "max_sessions_per_cycle": 10,
       "auto_scan": true,
       "auto_dispatch": true,
-      "tags": ["web-app"],
+      "tags": [
+        "web-app"
+      ],
       "overrides": {
         "languages": "javascript",
         "severity_threshold": "medium"
       }
+    },
+    {
+      "repo": "https://github.com/marius-posa/codeql-devin-fixer",
+      "enabled": true,
+      "schedule": "daily",
+      "overrides": {}
     }
   ]
 }
