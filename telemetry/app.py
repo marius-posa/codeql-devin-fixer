@@ -636,6 +636,16 @@ def _load_orchestrator_state() -> dict:
         }
 
 
+def _serialize_orch_config(orch_config: dict) -> dict:
+    return {
+        "global_session_limit": orch_config.get("global_session_limit", 20),
+        "global_session_limit_period_hours": orch_config.get("global_session_limit_period_hours", 24),
+        "objectives": orch_config.get("objectives", []),
+        "alert_on_objective_met": orch_config.get("alert_on_objective_met", False),
+        "alert_webhook_url": orch_config.get("alert_webhook_url", ""),
+    }
+
+
 def _load_orchestrator_registry() -> dict:
     if not _ORCHESTRATOR_REGISTRY_PATH.exists():
         return {"version": "2.0", "defaults": {}, "orchestrator": {}, "repos": []}
@@ -851,13 +861,7 @@ def api_orchestrator_cycle():
 def api_orchestrator_config():
     registry = _load_orchestrator_registry()
     orch_config = registry.get("orchestrator", {})
-    return jsonify({
-        "global_session_limit": orch_config.get("global_session_limit", 20),
-        "global_session_limit_period_hours": orch_config.get("global_session_limit_period_hours", 24),
-        "objectives": orch_config.get("objectives", []),
-        "alert_on_objective_met": orch_config.get("alert_on_objective_met", False),
-        "alert_webhook_url": orch_config.get("alert_webhook_url", ""),
-    })
+    return jsonify(_serialize_orch_config(orch_config))
 
 
 @app.route("/api/orchestrator/config", methods=["PUT"])
@@ -886,13 +890,7 @@ def api_orchestrator_config_update():
         json.dump(registry, f, indent=2)
         f.write("\n")
 
-    return jsonify({
-        "global_session_limit": orch_config.get("global_session_limit", 20),
-        "global_session_limit_period_hours": orch_config.get("global_session_limit_period_hours", 24),
-        "objectives": orch_config.get("objectives", []),
-        "alert_on_objective_met": orch_config.get("alert_on_objective_met", False),
-        "alert_webhook_url": orch_config.get("alert_webhook_url", ""),
-    })
+    return jsonify(_serialize_orch_config(orch_config))
 
 
 def _load_registry() -> dict:
