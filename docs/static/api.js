@@ -166,7 +166,8 @@ async function loadRuns(forceRefresh) {
     return _runsCache;
   }
   const fileItems = await fetchRunsFromGitHub();
-  const runs = await downloadRunFiles(fileItems);
+  const onlyRunItems = fileItems.filter(function(i) { return !i.name.startsWith('verification_') && i.name.endsWith('.json'); });
+  const runs = await downloadRunFiles(onlyRunItems);
   _runsCache = runs;
   _runsCacheKey = cacheKey;
   return runs;
@@ -551,6 +552,112 @@ function trackIssuesAcrossRuns(runs) {
     return (a.last_seen_date || '') < (b.last_seen_date || '') ? 1 : -1;
   });
   return result;
+}
+
+async function loadVerificationRecords() {
+  const fileItems = await fetchRunsFromGitHub();
+  const verItems = fileItems.filter(function(i) { return i.name.startsWith('verification_') && i.name.endsWith('.json'); });
+  const records = await downloadRunFiles(verItems);
+  return records;
+}
+
+function buildSessionVerificationMap(verificationRecords) {
+  const sessionMap = {};
+  for (const record of verificationRecords) {
+    const sessionId = record.session_id || '';
+    if (!sessionId) continue;
+    const summary = record.summary || {};
+    const fixedCount = summary.fixed_count || 0;
+    const totalTargeted = summary.total_targeted || 0;
+    let label = 'codeql-needs-work';
+    if (totalTargeted > 0) {
+      if (fixedCount === totalTargeted) label = 'verified-fix';
+      else if (fixedCount > 0) label = 'codeql-partial-fix';
+    }
+    const fixedFps = (record.verified_fixed || []).map(function(item) { return item.fingerprint || ''; }).filter(Boolean);
+    sessionMap[sessionId] = {
+      verified_at: record.verified_at || '',
+      pr_url: record.pr_url || '',
+      pr_number: record.pr_number || '',
+      fixed_count: fixedCount,
+      remaining_count: summary.remaining_count || 0,
+      total_targeted: totalTargeted,
+      fix_rate: summary.fix_rate || 0,
+      label: label,
+      fixed_fingerprints: fixedFps,
+      cwe_family: record.cwe_family || '',
+    };
+  }
+  return sessionMap;
+}
+
+function buildFingerprintFixMap(verificationRecords) {
+  const fpMap = {};
+  for (const record of verificationRecords) {
+    const sessionId = record.session_id || '';
+    const prUrl = record.pr_url || '';
+    const verifiedAt = record.verified_at || '';
+    for (const item of (record.verified_fixed || [])) {
+      const fp = item.fingerprint || '';
+      if (!fp || fpMap[fp]) continue;
+      fpMap[fp] = {
+        fixed_by_session: sessionId,
+        fixed_by_pr: prUrl,
+        verified_at: verifiedAt,
+      };
+    }
+  }
+  return fpMap;
+}
+
+function enrichIssuesWithVerification(issues, verificationRecords) {
+  const fpMap = buildFingerprintFixMap(verificationRecords);
+  for (const issue of issues) {
+    const fp = issue.fingerprint || '';
+    if (fp && fpMap[fp]) {
+      issue.fixed_by_session = fpMap[fp].fixed_by_session;
+      issue.fixed_by_pr = fpMap[fp].fixed_by_pr;
+      issue.verified_at = fpMap[fp].verified_at;
+    }
+  }
+  return issues;
+}
+
+function enrichSessionsWithVerification(sessions, verificationRecords) {
+  const sessionMap = buildSessionVerificationMap(verificationRecords);
+  for (const s of sessions) {
+    let sid = s.session_id || '';
+    const cleanSid = sid.startsWith('devin-') ? sid.slice(6) : sid;
+    const v = sessionMap[sid] || sessionMap[cleanSid];
+    if (v) {
+      s.verification = v;
+    }
+  }
+  return sessions;
+}
+
+function aggregateVerificationStats(verificationRecords) {
+  let totalFixed = 0, totalRemaining = 0, totalTargeted = 0;
+  let fullyVerified = 0, partialFixes = 0;
+  for (const record of verificationRecords) {
+    const summary = record.summary || {};
+    const fixed = summary.fixed_count || 0;
+    const targeted = summary.total_targeted || 0;
+    totalFixed += fixed;
+    totalRemaining += summary.remaining_count || 0;
+    totalTargeted += targeted;
+    if (targeted > 0 && fixed === targeted) fullyVerified++;
+    else if (fixed > 0) partialFixes++;
+  }
+  return {
+    total_verifications: verificationRecords.length,
+    total_issues_fixed: totalFixed,
+    total_issues_remaining: totalRemaining,
+    total_issues_targeted: totalTargeted,
+    fully_verified_prs: fullyVerified,
+    partial_fix_prs: partialFixes,
+    overall_fix_rate: Math.round(totalFixed / Math.max(totalTargeted, 1) * 1000) / 10,
+  };
 }
 
 async function dispatchWorkflow(payload) {

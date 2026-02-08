@@ -88,6 +88,17 @@ function renderBarChart(container, data) {
   }).join('') + '</div>';
 }
 
+function _verificationBadge(v) {
+  if (!v) return '<span class="badge badge-unknown">pending</span>';
+  var label = v.label || '';
+  var cls = 'badge-unknown';
+  if (label === 'verified-fix') cls = 'badge-verified';
+  else if (label === 'codeql-partial-fix') cls = 'badge-partial';
+  else if (label === 'codeql-needs-work') cls = 'badge-needs-work';
+  var text = v.fixed_count + '/' + v.total_targeted + ' fixed';
+  return '<span class="badge ' + cls + '" title="' + v.fix_rate + '% fix rate">' + escapeHtml(text) + '</span>';
+}
+
 function renderSessionsTable(sessions, containerId, countId) {
   const el = document.getElementById(containerId);
   const countEl = document.getElementById(countId);
@@ -97,6 +108,7 @@ function renderSessionsTable(sessions, containerId, countId) {
     return;
   }
   var rows = sessions.map(function(s) {
+    var v = s.verification || null;
     return '<tr>'
       + '<td>' + (s.session_url ? '<a href="'+escapeHtml(s.session_url)+'" target="_blank">'+escapeHtml((s.session_id||'').slice(0,8))+'...</a>' : escapeHtml(s.session_id) || '-') + '</td>'
       + '<td><span class="badge '+badgeClass(s.status)+'">'+escapeHtml(s.status)+'</span></td>'
@@ -105,11 +117,12 @@ function renderSessionsTable(sessions, containerId, countId) {
       + '<td>' + (s.batch_id !== undefined ? s.batch_id : '-') + '</td>'
       + '<td>' + ((s.issue_ids || []).map(function(id) { return '<span class="issue-id">'+escapeHtml(id)+'</span>'; }).join(' ') || '-') + '</td>'
       + '<td>' + (s.pr_url ? '<a href="'+escapeHtml(s.pr_url)+'" target="_blank">'+prLabel(s.pr_url)+'</a>' : '-') + '</td>'
+      + '<td>' + _verificationBadge(v) + '</td>'
       + '</tr>';
   }).join('');
   el.innerHTML = '<table><thead><tr>'
     + '<th>Session</th><th>Status</th><th>Target</th><th>Run</th>'
-    + '<th>Batch</th><th>Issues</th><th>PR</th>'
+    + '<th>Batch</th><th>Issues</th><th>PR</th><th>Verification</th>'
     + '</tr></thead><tbody>' + rows + '</tbody></table>';
 }
 
@@ -255,10 +268,21 @@ function _renderIssuesFiltered(filtered, allIssues, containerId, countId) {
     + '<th>Status</th><th>Rule</th><th>Severity</th><th>Category</th>'
     + (hasMultipleRepos ? '<th>Repo</th>' : '')
     + '<th>File</th><th>Line</th><th>First Seen</th><th>Last Seen</th><th>Runs</th>'
+    + '<th>Fixed By</th>'
     + '</tr></thead><tbody>'
     + filtered.map(function(i) {
       var firstSeen = i.first_seen_date ? formatDate(i.first_seen_date) : 'Run #' + i.first_seen_run;
       var lastSeen = i.last_seen_date ? formatDate(i.last_seen_date) : 'Run #' + i.last_seen_run;
+      var fixedBy = '-';
+      if (i.fixed_by_pr) {
+        fixedBy = '<a href="'+escapeHtml(i.fixed_by_pr)+'" target="_blank">'+prLabel(i.fixed_by_pr)+'</a>';
+        if (i.fixed_by_session) {
+          var shortSid = i.fixed_by_session.slice(0, 8);
+          fixedBy += ' <span class="issue-id" title="Session: '+escapeHtml(i.fixed_by_session)+'">'+escapeHtml(shortSid)+'</span>';
+        }
+      } else if (i.fixed_by_session) {
+        fixedBy = '<span class="issue-id" title="'+escapeHtml(i.fixed_by_session)+'">'+escapeHtml(i.fixed_by_session.slice(0,8))+'...</span>';
+      }
       return '<tr>'
         + '<td><span class="badge '+badgeClass(i.status)+'">'+escapeHtml(i.status)+'</span></td>'
         + '<td style="font-family:monospace;font-size:11px">'+escapeHtml(i.rule_id || i.fingerprint.slice(0,12)+'...')+'</td>'
@@ -270,6 +294,7 @@ function _renderIssuesFiltered(filtered, allIssues, containerId, countId) {
         + '<td title="Run #'+i.first_seen_run+'">'+firstSeen+'</td>'
         + '<td title="Run #'+i.last_seen_run+'">'+lastSeen+'</td>'
         + '<td>'+i.appearances+'x</td>'
+        + '<td>'+fixedBy+'</td>'
         + '</tr>';
     }).join('')
     + '</tbody></table>';
