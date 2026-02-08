@@ -140,6 +140,12 @@ def build_telemetry_record(output_dir: str) -> dict:
     run_label = os.environ.get("RUN_LABEL", "")
     action_repo = os.environ.get("ACTION_REPO", "")
 
+    raw_all_issues = load_output_file(output_dir, "all_issues.json") or []
+    if isinstance(raw_all_issues, dict) and "schema_version" in raw_all_issues:
+        all_issues = raw_all_issues.get("issues", [])
+    else:
+        all_issues = raw_all_issues if isinstance(raw_all_issues, list) else []
+
     raw_issues = load_output_file(output_dir, "issues.json") or []
     if isinstance(raw_issues, dict) and "schema_version" in raw_issues:
         v = raw_issues["schema_version"]
@@ -152,6 +158,9 @@ def build_telemetry_record(output_dir: str) -> dict:
         issues = raw_issues.get("issues", [])
     else:
         issues = raw_issues if isinstance(raw_issues, list) else []
+
+    if not all_issues:
+        all_issues = issues
     raw_batches = load_output_file(output_dir, "batches.json") or []
     if isinstance(raw_batches, dict) and "schema_version" in raw_batches:
         v = raw_batches["schema_version"]
@@ -169,7 +178,7 @@ def build_telemetry_record(output_dir: str) -> dict:
     severity_breakdown: dict[str, int] = {}
     category_breakdown: dict[str, int] = {}
     issue_fingerprints: list[dict] = []
-    for issue in issues:
+    for issue in all_issues:
         tier = issue.get("severity_tier", "unknown")
         severity_breakdown[tier] = severity_breakdown.get(tier, 0) + 1
         family = issue.get("cwe_family", "other")
@@ -222,13 +231,14 @@ def build_telemetry_record(output_dir: str) -> dict:
         "run_url": run_url,
         "run_label": run_label,
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "issues_found": len(issues),
+        "issues_found": len(all_issues),
+        "issues_dispatched": len(issues),
         "severity_breakdown": severity_breakdown,
         "category_breakdown": category_breakdown,
         "batches_created": len(batches),
         "sessions": session_records,
         "issue_fingerprints": issue_fingerprints,
-        "zero_issue_run": len(issues) == 0,
+        "zero_issue_run": len(all_issues) == 0,
     }
     if fix_examples:
         record["fix_examples"] = fix_examples

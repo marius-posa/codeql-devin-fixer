@@ -288,27 +288,37 @@ def build_batch_prompt(
         "",
     ]
 
-    playbook = playbook_mgr.get_playbook(family) if playbook_mgr else None
-    if playbook:
-        prompt_parts.append(playbook_mgr.format_for_prompt(playbook))
-        prompt_parts.append("")
+    cwe_families = batch.get("cwe_families", [family])
+    is_cross_family = batch.get("cross_family", False)
+    playbooks: list[tuple[str, Any]] = []
+    if playbook_mgr:
+        for fam in cwe_families:
+            pb = playbook_mgr.get_playbook(fam)
+            if pb:
+                playbooks.append((fam, pb))
+    if playbooks:
+        for _fam, pb in playbooks:
+            prompt_parts.append(playbook_mgr.format_for_prompt(pb))
+            prompt_parts.append("")
     else:
-        fix_hint = CWE_FIX_HINTS.get(family)
-        if fix_hint:
-            prompt_parts.extend([f"Fix pattern hint for {family}: {fix_hint}", ""])
+        for fam in cwe_families:
+            fix_hint = CWE_FIX_HINTS.get(fam)
+            if fix_hint:
+                prompt_parts.extend([f"Fix pattern hint for {fam}: {fix_hint}", ""])
 
     if fix_learning:
-        context = fix_learning.prompt_context_for_family(family)
-        if context:
-            for line in context.split("\n"):
-                if line and not line.startswith("Fix pattern hint"):
-                    prompt_parts.append(line)
-            prompt_parts.append("")
+        for fam in cwe_families:
+            context = fix_learning.prompt_context_for_family(fam)
+            if context:
+                for line in context.split("\n"):
+                    if line and not line.startswith("Fix pattern hint"):
+                        prompt_parts.append(line)
+                prompt_parts.append("")
 
-        file_patterns = sorted(file_list) if file_list else None
-        fix_examples = fix_learning.prompt_fix_examples(family, file_patterns)
-        if fix_examples:
-            prompt_parts.extend([fix_examples, ""])
+            file_patterns = sorted(file_list) if file_list else None
+            fix_examples = fix_learning.prompt_fix_examples(fam, file_patterns)
+            if fix_examples:
+                prompt_parts.extend([fix_examples, ""])
 
     if repo_context and not repo_context.is_empty():
         prompt_parts.extend([repo_context.to_prompt_section(), ""])
@@ -352,7 +362,8 @@ def build_batch_prompt(
         prompt_parts.append("")
 
     ids_tag = ",".join(issue_ids[:6]) if issue_ids else f"batch-{batch['batch_id']}"
-    pr_title = f"fix({ids_tag}): resolve {family} security issues"
+    families_label = "+".join(cwe_families) if is_cross_family else family
+    pr_title = f"fix({ids_tag}): resolve {families_label} security issues"
 
     if is_own_repo:
         pr_instruction = (
@@ -387,8 +398,9 @@ def build_batch_prompt(
         for tf in sorted(all_test_files):
             prompt_parts.append(f"- {tf}")
 
-    if playbook and playbook_mgr:
-        prompt_parts.extend(["", playbook_mgr.format_improvement_request(playbook)])
+    if playbooks and playbook_mgr:
+        for _fam, pb in playbooks:
+            prompt_parts.extend(["", playbook_mgr.format_improvement_request(pb)])
 
     return "\n".join(prompt_parts)
 
@@ -411,12 +423,16 @@ def create_devin_session(
     run_number = os.environ.get("RUN_NUMBER", "")
     run_id = os.environ.get("RUN_ID", "")
 
+    cwe_families = batch.get("cwe_families", [batch["cwe_family"]])
     tags = [
         "codeql-fix",
         f"severity-{batch['severity_tier']}",
-        f"cwe-{batch['cwe_family']}",
         f"batch-{batch['batch_id']}",
     ]
+    for fam in cwe_families:
+        tags.append(f"cwe-{fam}")
+    if batch.get("cross_family", False):
+        tags.append("cross-family")
     if run_number:
         tags.append(f"run-{run_number}")
     if run_id:
