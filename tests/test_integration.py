@@ -5,7 +5,6 @@ Covers:
 - Prompt generation verification from known batches
 """
 
-import json
 import os
 import sys
 
