@@ -55,6 +55,10 @@ def compute_sla_status(
 def _parse_ts(ts: str) -> datetime | None:
     if not ts:
         return None
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        pass
     for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%S%z"):
         try:
             return datetime.strptime(ts, fmt)
