@@ -458,3 +458,103 @@ class TestOrchestratorEndpoints:
             mock_path.exists.return_value = False
             reg = _load_orchestrator_registry()
             assert reg["repos"] == []
+
+    def test_orchestrator_cycle_requires_env(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.delenv("ACTION_REPO", raising=False)
+        resp = client.post(
+            "/api/orchestrator/cycle",
+            headers={"X-API-Key": "test-key"},
+            json={},
+        )
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert "Missing env vars" in data["error"]
+
+    def test_orchestrator_cycle_requires_devin_key(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        monkeypatch.setenv("GITHUB_TOKEN", "tok")
+        monkeypatch.setenv("ACTION_REPO", "owner/repo")
+        monkeypatch.delenv("DEVIN_API_KEY", raising=False)
+        resp = client.post(
+            "/api/orchestrator/cycle",
+            headers={"X-API-Key": "test-key"},
+            json={},
+        )
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert "DEVIN_API_KEY" in data["error"]
+
+    def test_orchestrator_cycle_dry_run(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = type("R", (), {
+                "returncode": 0,
+                "stdout": json.dumps({"scan": {"triggered": 0}, "dispatch": {"sessions_created": 0}}),
+                "stderr": "",
+            })()
+            resp = client.post(
+                "/api/orchestrator/cycle",
+                headers={"X-API-Key": "test-key"},
+                json={"dry_run": True},
+            )
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert "scan" in data
+
+    def test_orchestrator_config_get(self, client):
+        with patch("app._load_orchestrator_registry", return_value={"orchestrator": {"global_session_limit": 10}, "repos": []}):
+            resp = client.get("/api/orchestrator/config")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["global_session_limit"] == 10
+            assert "global_session_limit_period_hours" in data
+            assert "objectives" in data
+            assert "alert_on_objective_met" in data
+
+    def test_orchestrator_config_get_defaults(self, client):
+        with patch("app._load_orchestrator_registry", return_value={"orchestrator": {}, "repos": []}):
+            resp = client.get("/api/orchestrator/config")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["global_session_limit"] == 20
+            assert data["global_session_limit_period_hours"] == 24
+            assert data["objectives"] == []
+            assert data["alert_on_objective_met"] is False
+
+    def test_orchestrator_config_put_requires_auth(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        resp = client.put(
+            "/api/orchestrator/config",
+            json={"global_session_limit": 5},
+        )
+        assert resp.status_code == 401
+
+    def test_orchestrator_config_put_requires_body(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        resp = client.put(
+            "/api/orchestrator/config",
+            headers={"X-API-Key": "test-key"},
+        )
+        assert resp.status_code == 400
+
+    def test_orchestrator_config_put_updates(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump({"orchestrator": {"global_session_limit": 20}, "repos": []}, f)
+            f.flush()
+            with patch("app._ORCHESTRATOR_REGISTRY_PATH", Path(f.name)), \
+                 patch("app._load_orchestrator_registry", return_value={"orchestrator": {"global_session_limit": 20}, "repos": []}):
+                resp = client.put(
+                    "/api/orchestrator/config",
+                    headers={"X-API-Key": "test-key"},
+                    json={"global_session_limit": 5, "global_session_limit_period_hours": 12},
+                )
+                assert resp.status_code == 200
+                data = resp.get_json()
+                assert data["global_session_limit"] == 5
+                assert data["global_session_limit_period_hours"] == 12
+            os.unlink(f.name)
