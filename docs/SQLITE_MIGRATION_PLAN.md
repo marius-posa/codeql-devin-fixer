@@ -46,9 +46,10 @@ CREATE TABLE runs (
     UNIQUE(run_label)
 );
 
-CREATE INDEX idx_runs_target_repo ON runs(target_repo);
-CREATE INDEX idx_runs_timestamp   ON runs(timestamp);
-CREATE INDEX idx_runs_run_number  ON runs(run_number);
+CREATE INDEX idx_runs_target_repo           ON runs(target_repo);
+CREATE INDEX idx_runs_timestamp              ON runs(timestamp);
+CREATE INDEX idx_runs_run_number             ON runs(run_number);
+CREATE INDEX idx_runs_target_repo_timestamp  ON runs(target_repo, timestamp);  -- composite for repo detail pages
 ```
 
 **Design notes:**
@@ -216,6 +217,7 @@ def init_db() -> None:
 - **`sqlite3.Row` row factory**: Allows dict-like access to query results.
 - **DB location**: `telemetry/telemetry.db` alongside the Flask app. Configurable via `TELEMETRY_DB_PATH` environment variable for deployment flexibility.
 - **No ORM**: Raw SQL keeps the dependency footprint minimal and SQLite queries transparent. The app already uses plain dicts throughout; adding SQLAlchemy would be over-engineering for this use case.
+- **Threading model**: Python's `sqlite3` defaults to `check_same_thread=True`. Each Flask request handler should open and close its own connection via `get_connection()` rather than sharing a global connection. This is safe with WAL mode and avoids cross-thread issues. For performance-sensitive paths, a connection-per-request pattern with Flask's `g` object (opened in `before_request`, closed in `teardown_appcontext`) is recommended.
 
 ### 2.2 One-Time JSON Migration: `telemetry/migrate_json_to_sqlite.py`
 
@@ -325,13 +327,20 @@ UPDATE sessions SET status = ?, pr_url = ? WHERE session_id = ?
 **New behavior**: Upserts into `prs` table:
 
 ```sql
+-- Upsert the PR record
 INSERT INTO prs (pr_number, title, html_url, state, merged, created_at, repo, user, session_id, fetched_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(html_url) DO UPDATE SET
     state = excluded.state,
     merged = excluded.merged,
     session_id = excluded.session_id,
-    fetched_at = excluded.fetched_at
+    fetched_at = excluded.fetched_at;
+
+-- Sync pr_issue_ids: delete stale entries and re-insert current ones.
+-- This handles cases where issue IDs in PRs change across fetches.
+DELETE FROM pr_issue_ids WHERE pr_id = ?;
+INSERT INTO pr_issue_ids (pr_id, issue_id) VALUES (?, ?);
+-- (one INSERT per issue_id extracted from the PR title/body)
 ```
 
 ### 3.4 `/api/backfill` Endpoint (app.py:417-456)
@@ -372,16 +381,24 @@ Future optimization: Add a `/api/ingest` endpoint that accepts a telemetry recor
 **After**:
 ```sql
 SELECT r.*,
-    (SELECT json_group_object(severity_tier, cnt) FROM
-        (SELECT severity_tier, COUNT(*) as cnt FROM issues WHERE run_id = r.id GROUP BY severity_tier)
-    ) as severity_breakdown,
-    (SELECT json_group_object(cwe_family, cnt) FROM
-        (SELECT cwe_family, COUNT(*) as cnt FROM issues WHERE run_id = r.id GROUP BY cwe_family)
-    ) as category_breakdown
+    CASE
+        WHEN EXISTS (SELECT 1 FROM issues WHERE run_id = r.id)
+        THEN (SELECT json_group_object(severity_tier, cnt) FROM
+            (SELECT severity_tier, COUNT(*) as cnt FROM issues WHERE run_id = r.id GROUP BY severity_tier))
+        ELSE r.severity_breakdown  -- fallback to stored JSON for fingerprint-less runs
+    END as severity_breakdown,
+    CASE
+        WHEN EXISTS (SELECT 1 FROM issues WHERE run_id = r.id)
+        THEN (SELECT json_group_object(cwe_family, cnt) FROM
+            (SELECT cwe_family, COUNT(*) as cnt FROM issues WHERE run_id = r.id GROUP BY cwe_family))
+        ELSE r.category_breakdown  -- fallback to stored JSON for fingerprint-less runs
+    END as category_breakdown
 FROM runs r
 ORDER BY r.run_number DESC
 LIMIT ? OFFSET ?
 ```
+
+The CASE expressions derive breakdowns from the normalized `issues` table when fingerprints exist, but fall back to the stored JSON columns for older runs (e.g., juice-shop runs 12-14) that have breakdown data but no `issue_fingerprints`. This guarantees API response parity.
 
 Pagination is now SQL-native (LIMIT/OFFSET) instead of loading all records and slicing.
 
@@ -590,6 +607,8 @@ CREATE TRIGGER issues_ai AFTER INSERT ON issues BEGIN
 END;
 ```
 
+**FTS5 availability**: Not all SQLite builds include FTS5. The implementation should check for FTS5 support at startup (`SELECT * FROM pragma_compile_options WHERE compile_options LIKE '%FTS5%'`) and skip FTS table creation if unavailable. The `/api/issues/search` endpoint should return a clear error (e.g., 501) when FTS is not available. Core functionality must not depend on FTS.
+
 New endpoint:
 ```
 GET /api/issues/search?q=xss+materialize&repo=...
@@ -686,8 +705,8 @@ Specific compatibility requirements:
 
 | Endpoint | Response field | Source today | Source after |
 |----------|---------------|-------------|-------------|
-| `/api/runs` | `items[].severity_breakdown` | JSON dict from file | SQL `GROUP BY` → dict |
-| `/api/runs` | `items[].category_breakdown` | JSON dict from file | SQL `GROUP BY` → dict |
+| `/api/runs` | `items[].severity_breakdown` | JSON dict from file | CASE: `GROUP BY` → dict, fallback to stored JSON |
+| `/api/runs` | `items[].category_breakdown` | JSON dict from file | CASE: `GROUP BY` → dict, fallback to stored JSON |
 | `/api/sessions` | `items[].issue_ids` | Nested array | `session_issue_ids` → array |
 | `/api/prs` | `items[].issue_ids` | Regex-extracted array | `pr_issue_ids` → array |
 | `/api/stats` | All fields | `aggregate_stats()` | SQL aggregation |
@@ -718,11 +737,16 @@ After migration, verify:
 -- Total runs matches JSON file count
 SELECT COUNT(*) FROM runs;  -- should equal number of .json files
 
--- Total issues per run matches issues_found
-SELECT r.id, r.issues_found, COUNT(i.id) as actual
+-- Total issues per run matches issues_found (for runs WITH fingerprints)
+-- NOTE: Runs without issue_fingerprints (e.g., juice-shop runs 12-14) will have
+-- issues_found > 0 but 0 rows in the issues table. This is expected by design --
+-- these runs predate fingerprinting and their breakdown data is preserved in the
+-- runs.severity_breakdown / runs.category_breakdown JSON columns instead.
+SELECT r.id, r.run_label, r.issues_found, COUNT(i.id) as actual
 FROM runs r LEFT JOIN issues i ON i.run_id = r.id
 GROUP BY r.id
-HAVING r.issues_found != actual;  -- should return 0 rows
+HAVING r.issues_found != actual
+    AND actual > 0;  -- only flag mismatches where issues table has SOME rows
 
 -- All sessions have valid run references
 SELECT COUNT(*) FROM sessions WHERE run_id NOT IN (SELECT id FROM runs);  -- should be 0
