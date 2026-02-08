@@ -18,6 +18,8 @@
       <button class="btn btn-primary" onclick="openDispatchModal()" style="background:#1f6feb;border-color:#388bfd">Run Action</button>
       <a href="{{ repo_url }}" target="_blank" class="btn">View on GitHub</a>
       <a href="/" class="btn">Back to Dashboard</a>
+      <button class="density-toggle" id="density-toggle" title="Toggle compact mode">Compact</button>
+      <button class="theme-toggle" id="theme-toggle"></button>
     </div>
   </header>
 
@@ -49,7 +51,7 @@
       Run History
       <span id="runs-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
     </div>
-    <div class="panel-body" style="overflow-x:auto;" id="runs-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+    <div class="panel-body table-scroll-wrapper" id="runs-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
   </div>
 
   <div class="panel">
@@ -57,7 +59,7 @@
       Devin Sessions
       <span id="sessions-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
     </div>
-    <div class="panel-body" style="overflow-x:auto;" id="sessions-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+    <div class="panel-body table-scroll-wrapper" id="sessions-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
   </div>
 
   <div class="panel">
@@ -65,7 +67,7 @@
       Pull Requests
       <span id="prs-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
     </div>
-    <div class="panel-body" style="overflow-x:auto;" id="prs-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+    <div class="panel-body table-scroll-wrapper" id="prs-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
   </div>
 
   <div class="panel">
@@ -73,8 +75,17 @@
       Issue Tracking
       <span id="issues-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
     </div>
-    <div class="panel-body" style="overflow-x:auto;" id="issues-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+    <div class="panel-body table-scroll-wrapper" id="issues-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
   </div>
+</div>
+
+<div class="drawer-overlay" id="drawer-overlay"></div>
+<div class="drawer" id="issue-drawer">
+  <div class="drawer-header">
+    <h3>Issue Details</h3>
+    <button class="btn btn-icon" onclick="closeIssueDrawer()">&times;</button>
+  </div>
+  <div class="drawer-body"></div>
 </div>
 
 {% include 'dispatch_modal.html' %}
@@ -110,7 +121,7 @@ function renderRunsTable(runs) {
   const el = document.getElementById('runs-table-container');
   document.getElementById('runs-count').textContent = runs.length;
   if (runs.length === 0) {
-    el.innerHTML = '<div class="empty-state">No runs recorded yet.</div>';
+    el.innerHTML = '<div class="empty-state"><span class="empty-state-icon">&#x1F680;</span><div class="empty-state-text">No runs recorded yet.</div></div>';
     return;
   }
   const sorted = [...runs].sort(function(a, b) {
@@ -271,7 +282,7 @@ function renderTrendChart(container, runs) {
   _repoTrendMode = 'total';
   _repoTrendExcluded = {};
   if (!runs || runs.length === 0) {
-    container.innerHTML = '<div class="empty-state">No run data available yet</div>';
+    container.innerHTML = '<div class="empty-state"><span class="empty-state-icon">&#x1F4C8;</span><div class="empty-state-text">No run data available yet</div></div>';
     return;
   }
   container.innerHTML = '<div class="trend-controls"></div><div class="trend-svg-wrap"></div>';
@@ -284,6 +295,11 @@ function openDispatchModalRepo() {
 }
 
 async function fetchRepoData() {
+  showSkeletonMetrics('metrics-grid', 5);
+  showSkeletonChart('trend-chart');
+  showSkeletonBars('severity-chart');
+  showSkeletonBars('category-chart');
+  ['runs-table-container','sessions-table-container','prs-table-container','issues-table-container'].forEach(function(id) { showSkeletonTable(id); });
   setStatus('Loading data...');
   try {
     const res = await fetch(API + '/api/repo/' + REPO_SHORT + '?per_page=200');

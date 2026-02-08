@@ -1,3 +1,17 @@
+from datetime import datetime
+
+
+def _parse_ts(ts: str) -> datetime | None:
+    if not ts:
+        return None
+    for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%S%z"):
+        try:
+            return datetime.strptime(ts, fmt)
+        except ValueError:
+            continue
+    return None
+
+
 def track_issues_across_runs(runs: list[dict]) -> list[dict]:
     if not runs:
         return []
@@ -41,6 +55,9 @@ def track_issues_across_runs(runs: list[dict]) -> list[dict]:
                     "cwe_family": iss.get("cwe_family", ""),
                     "file": iss.get("file", ""),
                     "start_line": iss.get("start_line", 0),
+                    "description": iss.get("description", ""),
+                    "resolution": iss.get("resolution", ""),
+                    "code_churn": iss.get("code_churn", 0),
                 }
 
     latest_run_per_repo: dict[str, dict] = {}
@@ -75,6 +92,15 @@ def track_issues_across_runs(runs: list[dict]) -> list[dict]:
             status = "fixed"
 
         meta = fp_metadata.get(fp, {})
+
+        fix_duration_hours = None
+        if status == "fixed":
+            first_ts = _parse_ts(first["timestamp"])
+            latest_ts = _parse_ts(latest["timestamp"])
+            if first_ts and latest_ts:
+                delta = latest_ts - first_ts
+                fix_duration_hours = round(delta.total_seconds() / 3600, 1)
+
         result.append({
             "fingerprint": fp,
             "rule_id": meta.get("rule_id", ""),
@@ -82,6 +108,9 @@ def track_issues_across_runs(runs: list[dict]) -> list[dict]:
             "cwe_family": meta.get("cwe_family", ""),
             "file": meta.get("file", ""),
             "start_line": meta.get("start_line", 0),
+            "description": meta.get("description", ""),
+            "resolution": meta.get("resolution", ""),
+            "code_churn": meta.get("code_churn", 0),
             "status": status,
             "first_seen_run": first["run_number"],
             "first_seen_date": first["timestamp"],
@@ -91,6 +120,7 @@ def track_issues_across_runs(runs: list[dict]) -> list[dict]:
             "appearances": len(appearances),
             "run_numbers": run_numbers,
             "latest_issue_id": latest["issue_id"],
+            "fix_duration_hours": fix_duration_hours,
         })
 
     _STATUS_ORDER = {"recurring": 0, "new": 1, "fixed": 2}

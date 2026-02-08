@@ -108,7 +108,7 @@ function showTableLoading(containerId) {
 
 function renderBarChart(container, data) {
   if (!data || Object.keys(data).length === 0) {
-    container.innerHTML = '<div class="empty-state">No data yet</div>';
+    container.innerHTML = '<div class="empty-state"><span class="empty-state-icon">&#x1F4CA;</span><div class="empty-state-text">No data yet</div></div>';
     return;
   }
   const max = Math.max(...Object.values(data), 1);
@@ -136,7 +136,7 @@ function renderSessionsTable(sessions, containerId, countId) {
   const countEl = document.getElementById(countId);
   if (countEl) countEl.textContent = sessions.length;
   if (sessions.length === 0) {
-    el.innerHTML = '<div class="empty-state">No Devin sessions created yet.</div>';
+    el.innerHTML = '<div class="empty-state"><span class="empty-state-icon">&#x1F916;</span><div class="empty-state-text">No Devin sessions created yet.</div></div>';
     return;
   }
   el.innerHTML = `<table>
@@ -161,7 +161,7 @@ function renderPrsTable(prs, containerId, countId) {
   const countEl = document.getElementById(countId);
   if (countEl) countEl.textContent = prs.length;
   if (prs.length === 0) {
-    el.innerHTML = '<div class="empty-state">No pull requests found yet.</div>';
+    el.innerHTML = '<div class="empty-state"><span class="empty-state-icon">&#x1F4CB;</span><div class="empty-state-text">No pull requests found yet.</div></div>';
     return;
   }
   const sorted = [...prs].sort(function(a, b) {
@@ -275,16 +275,20 @@ function _renderIssuesContent(filtered, allIssues, containerId, countId) {
   }
   html += '</div>';
 
+  html += '<div id="bulk-actions-bar" class="bulk-actions hidden"><span class="bulk-count">0 selected</span><button class="btn btn-sm" onclick="_bulkExportCsv()">Export CSV</button></div>';
+
   var showRepo = repos.length > 1;
   html += '<table><thead><tr>';
+  html += '<th><input type="checkbox" class="bulk-checkbox" onchange="_toggleBulkAll(this.checked)"></th>';
   html += '<th>Status</th><th>Rule</th><th>Severity</th><th>Category</th>';
   if (showRepo) html += '<th>Repo</th>';
   html += '<th>File</th><th>Line</th><th>First Seen</th><th>Last Seen</th><th>Runs</th>';
   html += '</tr></thead><tbody>';
-  filtered.forEach(function(i) {
+  filtered.forEach(function(i, idx) {
     var firstDate = i.first_seen_date ? formatDate(i.first_seen_date) : 'Run #' + i.first_seen_run;
     var lastDate = i.last_seen_date ? formatDate(i.last_seen_date) : 'Run #' + i.last_seen_run;
-    html += '<tr>';
+    html += '<tr style="cursor:pointer" onclick="_openDrawerByFp(\'' + escapeHtml(i.fingerprint) + '\')">';
+    html += '<td onclick="event.stopPropagation()"><input type="checkbox" class="bulk-checkbox issue-row-checkbox" data-fingerprint="' + escapeHtml(i.fingerprint) + '" onchange="_toggleBulkCheckbox(this.dataset.fingerprint)"' + (_bulkSelected.has(i.fingerprint) ? ' checked' : '') + '></td>';
     html += '<td><span class="badge ' + badgeClass(i.status) + '">' + escapeHtml(i.status) + '</span></td>';
     html += '<td style="font-family:monospace;font-size:11px">' + escapeHtml(i.rule_id || i.fingerprint.slice(0,12) + '...') + '</td>';
     html += '<td><span class="badge ' + badgeClass(i.severity_tier) + '">' + (escapeHtml(i.severity_tier) || '-') + '</span></td>';
@@ -306,11 +310,12 @@ function renderIssuesTable(issues, containerId, countId) {
   _issuesContainerId = containerId;
   _issuesCountId = countId;
   _issuesFilterState = { status: null, severity: null, repo: null };
+  _bulkSelected.clear();
   var el = document.getElementById(containerId);
   if (issues.length === 0) {
     var countEl = document.getElementById(countId);
     if (countEl) countEl.textContent = 0;
-    el.innerHTML = '<div class="empty-state">No issue fingerprints available yet.</div>';
+    el.innerHTML = '<div class="empty-state"><span class="empty-state-icon">&#x1F50D;</span><div class="empty-state-text">No issue fingerprints available yet.</div></div>';
     return;
   }
   _renderIssuesContent(issues, issues, containerId, countId);
@@ -443,3 +448,202 @@ async function submitDispatch() {
   btn.disabled = false;
   btn.textContent = 'Dispatch Workflow';
 }
+
+function initThemeToggle() {
+  var saved = localStorage.getItem('telemetry_theme');
+  if (saved === 'light') document.documentElement.setAttribute('data-theme', 'light');
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  _updateThemeIcon(btn);
+  btn.addEventListener('click', function() {
+    var isLight = document.documentElement.getAttribute('data-theme') === 'light';
+    if (isLight) {
+      document.documentElement.removeAttribute('data-theme');
+      localStorage.setItem('telemetry_theme', 'dark');
+    } else {
+      document.documentElement.setAttribute('data-theme', 'light');
+      localStorage.setItem('telemetry_theme', 'light');
+    }
+    _updateThemeIcon(btn);
+  });
+}
+function _updateThemeIcon(btn) {
+  var isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  btn.textContent = isLight ? '\u2600\ufe0f' : '\ud83c\udf19';
+  btn.title = isLight ? 'Switch to dark mode' : 'Switch to light mode';
+}
+
+function initDensityToggle() {
+  var saved = localStorage.getItem('telemetry_density');
+  if (saved === 'compact') document.body.classList.add('density-compact');
+  var btn = document.getElementById('density-toggle');
+  if (!btn) return;
+  if (saved === 'compact') btn.classList.add('active');
+  btn.addEventListener('click', function() {
+    var isCompact = document.body.classList.toggle('density-compact');
+    btn.classList.toggle('active', isCompact);
+    localStorage.setItem('telemetry_density', isCompact ? 'compact' : 'default');
+  });
+}
+
+function showSkeletonMetrics(containerId, count) {
+  var el = document.getElementById(containerId);
+  if (!el) return;
+  var html = '';
+  for (var i = 0; i < (count || 6); i++) html += '<div class="skeleton skeleton-metric"></div>';
+  el.innerHTML = html;
+}
+
+function showSkeletonChart(containerId) {
+  var el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = '<div class="skeleton skeleton-chart"></div>';
+}
+
+function showSkeletonTable(containerId, rows) {
+  var el = document.getElementById(containerId);
+  if (!el) return;
+  var html = '';
+  for (var i = 0; i < (rows || 5); i++) html += '<div class="skeleton skeleton-row"></div>';
+  el.innerHTML = html;
+}
+
+function showSkeletonBars(containerId, count) {
+  var el = document.getElementById(containerId);
+  if (!el) return;
+  var html = '';
+  for (var i = 0; i < (count || 4); i++) {
+    var w = 40 + Math.random() * 50;
+    html += '<div class="skeleton skeleton-bar" style="width:' + w.toFixed(0) + '%"></div>';
+  }
+  el.innerHTML = html;
+}
+
+function showAllSkeletons() {
+  showSkeletonMetrics('metrics-grid');
+  showSkeletonChart('trend-chart');
+  showSkeletonBars('severity-chart');
+  showSkeletonBars('category-chart');
+  var tables = ['repos-table-container','runs-table-container','sessions-table-container','prs-table-container','issues-table-container'];
+  tables.forEach(function(id) { showSkeletonTable(id); });
+}
+
+var _drawerIssue = null;
+function _openDrawerByFp(fingerprint) {
+  var issue = _issuesAllData.find(function(i) { return i.fingerprint === fingerprint; });
+  if (issue) openIssueDrawer(issue);
+}
+function openIssueDrawer(issue) {
+  _drawerIssue = issue;
+  var overlay = document.getElementById('drawer-overlay');
+  var drawer = document.getElementById('issue-drawer');
+  if (!overlay || !drawer) return;
+  overlay.classList.add('active');
+  drawer.classList.add('active');
+  var body = drawer.querySelector('.drawer-body');
+  if (!body) return;
+  var html = '<div class="drawer-section">';
+  html += '<div class="drawer-section-title">Details</div>';
+  html += _drawerField('Rule', issue.rule_id || '-');
+  html += _drawerField('Severity', '<span class="badge ' + badgeClass(issue.severity_tier) + '">' + escapeHtml(issue.severity_tier || '-') + '</span>');
+  html += _drawerField('Status', '<span class="badge ' + badgeClass(issue.status) + '">' + escapeHtml(issue.status) + '</span>');
+  html += _drawerField('Category', escapeHtml(issue.cwe_family || '-'));
+  html += _drawerField('File', '<span style="font-family:monospace;font-size:11px">' + escapeHtml(issue.file || '-') + '</span>');
+  html += _drawerField('Line', issue.start_line || '-');
+  html += _drawerField('Fingerprint', '<span style="font-family:monospace;font-size:10px">' + escapeHtml(issue.fingerprint || '-') + '</span>');
+  if (issue.description) html += _drawerField('Description', escapeHtml(issue.description));
+  if (issue.resolution) html += _drawerField('Resolution', escapeHtml(issue.resolution));
+  html += '</div>';
+  html += '<div class="drawer-section">';
+  html += '<div class="drawer-section-title">History (' + (issue.appearances || 0) + ' appearances)</div>';
+  html += _drawerField('First Seen', issue.first_seen_date ? formatDate(issue.first_seen_date) : 'Run #' + issue.first_seen_run);
+  html += _drawerField('Last Seen', issue.last_seen_date ? formatDate(issue.last_seen_date) : 'Run #' + issue.last_seen_run);
+  if (issue.target_repo) html += _drawerField('Repository', '<a href="' + escapeHtml(issue.target_repo) + '" target="_blank">' + escapeHtml(repoShort(issue.target_repo)) + '</a>');
+  if (issue.run_numbers && issue.run_numbers.length > 0) {
+    html += _drawerField('Runs', issue.run_numbers.map(function(n) { return '#' + n; }).join(', '));
+  }
+  if (issue.fix_duration_hours != null) html += _drawerField('Fix Duration', issue.fix_duration_hours + 'h');
+  html += '</div>';
+  body.innerHTML = html;
+}
+function _drawerField(label, value) {
+  return '<div class="drawer-field"><div class="drawer-field-label">' + label + '</div><div class="drawer-field-value">' + value + '</div></div>';
+}
+function closeIssueDrawer() {
+  var overlay = document.getElementById('drawer-overlay');
+  var drawer = document.getElementById('issue-drawer');
+  if (overlay) overlay.classList.remove('active');
+  if (drawer) drawer.classList.remove('active');
+  _drawerIssue = null;
+}
+
+var _bulkSelected = new Set();
+function _toggleBulkCheckbox(fingerprint) {
+  if (_bulkSelected.has(fingerprint)) _bulkSelected.delete(fingerprint);
+  else _bulkSelected.add(fingerprint);
+  _updateBulkActions();
+}
+function _toggleBulkAll(checked) {
+  var checkboxes = document.querySelectorAll('.issue-row-checkbox');
+  checkboxes.forEach(function(cb) {
+    cb.checked = checked;
+    var fp = cb.dataset.fingerprint;
+    if (checked) _bulkSelected.add(fp);
+    else _bulkSelected.delete(fp);
+  });
+  _updateBulkActions();
+}
+function _updateBulkActions() {
+  var bar = document.getElementById('bulk-actions-bar');
+  if (!bar) return;
+  var count = _bulkSelected.size;
+  if (count > 0) {
+    bar.classList.remove('hidden');
+    bar.querySelector('.bulk-count').textContent = count + ' selected';
+  } else {
+    bar.classList.add('hidden');
+  }
+}
+function _bulkExportCsv() {
+  if (_bulkSelected.size === 0) return;
+  var selected = _issuesAllData.filter(function(i) { return _bulkSelected.has(i.fingerprint); });
+  var headers = ['rule_id','severity_tier','status','cwe_family','file','start_line','appearances','first_seen_date','last_seen_date'];
+  var csv = headers.join(',') + '\n';
+  selected.forEach(function(i) {
+    csv += headers.map(function(h) { return '"' + String(i[h] || '').replace(/"/g, '""') + '"'; }).join(',') + '\n';
+  });
+  var blob = new Blob([csv], { type: 'text/csv' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'issues-export.csv';
+  a.click();
+}
+
+function initTableScrollDetection() {
+  document.querySelectorAll('.table-scroll-wrapper').forEach(function(wrapper) {
+    var check = function() {
+      var hasOverflow = wrapper.scrollWidth > wrapper.clientWidth;
+      wrapper.classList.toggle('has-overflow', hasOverflow);
+      wrapper.classList.toggle('scrolled-right', wrapper.scrollLeft + wrapper.clientWidth >= wrapper.scrollWidth - 2);
+    };
+    check();
+    wrapper.addEventListener('scroll', check);
+    window.addEventListener('resize', check);
+  });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  initThemeToggle();
+  initDensityToggle();
+  var overlay = document.getElementById('drawer-overlay');
+  if (overlay) {
+    overlay.addEventListener('click', function() { closeIssueDrawer(); });
+  }
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      closeIssueDrawer();
+      closeDispatchModal();
+    }
+  });
+  setTimeout(initTableScrollDetection, 500);
+});
