@@ -94,6 +94,7 @@ class PipelineConfig:
     github_token: str = ""
     target_repo: str = ""
     default_branch: str = "main"
+    mode: str = "basic"
 
     # -- parse_sarif.py -------------------------------------------------------
     batch_size: int = 5
@@ -138,6 +139,7 @@ class PipelineConfig:
             github_token=os.environ.get("GITHUB_TOKEN", ""),
             target_repo=os.environ.get("TARGET_REPO", ""),
             default_branch=os.environ.get("DEFAULT_BRANCH", "main"),
+            mode=os.environ.get("MODE", "basic"),
             batch_size=int(os.environ.get("BATCH_SIZE", "5")),
             max_sessions=int(os.environ.get("MAX_SESSIONS", "25")),
             severity_threshold=os.environ.get("SEVERITY_THRESHOLD", "low"),

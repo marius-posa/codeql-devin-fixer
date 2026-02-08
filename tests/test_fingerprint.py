@@ -6,7 +6,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
-from scripts.parse_sarif import compute_fingerprint
+from scripts.parse_sarif import compute_fingerprint, FINGERPRINT_LENGTH
 
 
 def _make_issue(
@@ -76,7 +76,50 @@ class TestComputeFingerprint:
     def test_empty_issue_does_not_crash(self):
         fp = compute_fingerprint({})
         assert isinstance(fp, str)
-        assert len(fp) == 16
+        assert len(fp) == FINGERPRINT_LENGTH
+
+    def test_fingerprint_length_is_20(self):
+        fp = compute_fingerprint(_make_issue())
+        assert len(fp) == 20
+
+    def test_target_dir_tier_used_when_no_message(self, tmp_path):
+        src = tmp_path / "routes" / "login.ts"
+        src.parent.mkdir(parents=True)
+        src.write_text("line1\nconst q = db.query(input);\nline3\n")
+        issue = _make_issue(message="", start_line=2)
+        fp_with_dir = compute_fingerprint(issue, target_dir=str(tmp_path))
+        fp_without_dir = compute_fingerprint(issue)
+        assert fp_with_dir != fp_without_dir
+
+    def test_target_dir_tier_stable_across_line_shifts(self, tmp_path):
+        src = tmp_path / "routes" / "login.ts"
+        src.parent.mkdir(parents=True)
+        src.write_text("\nconst q = db.query(input);\nline3\n")
+        issue_a = _make_issue(message="", start_line=2)
+        fp_a = compute_fingerprint(issue_a, target_dir=str(tmp_path))
+        src.write_text("extra\n\nconst q = db.query(input);\nline3\n")
+        issue_b = _make_issue(message="", start_line=3)
+        fp_b = compute_fingerprint(issue_b, target_dir=str(tmp_path))
+        assert fp_a == fp_b
+
+    def test_target_dir_tier_ignores_whitespace_changes(self, tmp_path):
+        src = tmp_path / "routes" / "login.ts"
+        src.parent.mkdir(parents=True)
+        src.write_text("  const q = db.query(input);  \n")
+        issue = _make_issue(message="", start_line=1)
+        fp1 = compute_fingerprint(issue, target_dir=str(tmp_path))
+        src.write_text("    const  q  =  db.query(input);\n")
+        fp2 = compute_fingerprint(issue, target_dir=str(tmp_path))
+        assert fp1 == fp2
+
+    def test_target_dir_not_used_when_message_present(self, tmp_path):
+        src = tmp_path / "routes" / "login.ts"
+        src.parent.mkdir(parents=True)
+        src.write_text("const q = db.query(input);\n")
+        issue = _make_issue(message="This query depends on user input.", start_line=1)
+        fp_with = compute_fingerprint(issue, target_dir=str(tmp_path))
+        fp_without = compute_fingerprint(issue)
+        assert fp_with == fp_without
 
 
 class TestTrackIssuesAcrossRuns:

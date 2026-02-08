@@ -80,6 +80,10 @@ inputs:
     description: "Shared secret for signing webhook payloads (HMAC-SHA256)"
     required: false
     default: ""
+  mode:
+    description: "Pipeline mode: basic (scan+dispatch, default), orchestrator (scan only, defer dispatch)"
+    required: false
+    default: "basic"
 
 outputs:
   total_issues:
@@ -106,6 +110,9 @@ outputs:
   logs_persisted:
     description: "Whether run logs were successfully pushed to the fork"
     value: ${{ steps.persist-logs.outputs.logs_persisted }}
+  mode:
+    description: "Pipeline mode that was used (basic or orchestrator)"
+    value: ${{ inputs.mode }}
 
 runs:
   using: "composite"
@@ -430,6 +437,7 @@ runs:
         SEVERITY_THRESHOLD: ${{ steps.repo-config.outputs.severity_threshold || inputs.severity_threshold }}
         RUN_NUMBER: ${{ github.run_number }}
         CUSTOM_CWE_FAMILIES: ${{ steps.repo-config.outputs.custom_cwe_families }}
+        MODE: ${{ inputs.mode }}
       run: |
         python "${{ github.action_path }}/scripts/parse_sarif.py" \
           "${{ runner.temp }}/codeql-results" \
@@ -479,6 +487,7 @@ runs:
           --total-batches "$TOTAL_BATCHES"
 
     - name: Dispatch Devin sessions
+      if: inputs.mode != 'orchestrator'
       id: dispatch
       shell: bash
       env:
@@ -501,6 +510,17 @@ runs:
         python "${{ github.action_path }}/scripts/dispatch_devin.py"\
           "${{ runner.temp }}/codeql-output/batches.json" \
           "${{ runner.temp }}/codeql-output"
+
+    - name: Record issues for orchestrator
+      if: inputs.mode == 'orchestrator'
+      id: orchestrator-record
+      shell: bash
+      run: |
+        echo "Mode: orchestrator -- scan results recorded, session dispatch deferred."
+        echo "Issues: ${{ steps.parse.outputs.total_issues }}"
+        echo "Batches: ${{ steps.parse.outputs.total_batches }}"
+        echo "Dispatch will be handled by the orchestrator engine in a separate step."
+        echo "mode=orchestrator" >> "$GITHUB_OUTPUT"
 
     - name: Persist run logs
       id: persist-logs

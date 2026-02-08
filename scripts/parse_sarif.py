@@ -617,7 +617,31 @@ def generate_summary(
     return "\n".join(lines)
 
 
-def compute_fingerprint(issue: dict[str, Any]) -> str:
+FINGERPRINT_LENGTH = 20
+
+
+def _read_source_line(target_dir: str, file_path: str, line_number: int) -> str:
+    """Read a single source line from the target repo for fingerprinting.
+
+    Returns the line content stripped of leading/trailing whitespace, or an
+    empty string if the file cannot be read.
+    """
+    full_path = os.path.join(target_dir, file_path)
+    if not os.path.isfile(full_path):
+        return ""
+    try:
+        with open(full_path, errors="replace") as fh:
+            for i, line in enumerate(fh, 1):
+                if i == line_number:
+                    return line.strip()
+    except OSError:
+        pass
+    return ""
+
+
+def compute_fingerprint(
+    issue: dict[str, Any], target_dir: str = ""
+) -> str:
     """Compute a stable fingerprint for an issue across runs.
 
     Stability hierarchy (most stable first):
@@ -629,8 +653,12 @@ def compute_fingerprint(issue: dict[str, Any]) -> str:
        enough context (e.g. tainted variable name) to distinguish distinct
        occurrences of the same rule in the same file without relying on line
        numbers.
-    3. **rule_id + file + start_line** -- legacy fallback when neither of the
-       above is available.
+    3. **rule_id + file + normalized source line** -- when *target_dir* is
+       provided and neither of the above is available, the actual source
+       content at the reported location is used.  Whitespace is normalised
+       so the fingerprint survives indentation changes.
+    4. **rule_id + file + start_line** -- legacy fallback when none of the
+       above is available.  Fragile across refactors that shift lines.
     """
     partial_fps = issue.get("partial_fingerprints", {})
     primary_fp = (
@@ -639,7 +667,7 @@ def compute_fingerprint(issue: dict[str, Any]) -> str:
     )
     if primary_fp:
         raw = f"{issue.get('rule_id', '')}|{primary_fp}"
-        return hashlib.sha256(raw.encode()).hexdigest()[:16]
+        return hashlib.sha256(raw.encode()).hexdigest()[:FINGERPRINT_LENGTH]
 
     rule_id = issue.get("rule_id", "")
     locs = issue.get("locations", [])
@@ -647,10 +675,20 @@ def compute_fingerprint(issue: dict[str, Any]) -> str:
     message = issue.get("message", "")
     if message:
         raw = f"{rule_id}|{file_path}|{message}"
-    else:
-        start_line = str(locs[0].get("start_line", 0)) if locs else "0"
-        raw = f"{rule_id}|{file_path}|{start_line}"
-    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+        return hashlib.sha256(raw.encode()).hexdigest()[:FINGERPRINT_LENGTH]
+
+    if target_dir and locs:
+        start_line = locs[0].get("start_line", 0)
+        if file_path and start_line > 0:
+            snippet = _read_source_line(target_dir, file_path, start_line)
+            if snippet:
+                normalized = re.sub(r"\s+", " ", snippet).strip()
+                raw = f"{rule_id}|{file_path}|{normalized}"
+                return hashlib.sha256(raw.encode()).hexdigest()[:FINGERPRINT_LENGTH]
+
+    start_line = str(locs[0].get("start_line", 0)) if locs else "0"
+    raw = f"{rule_id}|{file_path}|{start_line}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:FINGERPRINT_LENGTH]
 
 
 def assign_issue_ids(
