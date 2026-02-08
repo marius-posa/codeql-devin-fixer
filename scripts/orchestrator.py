@@ -12,6 +12,8 @@ CLI Commands
 ingest   Record scan results without dispatching sessions.
 plan     Compute a dry-run dispatch plan (shows what would be dispatched).
 status   Show global issue state and session status.
+scan     Trigger CodeQL scans for repos due for scanning.
+cycle    Full orchestrator cycle: scan due repos, then dispatch.
 
 Usage
 -----
@@ -34,6 +36,7 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import sys
 import time
 from dataclasses import dataclass, field
@@ -59,6 +62,13 @@ try:
     _HAS_DISPATCH = True
 except ImportError:
     _HAS_DISPATCH = False
+
+try:
+    import requests as _requests
+    _HAS_REQUESTS = True
+except ImportError:
+    _requests = None  # type: ignore[assignment]
+    _HAS_REQUESTS = False
 
 REGISTRY_PATH = _ROOT_DIR / "repo_registry.json"
 STATE_PATH = _TELEMETRY_DIR / "orchestrator_state.json"
@@ -1100,6 +1110,249 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     return 1 if sessions_failed > 0 and sessions_created == 0 else 0
 
 
+SCHEDULE_INTERVALS: dict[str, timedelta] = {
+    "hourly": timedelta(hours=1),
+    "daily": timedelta(days=1),
+    "weekly": timedelta(weeks=1),
+    "biweekly": timedelta(weeks=2),
+    "monthly": timedelta(days=30),
+}
+
+
+def _is_scan_due(
+    repo_config: dict[str, Any],
+    scan_schedule: dict[str, dict[str, Any]],
+) -> bool:
+    repo_url = repo_config.get("repo", "")
+    if not repo_config.get("enabled", True):
+        return False
+    if not repo_config.get("auto_scan", True):
+        return False
+
+    schedule_name = repo_config.get("schedule", "weekly")
+    interval = SCHEDULE_INTERVALS.get(schedule_name, timedelta(weeks=1))
+
+    entry = scan_schedule.get(repo_url, {})
+    last_scan_str = entry.get("last_scan", "")
+    if not last_scan_str:
+        return True
+
+    last_scan = _parse_ts(last_scan_str)
+    if last_scan is None:
+        return True
+
+    return datetime.now(timezone.utc) - last_scan >= interval
+
+
+def _trigger_scan(
+    repo_config: dict[str, Any],
+    github_token: str,
+    action_repo: str,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    repo_url = repo_config.get("repo", "")
+    if dry_run:
+        return {"repo": repo_url, "status": "dry-run"}
+
+    if not _HAS_REQUESTS:
+        return {"repo": repo_url, "status": "error", "message": "requests library not available"}
+
+    inputs = {
+        "target_repo": repo_url,
+        "mode": "orchestrator",
+        "severity_threshold": repo_config.get("severity_threshold", "low"),
+        "dry_run": "false",
+    }
+    overrides = repo_config.get("overrides", {})
+    if overrides.get("languages"):
+        inputs["languages"] = overrides["languages"]
+    default_branch = repo_config.get("default_branch", "main")
+    if default_branch:
+        inputs["default_branch"] = default_branch
+
+    url = f"https://api.github.com/repos/{action_repo}/actions/workflows/codeql-fixer.yml/dispatches"
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"token {github_token}",
+    }
+    payload = {"ref": "main", "inputs": inputs}
+
+    try:
+        resp = _requests.post(url, headers=headers, json=payload, timeout=30)
+        if resp.status_code == 204:
+            return {"repo": repo_url, "status": "triggered"}
+        return {
+            "repo": repo_url,
+            "status": "error",
+            "message": f"HTTP {resp.status_code}: {resp.text[:200]}",
+        }
+    except Exception as e:
+        return {"repo": repo_url, "status": "error", "message": str(e)}
+
+
+def cmd_scan(args: argparse.Namespace) -> int:
+    repo_filter = args.repo or ""
+    dry_run = args.dry_run
+    output_json = args.json
+
+    github_token = os.environ.get("GITHUB_TOKEN", "")
+    action_repo = os.environ.get("ACTION_REPO", "")
+
+    if not github_token and not dry_run:
+        print("ERROR: GITHUB_TOKEN environment variable is required (use --dry-run to skip)", file=sys.stderr)
+        return 1
+    if not action_repo and not dry_run:
+        print("ERROR: ACTION_REPO environment variable is required (use --dry-run to skip)", file=sys.stderr)
+        return 1
+
+    registry = load_registry()
+    state = load_state()
+    scan_schedule = state.get("scan_schedule", {})
+
+    results: list[dict[str, Any]] = []
+    for repo_entry in registry.get("repos", []):
+        repo_url = repo_entry.get("repo", "")
+        if repo_filter and repo_url != repo_filter:
+            continue
+
+        repo_config = get_repo_config(registry, repo_url)
+        if not _is_scan_due(repo_config, scan_schedule):
+            results.append({"repo": repo_url, "status": "not_due"})
+            continue
+
+        result = _trigger_scan(repo_config, github_token, action_repo, dry_run)
+        results.append(result)
+
+        if result["status"] == "triggered":
+            scan_schedule.setdefault(repo_url, {})
+            scan_schedule[repo_url]["last_scan"] = datetime.now(timezone.utc).isoformat()
+            if not output_json:
+                print(f"Triggered scan for {repo_url}")
+        elif result["status"] == "dry-run":
+            if not output_json:
+                print(f"[DRY RUN] Would trigger scan for {repo_url}")
+        else:
+            if not output_json:
+                print(f"ERROR scanning {repo_url}: {result.get('message', '')}", file=sys.stderr)
+
+    state["scan_schedule"] = scan_schedule
+    save_state(state)
+
+    triggered = len([r for r in results if r["status"] == "triggered"])
+    skipped = len([r for r in results if r["status"] == "not_due"])
+    dry_run_count = len([r for r in results if r["status"] == "dry-run"])
+    errors = len([r for r in results if r["status"] == "error"])
+
+    summary = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "repo_filter": repo_filter,
+        "dry_run": dry_run,
+        "total_repos": len(results),
+        "triggered": triggered,
+        "skipped_not_due": skipped,
+        "dry_run_count": dry_run_count,
+        "errors": errors,
+        "results": results,
+    }
+
+    if output_json:
+        print(json.dumps(summary, indent=2))
+    else:
+        if not dry_run:
+            print(f"\nScan summary: {triggered} triggered, {skipped} not due, {errors} errors")
+        else:
+            print(f"\n[DRY RUN] Scan summary: {dry_run_count} would trigger, {skipped} not due")
+
+    return 1 if errors > 0 and triggered == 0 and dry_run_count == 0 else 0
+
+
+def cmd_cycle(args: argparse.Namespace) -> int:
+    """Full orchestrator cycle: scan due repos, update state, dispatch."""
+    repo_filter = args.repo or ""
+    dry_run = args.dry_run
+    output_json = args.json
+
+    now = datetime.now(timezone.utc).isoformat()
+    cycle_results: dict[str, Any] = {
+        "timestamp": now,
+        "repo_filter": repo_filter,
+        "dry_run": dry_run,
+        "scan": None,
+        "dispatch": None,
+    }
+
+    scan_args = argparse.Namespace(
+        repo=repo_filter,
+        dry_run=dry_run,
+        json=True,
+    )
+    if not output_json:
+        print("=" * 60)
+        print("ORCHESTRATOR CYCLE")
+        print("=" * 60)
+        print(f"Started: {now}")
+        print()
+        print("--- Phase 1: Scanning ---")
+
+    import io
+    from contextlib import redirect_stdout
+
+    scan_buf = io.StringIO()
+    with redirect_stdout(scan_buf):
+        scan_exit = cmd_scan(scan_args)
+    scan_output = scan_buf.getvalue().strip()
+    try:
+        cycle_results["scan"] = json.loads(scan_output)
+    except (json.JSONDecodeError, ValueError):
+        cycle_results["scan"] = {"raw": scan_output, "exit_code": scan_exit}
+
+    if not output_json:
+        scan_data = cycle_results["scan"]
+        if isinstance(scan_data, dict) and "triggered" in scan_data:
+            print(f"  Scans triggered: {scan_data.get('triggered', 0)}")
+            print(f"  Repos not due: {scan_data.get('skipped_not_due', 0)}")
+            if scan_data.get("errors"):
+                print(f"  Errors: {scan_data['errors']}")
+        print()
+        print("--- Phase 2: Dispatching ---")
+
+    dispatch_args = argparse.Namespace(
+        repo=repo_filter,
+        dry_run=dry_run,
+        json=True,
+        max_sessions=getattr(args, "max_sessions", None),
+    )
+
+    dispatch_buf = io.StringIO()
+    with redirect_stdout(dispatch_buf):
+        dispatch_exit = cmd_dispatch(dispatch_args)
+    dispatch_output = dispatch_buf.getvalue().strip()
+    try:
+        cycle_results["dispatch"] = json.loads(dispatch_output)
+    except (json.JSONDecodeError, ValueError):
+        cycle_results["dispatch"] = {"raw": dispatch_output, "exit_code": dispatch_exit}
+
+    state = load_state()
+    state["last_cycle"] = now
+    save_state(state)
+
+    if not output_json:
+        dispatch_data = cycle_results["dispatch"]
+        if isinstance(dispatch_data, dict) and "sessions_created" in dispatch_data:
+            print(f"  Sessions created: {dispatch_data.get('sessions_created', 0)}")
+            if dispatch_data.get("sessions_failed"):
+                print(f"  Sessions failed: {dispatch_data['sessions_failed']}")
+            print(f"  Rate limit remaining: {dispatch_data.get('rate_limit_remaining', '?')}")
+        elif isinstance(dispatch_data, dict) and "status" in dispatch_data:
+            print(f"  {dispatch_data.get('message', dispatch_data.get('status', ''))}")
+        print()
+        print("Cycle complete.")
+    else:
+        print(json.dumps(cycle_results, indent=2))
+
+    return 0
+
+
 def _issue_file(issue: dict[str, Any]) -> str:
     locs = issue.get("locations", [])
     if locs:
@@ -1315,6 +1568,27 @@ def main() -> int:
     )
     dispatch_parser.add_argument("--max-sessions", type=int, default=None, help="Override maximum sessions to create")
 
+    scan_parser = subparsers.add_parser(
+        "scan", help="Trigger CodeQL scans for repos due for scanning",
+    )
+    scan_parser.add_argument("--repo", default="", help="Filter by repository URL")
+    scan_parser.add_argument("--json", action="store_true", help="Output as JSON")
+    scan_parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Show what would be scanned without triggering workflows",
+    )
+
+    cycle_parser = subparsers.add_parser(
+        "cycle", help="Full orchestrator cycle: scan due repos, then dispatch",
+    )
+    cycle_parser.add_argument("--repo", default="", help="Filter by repository URL")
+    cycle_parser.add_argument("--json", action="store_true", help="Output as JSON")
+    cycle_parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Run the full cycle in dry-run mode",
+    )
+    cycle_parser.add_argument("--max-sessions", type=int, default=None, help="Override maximum sessions to create")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -1326,6 +1600,8 @@ def main() -> int:
         "plan": cmd_plan,
         "status": cmd_status,
         "dispatch": cmd_dispatch,
+        "scan": cmd_scan,
+        "cycle": cmd_cycle,
     }
 
     return commands[args.command](args)

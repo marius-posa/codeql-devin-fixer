@@ -109,6 +109,17 @@
 
   <div class="panel">
     <div class="panel-header">
+      Orchestrator
+      <span id="orchestrator-status-label" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      <button class="btn btn-sm" onclick="triggerOrchestratorScan()" style="margin-left:auto" id="btn-orch-scan">Scan Due Repos</button>
+      <button class="btn btn-sm" onclick="triggerOrchestratorDispatch()" id="btn-orch-dispatch" style="background:#1f6feb;border-color:#388bfd;color:#fff;margin-left:4px">Dispatch</button>
+    </div>
+    <div class="panel-body" id="orchestrator-panel-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+    <div class="panel-body table-scroll-wrapper" id="orchestrator-history-container"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
       Scheduled Repo Registry
       <span id="registry-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
     </div>
@@ -169,6 +180,8 @@ let registryData = null;
 let currentPeriod = 'all';
 let slaData = {};
 let verificationData = {};
+let orchestratorStatus = null;
+let orchestratorHistory = null;
 
 function setPeriod(period) {
   currentPeriod = period;
@@ -541,6 +554,8 @@ async function fetchAll() {
     { key: 'registry', endpoint: '/api/registry', single: true },
     { key: 'sla', endpoint: '/api/sla', single: true },
     { key: 'verification', endpoint: '/api/verification', single: true },
+    { key: 'orchestrator', endpoint: '/api/orchestrator/status', single: true },
+    { key: 'orchestratorHistory', endpoint: '/api/orchestrator/history', single: true },
   ];
   const results = {};
   const settled = await Promise.allSettled(
@@ -570,6 +585,8 @@ async function fetchAll() {
   if (results.registry !== undefined) registryData = results.registry;
   if (results.sla !== undefined) slaData = results.sla;
   if (results.verification !== undefined) verificationData = results.verification;
+  if (results.orchestrator !== undefined) orchestratorStatus = results.orchestrator;
+  if (results.orchestratorHistory !== undefined) orchestratorHistory = results.orchestratorHistory;
   renderAll();
   setStatus(hasError ? 'Loaded with some errors (check console)' : 'Ready');
   setUpdated();
@@ -631,7 +648,126 @@ function renderAll() {
   renderIssuesTable(allIssues, 'issues-table-container', 'issues-count');
   renderSlaPanel(slaData);
   renderVerificationPanel(verificationData);
+  renderOrchestratorPanel();
   renderRegistryPanel();
+}
+
+function renderOrchestratorPanel() {
+  var el = document.getElementById('orchestrator-panel-container');
+  var histEl = document.getElementById('orchestrator-history-container');
+  var labelEl = document.getElementById('orchestrator-status-label');
+  if (!orchestratorStatus) {
+    el.innerHTML = '<div class="empty-state">Orchestrator status unavailable</div>';
+    return;
+  }
+  var s = orchestratorStatus;
+  var rl = s.rate_limit || {};
+  var used = rl.used || 0, max = rl.max || 20, remaining = rl.remaining || 0;
+  var rlPct = max > 0 ? Math.round((used / max) * 100) : 0;
+  var rlColor = rlPct > 80 ? 'var(--accent-red)' : rlPct > 50 ? 'var(--accent-yellow, #d29922)' : 'var(--accent-green)';
+  if (labelEl) labelEl.textContent = s.last_cycle ? 'Last cycle: ' + formatDate(s.last_cycle) : 'No cycles run yet';
+
+  var html = '<div class="metrics-grid" style="margin-bottom:12px">';
+  var breakdown = s.issue_state_breakdown || {};
+  var stateOrder = ['new','recurring','session_dispatched','pr_open','pr_merged','fixed','verified_fixed'];
+  var stateColors = {new:'orange',recurring:'orange',session_dispatched:'purple',pr_open:'blue',pr_merged:'cyan',fixed:'green',verified_fixed:'green'};
+  stateOrder.forEach(function(st) {
+    var count = breakdown[st] || 0;
+    if (count > 0 || st === 'new' || st === 'fixed') {
+      html += '<div class="metric-card ' + (stateColors[st] || 'blue') + '"><div class="label">' + escapeHtml(st.replace(/_/g, ' ')) + '</div><div class="value">' + count + '</div></div>';
+    }
+  });
+  html += '</div>';
+
+  html += '<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Rate Limit (' + rl.period_hours + 'h window)</div>';
+  html += '<div style="background:var(--bg-tertiary);border-radius:6px;height:20px;overflow:hidden;position:relative">';
+  html += '<div style="background:' + rlColor + ';height:100%;width:' + rlPct + '%;transition:width 0.3s"></div>';
+  html += '<span style="position:absolute;top:0;left:8px;line-height:20px;font-size:11px;color:var(--text-primary)">' + used + ' / ' + max + ' used (' + remaining + ' remaining)</span>';
+  html += '</div></div>';
+
+  var objectives = s.objective_progress || [];
+  if (objectives.length > 0) {
+    html += '<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Objectives</div>';
+    objectives.forEach(function(obj) {
+      var pct = obj.target_count > 0 ? Math.round((obj.current_count / obj.target_count) * 100) : 0;
+      var barColor = obj.met ? 'var(--accent-green)' : 'var(--accent-blue, #58a6ff)';
+      html += '<div style="margin-bottom:6px"><div style="font-size:12px;margin-bottom:2px">' + escapeHtml(obj.objective) + ' <span style="color:var(--text-muted)">' + obj.current_count + '/' + obj.target_count;
+      if (obj.met) html += ' (met)';
+      html += '</span></div>';
+      html += '<div style="background:var(--bg-tertiary);border-radius:4px;height:14px;overflow:hidden">';
+      html += '<div style="background:' + barColor + ';height:100%;width:' + Math.min(pct, 100) + '%;transition:width 0.3s"></div></div></div>';
+    });
+    html += '</div>';
+  }
+
+  el.innerHTML = html;
+
+  if (!orchestratorHistory || !orchestratorHistory.items || orchestratorHistory.items.length === 0) {
+    histEl.innerHTML = '';
+    return;
+  }
+  var entries = orchestratorHistory.items;
+  var rows = '';
+  entries.slice(0, 20).forEach(function(e) {
+    rows += '<tr>'
+      + '<td><span class="issue-id">' + escapeHtml((e.fingerprint || '').slice(0, 12)) + '</span></td>'
+      + '<td>' + escapeHtml(e.session_id || e.session_url || '-') + '</td>'
+      + '<td>' + escapeHtml(e.status || '-') + '</td>'
+      + '<td>' + formatDate(e.dispatched_at) + '</td>'
+      + '</tr>';
+  });
+  histEl.innerHTML = '<div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;padding-top:8px">Recent Dispatch History</div>'
+    + '<table><thead><tr><th>Fingerprint</th><th>Session</th><th>Status</th><th>Dispatched</th></tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+async function triggerOrchestratorScan() {
+  var btn = document.getElementById('btn-orch-scan');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Scanning...';
+  setStatus('Triggering orchestrator scan...');
+  try {
+    var res = await _authedFetch(API + '/api/orchestrator/scan', {
+      method: 'POST',
+      headers: Object.assign({}, _authHeaders(), { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({}),
+    });
+    var data = await res.json();
+    if (data.error) {
+      setStatus('Scan error: ' + data.error);
+    } else {
+      setStatus('Scan complete: ' + (data.triggered || 0) + ' triggered, ' + (data.skipped_not_due || 0) + ' not due');
+    }
+    await fetchAll();
+  } catch (e) {
+    setStatus('Scan error: ' + e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = 'Scan Due Repos';
+}
+
+async function triggerOrchestratorDispatch() {
+  var btn = document.getElementById('btn-orch-dispatch');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Dispatching...';
+  setStatus('Running orchestrator dispatch...');
+  try {
+    var res = await _authedFetch(API + '/api/orchestrator/dispatch', {
+      method: 'POST',
+      headers: Object.assign({}, _authHeaders(), { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({}),
+    });
+    var data = await res.json();
+    if (data.error) {
+      setStatus('Dispatch error: ' + data.error);
+    } else {
+      setStatus('Dispatch complete: ' + (data.sessions_created || 0) + ' sessions created');
+    }
+    await fetchAll();
+  } catch (e) {
+    setStatus('Dispatch error: ' + e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = 'Dispatch';
 }
 
 function renderRegistryPanel() {

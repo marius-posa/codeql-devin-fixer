@@ -27,11 +27,15 @@ from scripts.orchestrator import (
     _pr_fingerprints,
     _form_dispatch_batches,
     _build_orchestrator_prompt,
+    _is_scan_due,
     cmd_ingest,
     cmd_plan,
     cmd_status,
     cmd_dispatch,
+    cmd_scan,
+    cmd_cycle,
     SEVERITY_WEIGHTS,
+    SCHEDULE_INTERVALS,
 )
 from scripts.fix_learning import FixLearning
 import database as database_mod
@@ -970,3 +974,159 @@ class TestCmdDispatch:
         assert output["repo_filter"] == "https://github.com/a/b"
         for r in output.get("results", []):
             assert r["target_repo"] == "https://github.com/a/b"
+
+
+class TestScheduleIntervals:
+    def test_known_intervals(self):
+        assert "hourly" in SCHEDULE_INTERVALS
+        assert "daily" in SCHEDULE_INTERVALS
+        assert "weekly" in SCHEDULE_INTERVALS
+        assert "biweekly" in SCHEDULE_INTERVALS
+        assert "monthly" in SCHEDULE_INTERVALS
+
+    def test_ordering(self):
+        from datetime import timedelta
+        assert SCHEDULE_INTERVALS["hourly"] < SCHEDULE_INTERVALS["daily"]
+        assert SCHEDULE_INTERVALS["daily"] < SCHEDULE_INTERVALS["weekly"]
+        assert SCHEDULE_INTERVALS["weekly"] < SCHEDULE_INTERVALS["monthly"]
+
+
+class TestIsScanDue:
+    def test_disabled_repo(self):
+        config = {"repo": "https://github.com/a/b", "enabled": False}
+        assert _is_scan_due(config, {}) is False
+
+    def test_auto_scan_disabled(self):
+        config = {"repo": "https://github.com/a/b", "enabled": True, "auto_scan": False}
+        assert _is_scan_due(config, {}) is False
+
+    def test_never_scanned(self):
+        config = {"repo": "https://github.com/a/b", "enabled": True, "auto_scan": True}
+        assert _is_scan_due(config, {}) is True
+
+    def test_recently_scanned(self):
+        from datetime import datetime, timezone
+        config = {"repo": "https://github.com/a/b", "enabled": True, "auto_scan": True, "schedule": "weekly"}
+        now = datetime.now(timezone.utc).isoformat()
+        schedule = {"https://github.com/a/b": {"last_scan": now}}
+        assert _is_scan_due(config, schedule) is False
+
+    def test_overdue_scan(self):
+        from datetime import datetime, timezone, timedelta
+        config = {"repo": "https://github.com/a/b", "enabled": True, "auto_scan": True, "schedule": "daily"}
+        old = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+        schedule = {"https://github.com/a/b": {"last_scan": old}}
+        assert _is_scan_due(config, schedule) is True
+
+
+class TestCmdScan:
+    def test_scan_dry_run(self, tmp_env, capsys):
+        class Args:
+            repo = ""
+            json = True
+            dry_run = True
+
+        result = cmd_scan(Args())
+        assert result == 0
+        output = json.loads(capsys.readouterr().out)
+        assert output["dry_run"] is True
+        assert output["total_repos"] >= 1
+
+    def test_scan_dry_run_with_repo_filter(self, tmp_env, capsys):
+        class Args:
+            repo = "https://github.com/owner/repo"
+            json = True
+            dry_run = True
+
+        result = cmd_scan(Args())
+        assert result == 0
+        output = json.loads(capsys.readouterr().out)
+        assert output["repo_filter"] == "https://github.com/owner/repo"
+        for r in output.get("results", []):
+            assert r["repo"] == "https://github.com/owner/repo"
+
+    def test_scan_requires_github_token(self, tmp_env, monkeypatch, capsys):
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.delenv("ACTION_REPO", raising=False)
+
+        class Args:
+            repo = ""
+            json = False
+            dry_run = False
+
+        result = cmd_scan(Args())
+        assert result == 1
+
+    def test_scan_updates_state(self, tmp_env, capsys):
+        class Args:
+            repo = ""
+            json = True
+            dry_run = True
+
+        cmd_scan(Args())
+        state = load_state()
+        assert "scan_schedule" in state
+
+    def test_scan_text_output(self, tmp_env, capsys):
+        class Args:
+            repo = ""
+            json = False
+            dry_run = True
+
+        result = cmd_scan(Args())
+        assert result == 0
+        output = capsys.readouterr().out
+        assert "DRY RUN" in output
+
+
+class TestCmdCycle:
+    def test_cycle_dry_run_json(self, tmp_env, capsys):
+        class Args:
+            repo = ""
+            json = True
+            dry_run = True
+            max_sessions = None
+
+        result = cmd_cycle(Args())
+        assert result == 0
+        output = json.loads(capsys.readouterr().out)
+        assert "scan" in output
+        assert "dispatch" in output
+        assert output["dry_run"] is True
+
+    def test_cycle_updates_last_cycle(self, tmp_env, capsys):
+        class Args:
+            repo = ""
+            json = True
+            dry_run = True
+            max_sessions = None
+
+        cmd_cycle(Args())
+        state = load_state()
+        assert state["last_cycle"] is not None
+
+    def test_cycle_text_output(self, tmp_env, capsys):
+        class Args:
+            repo = ""
+            json = False
+            dry_run = True
+            max_sessions = None
+
+        result = cmd_cycle(Args())
+        assert result == 0
+        output = capsys.readouterr().out
+        assert "ORCHESTRATOR CYCLE" in output
+        assert "Scanning" in output
+        assert "Dispatching" in output
+
+    def test_cycle_with_repo_filter(self, tmp_env, capsys):
+        class Args:
+            repo = "https://github.com/owner/repo"
+            json = True
+            dry_run = True
+            max_sessions = None
+
+        result = cmd_cycle(Args())
+        assert result == 0
+        output = json.loads(capsys.readouterr().out)
+        assert output["repo_filter"] == "https://github.com/owner/repo"

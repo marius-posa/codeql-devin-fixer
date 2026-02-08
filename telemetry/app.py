@@ -611,6 +611,202 @@ def api_dispatch():
         return jsonify({"error": "Request failed due to a server error"}), 500
 
 
+_ORCHESTRATOR_DIR = pathlib.Path(__file__).resolve().parent.parent / "scripts"
+_ORCHESTRATOR_STATE_PATH = pathlib.Path(__file__).resolve().parent / "orchestrator_state.json"
+_ORCHESTRATOR_REGISTRY_PATH = pathlib.Path(__file__).resolve().parent.parent / "repo_registry.json"
+
+
+def _load_orchestrator_state() -> dict:
+    if not _ORCHESTRATOR_STATE_PATH.exists():
+        return {
+            "last_cycle": None,
+            "rate_limiter": {},
+            "dispatch_history": {},
+            "objective_progress": [],
+            "scan_schedule": {},
+        }
+    try:
+        with open(_ORCHESTRATOR_STATE_PATH) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {
+            "last_cycle": None,
+            "rate_limiter": {},
+            "dispatch_history": {},
+            "objective_progress": [],
+            "scan_schedule": {},
+        }
+
+
+def _load_orchestrator_registry() -> dict:
+    if not _ORCHESTRATOR_REGISTRY_PATH.exists():
+        return {"version": "2.0", "defaults": {}, "orchestrator": {}, "repos": []}
+    with open(_ORCHESTRATOR_REGISTRY_PATH) as f:
+        return json.load(f)
+
+
+@app.route("/api/orchestrator/status")
+def api_orchestrator_status():
+    state = _load_orchestrator_state()
+    registry = _load_orchestrator_registry()
+    orch_config = registry.get("orchestrator", {})
+
+    max_sessions = orch_config.get("global_session_limit", 20)
+    period_hours = orch_config.get("global_session_limit_period_hours", 24)
+
+    rl_data = state.get("rate_limiter", {})
+    timestamps = rl_data.get("timestamps", [])
+    from datetime import datetime, timedelta, timezone
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=period_hours)
+    recent = [t for t in timestamps if t > cutoff.isoformat()]
+    used = len(recent)
+
+    conn = get_connection()
+    try:
+        issues = query_issues(conn)
+        state_counts: dict[str, int] = {}
+        for issue in issues:
+            derived = issue.get("derived_state", issue.get("status", "new"))
+            state_counts[derived] = state_counts.get(derived, 0) + 1
+
+        objectives = orch_config.get("objectives", [])
+        objective_progress = []
+        for obj in objectives:
+            obj_name = obj.get("objective", "")
+            target = obj.get("target_count", 0)
+            severity = obj.get("severity", "")
+            current = sum(
+                1 for i in issues
+                if i.get("derived_state") in ("verified_fixed", "fixed")
+                and (not severity or i.get("severity_tier") == severity)
+            )
+            objective_progress.append({
+                "objective": obj_name,
+                "target_count": target,
+                "current_count": current,
+                "met": current >= target,
+            })
+
+        return jsonify({
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "last_cycle": state.get("last_cycle"),
+            "issue_state_breakdown": state_counts,
+            "total_issues": len(issues),
+            "rate_limit": {
+                "used": used,
+                "max": max_sessions,
+                "remaining": max_sessions - used,
+                "period_hours": period_hours,
+            },
+            "objective_progress": objective_progress,
+            "scan_schedule": state.get("scan_schedule", {}),
+            "dispatch_history_entries": len(state.get("dispatch_history", {})),
+        })
+    finally:
+        conn.close()
+
+
+@app.route("/api/orchestrator/plan")
+def api_orchestrator_plan():
+    import subprocess
+    result = subprocess.run(
+        ["python3", str(_ORCHESTRATOR_DIR / "orchestrator.py"), "plan", "--json"],
+        capture_output=True, text=True, timeout=60,
+        cwd=str(_ORCHESTRATOR_DIR.parent),
+    )
+    if result.returncode != 0:
+        return jsonify({"error": "Plan computation failed", "stderr": result.stderr[:500]}), 500
+    try:
+        return jsonify(json.loads(result.stdout))
+    except (json.JSONDecodeError, ValueError):
+        return jsonify({"error": "Invalid plan output", "raw": result.stdout[:500]}), 500
+
+
+@app.route("/api/orchestrator/dispatch", methods=["POST"])
+@require_api_key
+def api_orchestrator_dispatch():
+    if not _get_telemetry_api_key():
+        return jsonify({"error": "TELEMETRY_API_KEY must be configured"}), 403
+
+    body = flask_request.get_json(silent=True) or {}
+    repo_filter = body.get("repo", "")
+    dry_run = body.get("dry_run", False)
+
+    import subprocess
+    cmd = ["python3", str(_ORCHESTRATOR_DIR / "orchestrator.py"), "dispatch", "--json"]
+    if repo_filter:
+        cmd.extend(["--repo", repo_filter])
+    if dry_run:
+        cmd.append("--dry-run")
+
+    result = subprocess.run(
+        cmd, capture_output=True, text=True, timeout=120,
+        cwd=str(_ORCHESTRATOR_DIR.parent),
+        env={**os.environ},
+    )
+    try:
+        return jsonify(json.loads(result.stdout))
+    except (json.JSONDecodeError, ValueError):
+        if result.returncode != 0:
+            return jsonify({"error": "Dispatch failed", "stderr": result.stderr[:500]}), 500
+        return jsonify({"error": "Invalid dispatch output", "raw": result.stdout[:500]}), 500
+
+
+@app.route("/api/orchestrator/scan", methods=["POST"])
+@require_api_key
+def api_orchestrator_scan():
+    if not _get_telemetry_api_key():
+        return jsonify({"error": "TELEMETRY_API_KEY must be configured"}), 403
+
+    body = flask_request.get_json(silent=True) or {}
+    repo_filter = body.get("repo", "")
+    dry_run = body.get("dry_run", False)
+
+    import subprocess
+    cmd = ["python3", str(_ORCHESTRATOR_DIR / "orchestrator.py"), "scan", "--json"]
+    if repo_filter:
+        cmd.extend(["--repo", repo_filter])
+    if dry_run:
+        cmd.append("--dry-run")
+
+    result = subprocess.run(
+        cmd, capture_output=True, text=True, timeout=120,
+        cwd=str(_ORCHESTRATOR_DIR.parent),
+        env={**os.environ},
+    )
+    try:
+        return jsonify(json.loads(result.stdout))
+    except (json.JSONDecodeError, ValueError):
+        if result.returncode != 0:
+            return jsonify({"error": "Scan failed", "stderr": result.stderr[:500]}), 500
+        return jsonify({"error": "Invalid scan output", "raw": result.stdout[:500]}), 500
+
+
+@app.route("/api/orchestrator/history")
+def api_orchestrator_history():
+    fingerprint = flask_request.args.get("fingerprint", "")
+    state = _load_orchestrator_state()
+    dispatch_history = state.get("dispatch_history", {})
+
+    if fingerprint:
+        entries = dispatch_history.get(fingerprint, [])
+        if not isinstance(entries, list):
+            entries = [entries] if entries else []
+        return jsonify({"fingerprint": fingerprint, "entries": entries})
+
+    page, per_page = _get_pagination()
+    all_entries: list[dict] = []
+    for fp, history in dispatch_history.items():
+        if isinstance(history, list):
+            for entry in history:
+                all_entries.append({**entry, "fingerprint": fp})
+        elif isinstance(history, dict):
+            all_entries.append({**history, "fingerprint": fp})
+
+    all_entries.sort(key=lambda e: e.get("dispatched_at", ""), reverse=True)
+    return jsonify(_paginate(all_entries, page, per_page))
+
+
 def _load_registry() -> dict:
     if not REGISTRY_PATH.exists():
         return {"version": "1.0", "defaults": {}, "concurrency": {"max_parallel": 3, "delay_seconds": 30}, "repos": []}
