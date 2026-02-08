@@ -182,6 +182,7 @@ let slaData = {};
 let verificationData = {};
 let orchestratorStatus = null;
 let orchestratorHistory = null;
+let orchestratorPlan = null;
 
 function setPeriod(period) {
   currentPeriod = period;
@@ -556,6 +557,7 @@ async function fetchAll() {
     { key: 'verification', endpoint: '/api/verification', single: true },
     { key: 'orchestrator', endpoint: '/api/orchestrator/status', single: true },
     { key: 'orchestratorHistory', endpoint: '/api/orchestrator/history', single: true },
+    { key: 'orchestratorPlan', endpoint: '/api/orchestrator/plan', single: true },
   ];
   const results = {};
   const settled = await Promise.allSettled(
@@ -587,6 +589,7 @@ async function fetchAll() {
   if (results.verification !== undefined) verificationData = results.verification;
   if (results.orchestrator !== undefined) orchestratorStatus = results.orchestrator;
   if (results.orchestratorHistory !== undefined) orchestratorHistory = results.orchestratorHistory;
+  if (results.orchestratorPlan !== undefined) orchestratorPlan = results.orchestratorPlan;
   renderAll();
   setStatus(hasError ? 'Loaded with some errors (check console)' : 'Ready');
   setUpdated();
@@ -698,6 +701,28 @@ function renderOrchestratorPanel() {
       html += '<div style="background:' + barColor + ';height:100%;width:' + Math.min(pct, 100) + '%;transition:width 0.3s"></div></div></div>';
     });
     html += '</div>';
+  }
+
+  var dispatches = (orchestratorPlan || {}).planned_dispatches || [];
+  if (dispatches.length > 0) {
+    var repoScores = {};
+    dispatches.forEach(function(d) {
+      var repo = d.target_repo || d.repo || '';
+      if (!repo) return;
+      if (!repoScores[repo]) repoScores[repo] = { total: 0, count: 0 };
+      repoScores[repo].total += (d.priority_score || 0);
+      repoScores[repo].count += 1;
+    });
+    var ranked = Object.keys(repoScores).map(function(r) {
+      return { repo: r, avg: repoScores[r].total / repoScores[r].count, issues: repoScores[r].count };
+    }).sort(function(a, b) { return b.avg - a.avg; });
+    html += '<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Repo Priority Ranking</div>';
+    html += '<table><thead><tr><th>Repo</th><th>Avg Priority</th><th>Eligible Issues</th></tr></thead><tbody>';
+    ranked.forEach(function(r) {
+      var name = r.repo.replace('https://github.com/', '');
+      html += '<tr><td>' + escapeHtml(name) + '</td><td>' + r.avg.toFixed(1) + '</td><td>' + r.issues + '</td></tr>';
+    });
+    html += '</tbody></table></div>';
   }
 
   el.innerHTML = html;
