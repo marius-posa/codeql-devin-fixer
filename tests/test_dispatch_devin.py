@@ -19,6 +19,8 @@ from scripts.dispatch_devin import (
     sanitize_prompt_text,
     _extract_code_snippet,
     _find_related_test_files,
+    _load_prompt_template,
+    _render_template_prompt,
 )
 from scripts.fix_learning import FixLearning
 from scripts.repo_context import RepoContext
@@ -592,3 +594,79 @@ class TestFixExamplesInPrompt:
             fix_learning=fl,
         )
         assert "Historical fix examples" not in prompt
+
+
+class TestLoadPromptTemplate:
+    def test_empty_path_returns_none(self):
+        assert _load_prompt_template("") is None
+
+    def test_nonexistent_file_returns_none(self, capsys):
+        assert _load_prompt_template("/nonexistent/template.j2") is None
+        assert "WARNING" in capsys.readouterr().out
+
+    def test_loads_valid_template(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".j2", delete=False) as f:
+            f.write("Fix {{ family }} issues in {{ repo_url }}")
+            f.flush()
+            template = _load_prompt_template(f.name)
+        os.unlink(f.name)
+        assert template is not None
+
+    def test_returns_none_without_jinja2(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".j2", delete=False) as f:
+            f.write("template")
+            f.flush()
+            with patch("scripts.dispatch_devin.jinja2", None):
+                result = _load_prompt_template(f.name)
+        os.unlink(f.name)
+        assert result is None
+
+
+class TestRenderTemplatePrompt:
+    def _batch(self):
+        return {
+            "batch_id": 1,
+            "cwe_family": "injection",
+            "severity_tier": "critical",
+            "max_severity_score": 9.8,
+            "issue_count": 1,
+            "file_count": 1,
+            "issues": [{
+                "id": "CQLF-R1-0001",
+                "rule_id": "js/sql-injection",
+                "message": "SQL injection",
+                "severity_score": 9.8,
+                "severity_tier": "critical",
+                "cwes": ["cwe-89"],
+                "cwe_family": "injection",
+                "locations": [{"file": "src/db.js", "start_line": 42}],
+            }],
+        }
+
+    def test_renders_template_with_context(self):
+        import jinja2
+        template = jinja2.Template("Fix {{ family }} ({{ issue_count }} issues) in {{ repo_url }}")
+        result = _render_template_prompt(template, self._batch(), "https://github.com/o/r", "main")
+        assert "Fix injection" in result
+        assert "1 issues" in result
+        assert "https://github.com/o/r" in result
+
+    def test_includes_issue_ids(self):
+        import jinja2
+        template = jinja2.Template("Issues: {{ issue_ids | join(', ') }}")
+        result = _render_template_prompt(template, self._batch(), "https://github.com/o/r", "main")
+        assert "CQLF-R1-0001" in result
+
+    def test_includes_fix_hint(self):
+        import jinja2
+        template = jinja2.Template("Hint: {{ fix_hint }}")
+        result = _render_template_prompt(template, self._batch(), "https://github.com/o/r", "main")
+        assert result.startswith("Hint: ")
+        assert len(result) > len("Hint: ")
+
+    def test_includes_batch_metadata(self):
+        import jinja2
+        template = jinja2.Template("Tier: {{ tier }}, Score: {{ max_severity_score }}")
+        result = _render_template_prompt(template, self._batch(), "https://github.com/o/r", "main")
+        assert "Tier: critical" in result
+        assert "Score: 9.8" in result

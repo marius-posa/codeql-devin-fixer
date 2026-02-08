@@ -1,0 +1,32 @@
+# CodeQL Devin Fixer - Per-repo configuration
+#
+# Place this file as `.codeql-fixer.yml` (or `.codeql-fixer.yaml`) at the root
+# of your repository to override default action settings without modifying the
+# workflow dispatch inputs.
+#
+# All fields are optional. Omitted fields use the action's default values.
+
+# Minimum severity tier to include in analysis.
+# Options: critical, high, medium, low
+severity_threshold: low
+
+# Maximum number of issues per Devin session/batch.
+batch_size: 5
+
+# Maximum number of Devin sessions to create.
+max_sessions: 10
+
+# Glob patterns to exclude from CodeQL analysis.
+# These are combined with any exclude_paths set in the workflow inputs.
+exclude_paths:
+  - "vendor/**"
+  - "node_modules/**"
+  - "test/fixtures/**"
+
+# Custom CWE-to-family mappings.
+# These extend (not replace) the built-in CWE family definitions.
+# Use this to group project-specific vulnerability patterns.
+# cwe_families:
+#   my-custom-family:
+#     - cwe-999
+#     - cwe-998
