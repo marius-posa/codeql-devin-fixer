@@ -12,12 +12,11 @@ import json
 import os
 import sys
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "telemetry"))
 
-import pytest
 from scripts.orchestrator import (
     _cooldown_remaining_hours,
     should_skip_issue,
@@ -26,7 +25,6 @@ from scripts.orchestrator import (
     _collect_fix_examples,
     COOLDOWN_HOURS,
     ADAPTIVE_COMMIT_THRESHOLD,
-    SCHEDULE_INTERVALS,
 )
 from scripts.fix_learning import FixLearning
 from github_app.alerts import (
