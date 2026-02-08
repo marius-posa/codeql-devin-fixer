@@ -35,6 +35,7 @@ import json
 import os
 import pathlib
 import sys
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -51,7 +52,13 @@ if str(_TELEMETRY_DIR) not in sys.path:
 from database import get_connection, init_db, insert_run, query_all_sessions, query_all_prs, query_issues  # noqa: E402
 from issue_tracking import _parse_ts  # noqa: E402
 from verification import load_verification_records, build_fingerprint_fix_map  # noqa: E402
-from fix_learning import FixLearning  # noqa: E402
+from fix_learning import CWE_FIX_HINTS, FixLearning  # noqa: E402
+
+try:
+    from dispatch_devin import create_devin_session  # noqa: E402
+    _HAS_DISPATCH = True
+except ImportError:
+    _HAS_DISPATCH = False
 
 REGISTRY_PATH = _ROOT_DIR / "repo_registry.json"
 STATE_PATH = _TELEMETRY_DIR / "orchestrator_state.json"
@@ -422,6 +429,68 @@ def build_global_issue_state(
         conn.close()
 
 
+def _compute_eligible_issues(repo_filter: str = "") -> dict[str, Any]:
+    """Compute eligible issues for dispatch (shared by plan and dispatch)."""
+    registry = load_registry()
+    orch_config = registry.get("orchestrator", {})
+    state = load_state()
+
+    objectives = [
+        Objective.from_dict(o) for o in orch_config.get("objectives", [])
+    ]
+
+    rate_limiter = RateLimiter.from_dict(
+        {**state.get("rate_limiter", {}),
+         "max_sessions": orch_config.get("global_session_limit", 20),
+         "period_hours": orch_config.get("global_session_limit_period_hours", 24)}
+    )
+
+    dispatch_history = state.get("dispatch_history", {})
+    fl = FixLearning.from_telemetry_dir(str(RUNS_DIR))
+
+    global_state = build_global_issue_state(repo_filter)
+    issues = global_state["issues"]
+
+    eligible: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+
+    for issue in issues:
+        derived = issue.get("derived_state", issue.get("status", "new"))
+        skip, reason = should_skip_issue(
+            issue, derived, dispatch_history, fl,
+        )
+        if skip:
+            skipped.append({"fingerprint": issue.get("fingerprint", ""), "reason": reason, **_issue_summary(issue)})
+        else:
+            eligible.append(issue)
+
+    for issue in eligible:
+        repo_url = issue.get("target_repo", "")
+        repo_config = get_repo_config(registry, repo_url)
+        issue["priority_score"] = compute_issue_priority(
+            issue, repo_config, objectives, fl,
+        )
+
+    eligible.sort(key=lambda x: x.get("priority_score", 0), reverse=True)
+
+    global_limit = orch_config.get("global_session_limit", 20)
+    remaining_capacity = global_limit - rate_limiter.recent_count()
+
+    return {
+        "registry": registry,
+        "orch_config": orch_config,
+        "state": state,
+        "rate_limiter": rate_limiter,
+        "objectives": objectives,
+        "fl": fl,
+        "all_issues": issues,
+        "eligible": eligible,
+        "skipped": skipped,
+        "global_limit": global_limit,
+        "remaining_capacity": remaining_capacity,
+    }
+
+
 def cmd_ingest(args: argparse.Namespace) -> int:
     batches_path = args.batches
     issues_path = args.issues
@@ -524,52 +593,18 @@ def cmd_plan(args: argparse.Namespace) -> int:
     repo_filter = args.repo or ""
     output_json = args.json
 
-    registry = load_registry()
-    orch_config = registry.get("orchestrator", {})
-    state = load_state()
-
-    objectives = [
-        Objective.from_dict(o) for o in orch_config.get("objectives", [])
-    ]
-
-    rate_limiter = RateLimiter.from_dict(
-        {**state.get("rate_limiter", {}),
-         "max_sessions": orch_config.get("global_session_limit", 20),
-         "period_hours": orch_config.get("global_session_limit_period_hours", 24)}
-    )
-
-    dispatch_history = state.get("dispatch_history", {})
-    fl = FixLearning.from_telemetry_dir(str(RUNS_DIR))
-
-    global_state = build_global_issue_state(repo_filter)
-    issues = global_state["issues"]
-
-    eligible: list[dict[str, Any]] = []
-    skipped: list[dict[str, Any]] = []
-
-    for issue in issues:
-        derived = issue.get("derived_state", issue.get("status", "new"))
-        skip, reason = should_skip_issue(
-            issue, derived, dispatch_history, fl,
-        )
-        if skip:
-            skipped.append({"fingerprint": issue.get("fingerprint", ""), "reason": reason, **_issue_summary(issue)})
-        else:
-            eligible.append(issue)
-
-    for issue in eligible:
-        repo_url = issue.get("target_repo", "")
-        repo_config = get_repo_config(registry, repo_url)
-        issue["priority_score"] = compute_issue_priority(
-            issue, repo_config, objectives, fl,
-        )
-
-    eligible.sort(key=lambda x: x.get("priority_score", 0), reverse=True)
+    data = _compute_eligible_issues(repo_filter)
+    eligible = data["eligible"]
+    skipped = data["skipped"]
+    all_issues = data["all_issues"]
+    rate_limiter = data["rate_limiter"]
+    objectives = data["objectives"]
+    registry = data["registry"]
+    global_limit = data["global_limit"]
+    remaining_capacity = data["remaining_capacity"]
 
     plan_batches: list[dict[str, Any]] = []
     sessions_planned = 0
-    global_limit = orch_config.get("global_session_limit", 20)
-    remaining_capacity = global_limit - rate_limiter.recent_count()
 
     repos_seen: dict[str, int] = {}
     for issue in eligible:
@@ -593,7 +628,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
     plan = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "repo_filter": repo_filter,
-        "total_issues": len(issues),
+        "total_issues": len(all_issues),
         "eligible_issues": len(eligible),
         "skipped_issues": len(skipped),
         "sessions_planned": sessions_planned,
@@ -603,7 +638,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
         "planned_dispatches": plan_batches,
         "skipped": skipped,
         "objective_progress": [
-            obj.progress(issues) for obj in objectives
+            obj.progress(all_issues) for obj in objectives
         ],
     }
 
@@ -690,6 +725,371 @@ def cmd_status(args: argparse.Namespace) -> int:
         _print_status(status_data)
 
     return 0
+
+
+def _form_dispatch_batches(
+    eligible: list[dict[str, Any]],
+    registry: dict[str, Any],
+    rate_limiter: RateLimiter,
+    remaining_capacity: int,
+) -> list[dict[str, Any]]:
+    """Group eligible issues into dispatch batches by repo and CWE family."""
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for issue in eligible:
+        key = (issue.get("target_repo", ""), issue.get("cwe_family", "other"))
+        groups.setdefault(key, []).append(issue)
+
+    batches: list[dict[str, Any]] = []
+    batch_id = 1
+    repos_session_count: dict[str, int] = {}
+
+    sorted_groups = sorted(
+        groups.items(),
+        key=lambda x: max(i.get("priority_score", 0) for i in x[1]),
+        reverse=True,
+    )
+
+    for (repo_url, family), group_issues in sorted_groups:
+        if len(batches) >= remaining_capacity:
+            break
+        if not rate_limiter.can_create_session():
+            break
+
+        repo_config = get_repo_config(registry, repo_url)
+        repo_limit = repo_config.get("max_sessions_per_cycle", 5)
+        batch_size = repo_config.get("batch_size", 5)
+
+        if repos_session_count.get(repo_url, 0) >= repo_limit:
+            continue
+
+        batch_issues = group_issues[:batch_size]
+
+        best_severity = max(
+            (i.get("severity_tier", "low") for i in batch_issues),
+            key=lambda s: SEVERITY_WEIGHTS.get(s, 0),
+        )
+
+        batch = {
+            "batch_id": batch_id,
+            "target_repo": repo_url,
+            "cwe_family": family,
+            "severity_tier": best_severity,
+            "issue_count": len(batch_issues),
+            "max_severity_score": max(
+                SEVERITY_WEIGHTS.get(i.get("severity_tier", "low"), 0) * 10
+                for i in batch_issues
+            ),
+            "issues": [
+                {
+                    "id": i.get("latest_issue_id", "") or i.get("fingerprint", ""),
+                    "rule_id": i.get("rule_id", ""),
+                    "rule_name": i.get("rule_id", ""),
+                    "severity_tier": i.get("severity_tier", ""),
+                    "severity_score": SEVERITY_WEIGHTS.get(i.get("severity_tier", ""), 0) * 10,
+                    "cwe_family": i.get("cwe_family", ""),
+                    "cwes": [],
+                    "locations": [{"file": i.get("file", ""), "start_line": i.get("start_line", 0)}],
+                    "message": i.get("description", ""),
+                    "fingerprint": i.get("fingerprint", ""),
+                }
+                for i in batch_issues
+            ],
+        }
+
+        batches.append(batch)
+        batch_id += 1
+        repos_session_count[repo_url] = repos_session_count.get(repo_url, 0) + 1
+
+    return batches
+
+
+def _build_orchestrator_prompt(
+    batch: dict[str, Any],
+    repo_config: dict[str, Any],
+    fl: FixLearning,
+) -> str:
+    """Build a Devin session prompt from orchestrator batch data."""
+    repo_url = batch["target_repo"]
+    family = batch["cwe_family"]
+    default_branch = repo_config.get("default_branch", "main")
+    issues = batch["issues"]
+
+    issue_ids = [i.get("id", "") for i in issues if i.get("id")]
+    ids_str = ", ".join(issue_ids) if issue_ids else "N/A"
+
+    parts: list[str] = [
+        f"Fix {batch['issue_count']} CodeQL security issue(s) in {repo_url} "
+        f"(branch: {default_branch}).",
+        "",
+        f"Issue IDs: {ids_str}",
+        f"Category: {family} | Severity: {batch['severity_tier'].upper()}",
+        "",
+    ]
+
+    fix_hint = CWE_FIX_HINTS.get(family)
+    if fix_hint:
+        parts.extend([f"Fix pattern hint: {fix_hint}", ""])
+
+    context = fl.prompt_context_for_family(family)
+    if context:
+        for line in context.split("\n"):
+            if line and not line.startswith("Fix pattern hint"):
+                parts.append(line)
+        parts.append("")
+
+    parts.extend(["Issues to fix:", ""])
+
+    file_list: set[str] = set()
+    for idx, issue in enumerate(issues, 1):
+        issue_id = issue.get("id", f"issue-{idx}")
+        file_path = ""
+        start_line = 0
+        for loc in issue.get("locations", []):
+            if loc.get("file"):
+                file_path = loc["file"]
+                start_line = loc.get("start_line", 0)
+                file_list.add(file_path)
+
+        loc_str = f"{file_path}:{start_line}" if file_path else "unknown"
+        parts.extend([
+            f"### {issue_id}: {issue.get('rule_id', 'unknown')}",
+            f"- Severity: {issue.get('severity_tier', 'unknown').upper()}",
+            f"- Location: {loc_str}",
+            f"- Description: {issue.get('message', 'No description')}",
+            "",
+        ])
+
+    ids_tag = ",".join(issue_ids[:6]) if issue_ids else f"batch-{batch['batch_id']}"
+    pr_title = f"fix({ids_tag}): resolve {family} security issues"
+
+    parts.extend([
+        "Instructions:",
+        f"1. Clone {repo_url} and create a new branch from {default_branch}.",
+        "2. Fix ALL the issues listed above.",
+        "3. Ensure fixes don't break existing functionality.",
+        "4. Run existing tests if available to verify.",
+        f"5. Create a PR on {repo_url} with a clear description listing each issue ID fixed.",
+        f"6. Title the PR exactly: '{pr_title}'",
+        f"7. In the PR body, list each issue ID ({ids_str}) and describe the fix applied.",
+        "",
+        "Files to focus on:",
+    ])
+    for f in sorted(file_list):
+        parts.append(f"- {f}")
+
+    return "\n".join(parts)
+
+
+def _record_dispatch_session(
+    batch: dict[str, Any],
+    session_id: str,
+    session_url: str,
+) -> None:
+    """Record a dispatched session in the telemetry DB."""
+    repo_url = batch["target_repo"]
+    now = datetime.now(timezone.utc).isoformat()
+
+    issue_ids = [
+        i.get("id", "") or i.get("fingerprint", "")
+        for i in batch.get("issues", [])
+    ]
+
+    run_data: dict[str, Any] = {
+        "target_repo": repo_url,
+        "fork_url": "",
+        "run_number": 0,
+        "run_id": "",
+        "run_url": "",
+        "run_label": f"orchestrator_dispatch_{now.replace(':', '-')}_{batch['batch_id']}",
+        "timestamp": now,
+        "issues_found": 0,
+        "batches_created": 1,
+        "zero_issue_run": True,
+        "severity_breakdown": {},
+        "category_breakdown": {},
+        "sessions": [
+            {
+                "session_id": session_id,
+                "session_url": session_url,
+                "batch_id": batch["batch_id"],
+                "status": "created",
+                "issue_ids": issue_ids,
+                "pr_url": "",
+            }
+        ],
+        "issue_fingerprints": [],
+    }
+
+    conn = get_connection()
+    try:
+        init_db(conn)
+        insert_run(conn, run_data)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def cmd_dispatch(args: argparse.Namespace) -> int:
+    """Execute the dispatch plan: create Devin sessions for eligible issues."""
+    repo_filter = args.repo or ""
+    dry_run = args.dry_run
+    output_json = args.json
+    max_sessions_override = getattr(args, "max_sessions", None)
+
+    api_key = os.environ.get("DEVIN_API_KEY", "")
+    if not api_key and not dry_run:
+        print("ERROR: DEVIN_API_KEY environment variable is required (use --dry-run to skip)")
+        return 1
+
+    if not _HAS_DISPATCH and not dry_run:
+        print("ERROR: dispatch_devin module not available (missing requests library)")
+        return 1
+
+    data = _compute_eligible_issues(repo_filter)
+    eligible = data["eligible"]
+    registry = data["registry"]
+    rate_limiter = data["rate_limiter"]
+    fl = data["fl"]
+    state = data["state"]
+    remaining = data["remaining_capacity"]
+
+    if max_sessions_override is not None:
+        remaining = min(remaining, max_sessions_override)
+
+    if not eligible:
+        msg = "No eligible issues to dispatch."
+        if output_json:
+            print(json.dumps({"status": "no_eligible_issues", "message": msg, "sessions_created": 0}))
+        else:
+            print(msg)
+        return 0
+
+    batches = _form_dispatch_batches(eligible, registry, rate_limiter, remaining)
+
+    if not batches:
+        msg = "No batches to dispatch (rate limit or per-repo limits reached)."
+        if output_json:
+            print(json.dumps({"status": "rate_limited", "message": msg, "sessions_created": 0}))
+        else:
+            print(msg)
+        return 0
+
+    results: list[dict[str, Any]] = []
+    dispatch_history = state.get("dispatch_history", {})
+
+    for batch in batches:
+        repo_url = batch["target_repo"]
+        repo_config = get_repo_config(registry, repo_url)
+
+        prompt = _build_orchestrator_prompt(batch, repo_config, fl)
+
+        if dry_run:
+            if not output_json:
+                print(
+                    f"[DRY RUN] Would dispatch batch {batch['batch_id']}: "
+                    f"{batch['cwe_family']} ({batch['issue_count']} issues) for {repo_url}"
+                )
+            results.append({
+                "batch_id": batch["batch_id"],
+                "target_repo": repo_url,
+                "cwe_family": batch["cwe_family"],
+                "issue_count": batch["issue_count"],
+                "session_id": "dry-run",
+                "session_url": "",
+                "status": "dry-run",
+            })
+            continue
+
+        if not rate_limiter.can_create_session():
+            if not output_json:
+                print(f"Rate limit reached, skipping batch {batch['batch_id']}")
+            results.append({
+                "batch_id": batch["batch_id"],
+                "target_repo": repo_url,
+                "cwe_family": batch["cwe_family"],
+                "issue_count": batch["issue_count"],
+                "session_id": "",
+                "session_url": "",
+                "status": "rate_limited",
+            })
+            continue
+
+        max_acu = fl.compute_acu_budget(batch["cwe_family"])
+
+        try:
+            result = create_devin_session(api_key, prompt, batch, max_acu)
+            session_id = result["session_id"]
+            session_url = result["url"]
+            if not output_json:
+                print(f"Session created for batch {batch['batch_id']}: {session_url}")
+
+            rate_limiter.record_session()
+
+            for issue in batch["issues"]:
+                fp = issue.get("fingerprint", "")
+                if not fp:
+                    continue
+                if fp not in dispatch_history:
+                    dispatch_history[fp] = {"dispatch_count": 0, "fingerprint": fp}
+                dispatch_history[fp]["dispatch_count"] += 1
+                dispatch_history[fp]["last_dispatched"] = datetime.now(timezone.utc).isoformat()
+                dispatch_history[fp]["last_session_id"] = session_id
+
+            results.append({
+                "batch_id": batch["batch_id"],
+                "target_repo": repo_url,
+                "cwe_family": batch["cwe_family"],
+                "issue_count": batch["issue_count"],
+                "session_id": session_id,
+                "session_url": session_url,
+                "status": "created",
+            })
+
+            _record_dispatch_session(batch, session_id, session_url)
+
+            time.sleep(2)
+
+        except Exception as e:
+            if not output_json:
+                print(f"ERROR creating session for batch {batch['batch_id']}: {e}")
+            results.append({
+                "batch_id": batch["batch_id"],
+                "target_repo": repo_url,
+                "cwe_family": batch["cwe_family"],
+                "issue_count": batch["issue_count"],
+                "session_id": "",
+                "session_url": "",
+                "status": f"error: {e}",
+            })
+
+    state["dispatch_history"] = dispatch_history
+    state["rate_limiter"] = rate_limiter.to_dict()
+    state["last_cycle"] = datetime.now(timezone.utc).isoformat()
+    save_state(state)
+
+    sessions_created = len([r for r in results if r["status"] == "created"])
+    sessions_failed = len([r for r in results if r["status"].startswith("error")])
+    sessions_dry_run = len([r for r in results if r["status"] == "dry-run"])
+
+    summary = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "repo_filter": repo_filter,
+        "dry_run": dry_run,
+        "total_eligible": len(eligible),
+        "batches_formed": len(batches),
+        "sessions_created": sessions_created,
+        "sessions_failed": sessions_failed,
+        "sessions_dry_run": sessions_dry_run,
+        "rate_limit_remaining": rate_limiter.max_sessions - rate_limiter.recent_count(),
+        "results": results,
+    }
+
+    if output_json:
+        print(json.dumps(summary, indent=2))
+    else:
+        _print_dispatch_summary(summary)
+
+    return 1 if sessions_failed > 0 and sessions_created == 0 else 0
 
 
 def _issue_file(issue: dict[str, Any]) -> str:
@@ -837,6 +1237,38 @@ def _print_status(data: dict[str, Any]) -> None:
             )
 
 
+def _print_dispatch_summary(summary: dict[str, Any]) -> None:
+    print("=" * 60)
+    print("ORCHESTRATOR DISPATCH SUMMARY")
+    print("=" * 60)
+    print(f"Timestamp: {summary['timestamp']}")
+    if summary["repo_filter"]:
+        print(f"Filter: {summary['repo_filter']}")
+    if summary["dry_run"]:
+        print("Mode: DRY RUN")
+    print()
+    print(f"Eligible issues:    {summary['total_eligible']}")
+    print(f"Batches formed:     {summary['batches_formed']}")
+    print(f"Sessions created:   {summary['sessions_created']}")
+    if summary["sessions_failed"]:
+        print(f"Sessions failed:    {summary['sessions_failed']}")
+    if summary["sessions_dry_run"]:
+        print(f"Sessions (dry-run): {summary['sessions_dry_run']}")
+    print(f"Rate limit remain:  {summary['rate_limit_remaining']}")
+    print()
+
+    if summary["results"]:
+        print("--- Dispatch Results ---")
+        print(f"{'#':<4} {'Family':<20} {'Issues':<8} {'Status':<15} {'Session URL'}")
+        print("-" * 100)
+        for r in summary["results"]:
+            url = r.get("session_url", "") or ""
+            print(
+                f"{r['batch_id']:<4} {r['cwe_family']:<20} "
+                f"{r['issue_count']:<8} {r['status']:<15} {url}"
+            )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="CodeQL Devin Fixer Orchestrator",
@@ -864,6 +1296,17 @@ def main() -> int:
     status_parser.add_argument("--repo", default="", help="Filter by repository URL")
     status_parser.add_argument("--json", action="store_true", help="Output as JSON")
 
+    dispatch_parser = subparsers.add_parser(
+        "dispatch", help="Create Devin sessions for eligible CodeQL issues",
+    )
+    dispatch_parser.add_argument("--repo", default="", help="Filter by repository URL")
+    dispatch_parser.add_argument("--json", action="store_true", help="Output as JSON")
+    dispatch_parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Show what would be dispatched without creating sessions",
+    )
+    dispatch_parser.add_argument("--max-sessions", type=int, default=None, help="Override maximum sessions to create")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -874,6 +1317,7 @@ def main() -> int:
         "ingest": cmd_ingest,
         "plan": cmd_plan,
         "status": cmd_status,
+        "dispatch": cmd_dispatch,
     }
 
     return commands[args.command](args)

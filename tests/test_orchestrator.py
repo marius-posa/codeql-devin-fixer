@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "telemetry"))
 
 import pytest
+from unittest.mock import patch, MagicMock
 from scripts.orchestrator import (
     RateLimiter,
     Objective,
@@ -24,9 +25,12 @@ from scripts.orchestrator import (
     _fallback_fingerprint,
     _session_fingerprints,
     _pr_fingerprints,
+    _form_dispatch_batches,
+    _build_orchestrator_prompt,
     cmd_ingest,
     cmd_plan,
     cmd_status,
+    cmd_dispatch,
     SEVERITY_WEIGHTS,
 )
 from scripts.fix_learning import FixLearning
@@ -705,3 +709,264 @@ class TestSeverityWeights:
         assert SEVERITY_WEIGHTS["critical"] > SEVERITY_WEIGHTS["high"]
         assert SEVERITY_WEIGHTS["high"] > SEVERITY_WEIGHTS["medium"]
         assert SEVERITY_WEIGHTS["medium"] > SEVERITY_WEIGHTS["low"]
+
+
+class TestFormDispatchBatches:
+    def test_groups_by_repo_and_family(self):
+        eligible = [
+            {"target_repo": "https://github.com/a/b", "cwe_family": "injection", "severity_tier": "high", "priority_score": 0.8, "fingerprint": "fp1", "file": "a.js", "start_line": 1, "description": "d"},
+            {"target_repo": "https://github.com/a/b", "cwe_family": "injection", "severity_tier": "medium", "priority_score": 0.6, "fingerprint": "fp2", "file": "b.js", "start_line": 2, "description": "d"},
+            {"target_repo": "https://github.com/a/b", "cwe_family": "xss", "severity_tier": "high", "priority_score": 0.7, "fingerprint": "fp3", "file": "c.js", "start_line": 3, "description": "d"},
+        ]
+        registry = {"repos": [], "defaults": {"max_sessions_per_cycle": 5, "batch_size": 5}}
+        rl = RateLimiter(max_sessions=10, period_hours=24)
+        batches = _form_dispatch_batches(eligible, registry, rl, 10)
+        assert len(batches) == 2
+        families = {b["cwe_family"] for b in batches}
+        assert families == {"injection", "xss"}
+
+    def test_respects_remaining_capacity(self):
+        eligible = [
+            {"target_repo": "https://github.com/a/b", "cwe_family": "injection", "severity_tier": "high", "priority_score": 0.8, "fingerprint": "fp1", "file": "a.js", "start_line": 1, "description": "d"},
+            {"target_repo": "https://github.com/a/b", "cwe_family": "xss", "severity_tier": "high", "priority_score": 0.7, "fingerprint": "fp2", "file": "b.js", "start_line": 2, "description": "d"},
+        ]
+        registry = {"repos": [], "defaults": {"max_sessions_per_cycle": 5, "batch_size": 5}}
+        rl = RateLimiter(max_sessions=10, period_hours=24)
+        batches = _form_dispatch_batches(eligible, registry, rl, 1)
+        assert len(batches) == 1
+
+    def test_respects_rate_limiter(self):
+        eligible = [
+            {"target_repo": "https://github.com/a/b", "cwe_family": "injection", "severity_tier": "high", "priority_score": 0.8, "fingerprint": "fp1", "file": "a.js", "start_line": 1, "description": "d"},
+        ]
+        registry = {"repos": [], "defaults": {"max_sessions_per_cycle": 5, "batch_size": 5}}
+        rl = RateLimiter(max_sessions=0, period_hours=24)
+        batches = _form_dispatch_batches(eligible, registry, rl, 10)
+        assert len(batches) == 0
+
+    def test_empty_eligible(self):
+        rl = RateLimiter(max_sessions=10, period_hours=24)
+        batches = _form_dispatch_batches([], {"repos": [], "defaults": {}}, rl, 10)
+        assert len(batches) == 0
+
+
+class TestBuildOrchestratorPrompt:
+    def test_produces_prompt_string(self):
+        batch = {
+            "batch_id": 1,
+            "target_repo": "https://github.com/a/b",
+            "cwe_family": "injection",
+            "severity_tier": "high",
+            "issue_count": 1,
+            "issues": [{
+                "id": "CQLF-R1-0001",
+                "rule_id": "js/sql-injection",
+                "severity_tier": "high",
+                "cwe_family": "injection",
+                "locations": [{"file": "src/db.js", "start_line": 42}],
+                "message": "SQL injection",
+            }],
+        }
+        repo_config = {"default_branch": "main"}
+        fl = FixLearning(runs=[])
+        prompt = _build_orchestrator_prompt(batch, repo_config, fl)
+        assert "https://github.com/a/b" in prompt
+        assert "injection" in prompt
+        assert "CQLF-R1-0001" in prompt
+        assert "src/db.js" in prompt
+
+    def test_includes_fix_hint(self):
+        batch = {
+            "batch_id": 1,
+            "target_repo": "https://github.com/a/b",
+            "cwe_family": "injection",
+            "severity_tier": "high",
+            "issue_count": 1,
+            "issues": [{
+                "id": "I1",
+                "rule_id": "js/sql-injection",
+                "severity_tier": "high",
+                "cwe_family": "injection",
+                "locations": [{"file": "src/db.js", "start_line": 42}],
+                "message": "SQL injection",
+            }],
+        }
+        repo_config = {"default_branch": "main"}
+        fl = FixLearning(runs=[])
+        prompt = _build_orchestrator_prompt(batch, repo_config, fl)
+        assert "Fix pattern hint" in prompt
+
+
+class TestCmdDispatch:
+    def test_dispatch_dry_run_empty_db(self, tmp_env, capsys):
+        class Args:
+            pass
+        args = Args()
+        args.repo = ""
+        args.json = True
+        args.dry_run = True
+        args.max_sessions = None
+
+        result = cmd_dispatch(args)
+        assert result == 0
+        output = json.loads(capsys.readouterr().out)
+        assert output["sessions_created"] == 0
+
+    def test_dispatch_dry_run_with_issues(self, tmp_env, capsys):
+        conn = get_connection(tmp_env["db_path"])
+        init_db(conn)
+        insert_run(conn, _sample_run(run_number=1, label="dispatch-r1"))
+        conn.commit()
+        conn.close()
+
+        class Args:
+            pass
+        args = Args()
+        args.repo = ""
+        args.json = True
+        args.dry_run = True
+        args.max_sessions = None
+
+        result = cmd_dispatch(args)
+        assert result == 0
+        output = json.loads(capsys.readouterr().out)
+        assert output["dry_run"] is True
+        assert output["sessions_dry_run"] >= 1
+        assert output["sessions_created"] == 0
+
+    def test_dispatch_dry_run_text_output(self, tmp_env, capsys):
+        conn = get_connection(tmp_env["db_path"])
+        init_db(conn)
+        insert_run(conn, _sample_run(run_number=1, label="dispatch-text-r1"))
+        conn.commit()
+        conn.close()
+
+        class Args:
+            pass
+        args = Args()
+        args.repo = ""
+        args.json = False
+        args.dry_run = True
+        args.max_sessions = None
+
+        result = cmd_dispatch(args)
+        assert result == 0
+        output = capsys.readouterr().out
+        assert "DRY RUN" in output
+
+    def test_dispatch_no_api_key_without_dry_run(self, tmp_env, monkeypatch, capsys):
+        monkeypatch.delenv("DEVIN_API_KEY", raising=False)
+
+        class Args:
+            pass
+        args = Args()
+        args.repo = ""
+        args.json = False
+        args.dry_run = False
+        args.max_sessions = None
+
+        result = cmd_dispatch(args)
+        assert result == 1
+        output = capsys.readouterr().out
+        assert "DEVIN_API_KEY" in output
+
+    def test_dispatch_max_sessions_override(self, tmp_env, capsys):
+        conn = get_connection(tmp_env["db_path"])
+        init_db(conn)
+        insert_run(conn, _sample_run(run_number=1, label="dispatch-max-r1"))
+        conn.commit()
+        conn.close()
+
+        class Args:
+            pass
+        args = Args()
+        args.repo = ""
+        args.json = True
+        args.dry_run = True
+        args.max_sessions = 1
+
+        result = cmd_dispatch(args)
+        assert result == 0
+        output = json.loads(capsys.readouterr().out)
+        assert output["sessions_dry_run"] <= 1
+
+    def test_dispatch_creates_session(self, tmp_env, monkeypatch, capsys):
+        conn = get_connection(tmp_env["db_path"])
+        init_db(conn)
+        insert_run(conn, _sample_run(run_number=1, label="dispatch-live-r1"))
+        conn.commit()
+        conn.close()
+
+        monkeypatch.setenv("DEVIN_API_KEY", "test-key")
+        monkeypatch.setattr(orchestrator_mod, "_HAS_DISPATCH", True)
+
+        mock_create = MagicMock(return_value={
+            "session_id": "sess-test-123",
+            "url": "https://app.devin.ai/sessions/sess-test-123",
+        })
+        with patch("scripts.orchestrator.create_devin_session", mock_create, create=True):
+            class Args:
+                pass
+            args = Args()
+            args.repo = ""
+            args.json = True
+            args.dry_run = False
+            args.max_sessions = 1
+
+            result = cmd_dispatch(args)
+            assert result == 0
+            output = json.loads(capsys.readouterr().out)
+            assert output["sessions_created"] >= 1
+            assert mock_create.called
+
+        state = load_state()
+        assert state["last_cycle"] is not None
+        assert len(state.get("dispatch_history", {})) > 0
+
+    def test_dispatch_handles_api_error(self, tmp_env, monkeypatch, capsys):
+        conn = get_connection(tmp_env["db_path"])
+        init_db(conn)
+        insert_run(conn, _sample_run(run_number=1, label="dispatch-err-r1"))
+        conn.commit()
+        conn.close()
+
+        monkeypatch.setenv("DEVIN_API_KEY", "test-key")
+        monkeypatch.setattr(orchestrator_mod, "_HAS_DISPATCH", True)
+
+        mock_create = MagicMock(side_effect=RuntimeError("API down"))
+        with patch("scripts.orchestrator.create_devin_session", mock_create, create=True):
+            class Args:
+                pass
+            args = Args()
+            args.repo = ""
+            args.json = True
+            args.dry_run = False
+            args.max_sessions = 1
+
+            result = cmd_dispatch(args)
+            assert result == 1
+            output = json.loads(capsys.readouterr().out)
+            assert output["sessions_failed"] >= 1
+
+    def test_dispatch_respects_repo_filter(self, tmp_env, capsys):
+        conn = get_connection(tmp_env["db_path"])
+        init_db(conn)
+        insert_run(conn, _sample_run(run_number=1, repo="https://github.com/a/b", label="dispatch-filter-r1"))
+        insert_run(conn, _sample_run(run_number=2, repo="https://github.com/c/d", label="dispatch-filter-r2"))
+        conn.commit()
+        conn.close()
+
+        class Args:
+            pass
+        args = Args()
+        args.repo = "https://github.com/a/b"
+        args.json = True
+        args.dry_run = True
+        args.max_sessions = None
+
+        result = cmd_dispatch(args)
+        assert result == 0
+        output = json.loads(capsys.readouterr().out)
+        assert output["repo_filter"] == "https://github.com/a/b"
+        for r in output.get("results", []):
+            assert r["target_repo"] == "https://github.com/a/b"
