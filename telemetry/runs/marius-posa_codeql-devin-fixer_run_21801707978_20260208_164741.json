@@ -19,7 +19,7 @@
       "session_id": "devin-db5442396af642a9a4912d231bc875ad",
       "session_url": "https://app.devin.ai/sessions/db5442396af642a9a4912d231bc875ad",
       "batch_id": 1,
-      "status": "created",
+      "status": "working",
       "issue_ids": [
         "CQLF-R27-0001",
         "CQLF-R27-0002",

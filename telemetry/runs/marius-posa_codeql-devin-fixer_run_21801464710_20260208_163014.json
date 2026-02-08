@@ -19,14 +19,15 @@
       "session_id": "devin-09bfcc18f2024e39a15a258183377f4f",
       "session_url": "https://app.devin.ai/sessions/09bfcc18f2024e39a15a258183377f4f",
       "batch_id": 1,
-      "status": "created",
+      "status": "blocked",
       "issue_ids": [
         "CQLF-R26-0001",
         "CQLF-R26-0002",
         "CQLF-R26-0003",
         "CQLF-R26-0004",
         "CQLF-R26-0005"
-      ]
+      ],
+      "pr_url": "https://github.com/marius-posa/codeql-devin-fixer/pull/63"
     }
   ],
   "issue_fingerprints": [
