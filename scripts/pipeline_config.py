@@ -126,6 +126,7 @@ class PipelineConfig:
     # -- dispatch_devin.py (context-rich prompts / fix learning) --------------
     target_dir: str = ""
     telemetry_dir: str = ""
+    playbooks_dir: str = ""
 
     @classmethod
     def from_env(cls) -> PipelineConfig:
@@ -155,6 +156,7 @@ class PipelineConfig:
             dashboard_output_dir=os.environ.get("DASHBOARD_OUTPUT_DIR", "dashboard"),
             target_dir=os.environ.get("TARGET_DIR", ""),
             telemetry_dir=os.environ.get("TELEMETRY_DIR", ""),
+            playbooks_dir=os.environ.get("PLAYBOOKS_DIR", ""),
         )
 
     def validate(self, required: list[str]) -> None:
