@@ -1085,6 +1085,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
                 dispatch_history[fp]["dispatch_count"] += 1
                 dispatch_history[fp]["last_dispatched"] = datetime.now(timezone.utc).isoformat()
                 dispatch_history[fp]["last_session_id"] = session_id
+                dispatch_history[fp]["consecutive_failures"] = 0
 
             results.append({
                 "batch_id": batch["batch_id"],
@@ -1103,6 +1104,15 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         except Exception as e:
             if not output_json:
                 print(f"ERROR creating session for batch {batch['batch_id']}: {e}", file=sys.stderr)
+            for issue in batch["issues"]:
+                fp = issue.get("fingerprint", "")
+                if not fp:
+                    continue
+                if fp not in dispatch_history:
+                    dispatch_history[fp] = {"dispatch_count": 0, "fingerprint": fp}
+                prev_failures = dispatch_history[fp].get("consecutive_failures", 0)
+                dispatch_history[fp]["consecutive_failures"] = prev_failures + 1
+                dispatch_history[fp]["last_dispatched"] = datetime.now(timezone.utc).isoformat()
             results.append({
                 "batch_id": batch["batch_id"],
                 "target_repo": repo_url,
