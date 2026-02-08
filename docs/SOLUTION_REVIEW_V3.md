@@ -124,19 +124,19 @@ The candidate addressed the most critical V2 security findings:
 ### 2.2 New Security Concerns
 
 **OAuth access token stored in Flask session cookie.**
-`oauth.py` stores the GitHub access token in `session["gh_token"]` (line 137). Flask sessions are client-side by default (signed but not encrypted cookies). This means the GitHub access token is base64-visible in the browser cookie. If the `SECRET_KEY` is weak or leaked, tokens can be forged. Mitigations:
+`oauth.py` stores the GitHub access token in `session["gh_token"]` (line ~137). Flask sessions are client-side by default (signed but not encrypted cookies), which means the GitHub access token would be base64-visible in the browser cookie. Verify whether server-side sessions are configured; if not, the token is exposed. If the `SECRET_KEY` is weak or leaked, tokens can be forged. Mitigations:
 1. Use server-side sessions (`flask-session` with SQLite or filesystem backend)
 2. Or store only a session ID in the cookie and keep the token server-side
 3. At minimum, set `SESSION_COOKIE_HTTPONLY=True`, `SESSION_COOKIE_SECURE=True`, and `SESSION_COOKIE_SAMESITE='Lax'` (some of these may already be Flask defaults, but should be explicit)
 
-**CORS is enabled with no origin restrictions.**
-`app.py` enables CORS (via `flask-cors` or manual headers) without specifying allowed origins. This means any website can make authenticated API requests to the telemetry server if the user has an active session. Restrict CORS to the expected dashboard origin(s).
+**CORS appears to be enabled without origin restrictions.**
+`app.py` enables CORS (via `flask-cors` or manual headers) without specifying allowed origins. Verify the CORS configuration and restrict to the expected dashboard origin(s) to prevent cross-origin requests from untrusted sites.
 
 **Orchestrator API endpoints accept untrusted input for subprocess operations.**
 The telemetry app exposes orchestrator endpoints (`/api/orchestrator/scan`, `/api/orchestrator/dispatch`, `/api/orchestrator/cycle`) that trigger scan and dispatch operations. These endpoints accept repository URLs and other parameters that flow into subprocess calls and API requests. While the `require_api_key` decorator gates access, the input values themselves should be validated (URL format, allowed characters, maximum length) before being passed to orchestrator functions.
 
-**GitHub App webhook signature verification is correct but the secret is optional.**
-`webhook_handler.py` has a proper `verify_signature()` function using HMAC-SHA256. However, if `GITHUB_WEBHOOK_SECRET` is not configured, the code should reject all webhooks rather than allowing unsigned payloads. Verify that this is the behavior (it appears to be based on the code, but it should be explicitly tested).
+**GitHub App webhook signature verification is correct but the secret may be optional.**
+`webhook_handler.py` has a proper `verify_signature()` function using HMAC-SHA256. Verify that when `GITHUB_WEBHOOK_SECRET` is not configured, all webhooks are rejected rather than allowing unsigned payloads. This behavior should be explicitly tested regardless.
 
 **`repo_registry.json` has no schema validation.**
 The orchestrator reads `repo_registry.json` and trusts its structure. A malformed registry file (e.g., missing `repos` key, non-string URL, negative `batch_size`) would cause runtime errors deep in the orchestrator. Add upfront validation with clear error messages.
