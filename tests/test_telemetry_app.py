@@ -207,3 +207,117 @@ class TestApiEndpoints:
         assert resp.status_code == 400
         data = resp.get_json()
         assert "error" in data
+
+    def test_api_config_includes_oauth_status(self, client):
+        resp = client.get("/api/config")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "oauth_configured" in data
+
+    @patch("app.cache")
+    def test_api_report_pdf_returns_pdf(self, mock_cache, client):
+        mock_cache.get_runs.return_value = []
+        mock_cache.get_prs.return_value = []
+        resp = client.get("/api/report/pdf")
+        assert resp.status_code == 200
+        assert resp.content_type == "application/pdf"
+        assert resp.data[:5] == b"%PDF-"
+
+    @patch("app.cache")
+    def test_api_report_pdf_with_repo_filter(self, mock_cache, client):
+        mock_cache.get_runs.return_value = [
+            {"target_repo": "https://github.com/owner/repo", "timestamp": "2026-01-01T00:00:00Z",
+             "issues_found": 1, "severity_breakdown": {"high": 1}, "category_breakdown": {},
+             "sessions": [], "issue_fingerprints": [], "zero_issue_run": False},
+        ]
+        mock_cache.get_prs.return_value = []
+        resp = client.get("/api/report/pdf?repo=https://github.com/owner/repo")
+        assert resp.status_code == 200
+        assert "owner-repo" in resp.headers.get("Content-Disposition", "")
+
+
+class TestOAuth:
+    def test_login_returns_400_when_not_configured(self, client):
+        with patch("oauth.is_oauth_configured", return_value=False):
+            resp = client.get("/login")
+            assert resp.status_code == 400
+            data = resp.get_json()
+            assert "error" in data
+
+    def test_logout_clears_session(self, client):
+        with client.session_transaction() as sess:
+            sess["gh_user"] = {"login": "test"}
+        resp = client.get("/logout")
+        assert resp.status_code == 302
+        with client.session_transaction() as sess:
+            assert "gh_user" not in sess
+
+    def test_api_me_when_logged_out(self, client):
+        resp = client.get("/api/me")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["logged_in"] is False
+
+    def test_api_me_when_logged_in(self, client):
+        with client.session_transaction() as sess:
+            sess["gh_user"] = {"login": "testuser", "avatar_url": "https://example.com/avatar.png"}
+        resp = client.get("/api/me")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["logged_in"] is True
+        assert data["user"]["login"] == "testuser"
+
+
+class TestPdfReport:
+    def test_generate_pdf_returns_bytes(self):
+        from pdf_report import generate_pdf
+        stats = {
+            "repos_scanned": 1, "total_runs": 2, "total_issues": 5,
+            "latest_issues": 3, "sessions_created": 1, "sessions_finished": 1,
+            "prs_total": 1, "prs_merged": 0, "fix_rate": 20,
+            "severity_breakdown": {"high": 3, "medium": 2},
+            "category_breakdown": {"injection": 3, "xss": 2},
+        }
+        issues = [
+            {"rule_id": "js/sql-injection", "severity_tier": "high",
+             "status": "open", "cwe_family": "injection",
+             "file": "src/db.js", "start_line": 42, "appearances": 3},
+        ]
+        pdf = generate_pdf(stats, issues)
+        assert isinstance(pdf, bytes)
+        assert pdf[:5] == b"%PDF-"
+
+    def test_generate_pdf_empty(self):
+        from pdf_report import generate_pdf
+        pdf = generate_pdf({}, [])
+        assert pdf[:5] == b"%PDF-"
+
+    def test_generate_pdf_with_repo_filter(self):
+        from pdf_report import generate_pdf
+        pdf = generate_pdf({}, [], repo_filter="https://github.com/owner/repo")
+        assert isinstance(pdf, bytes)
+        assert len(pdf) > 100
+
+
+class TestFilterByUserAccess:
+    def test_no_user_returns_all(self, client):
+        from oauth import filter_by_user_access
+        with client.application.test_request_context():
+            items = [{"target_repo": "r1"}, {"target_repo": "r2"}]
+            result = filter_by_user_access(items)
+            assert len(result) == 2
+
+    def test_filters_when_user_logged_in(self, client):
+        from oauth import filter_by_user_access
+        with client.session_transaction() as sess:
+            sess["gh_user"] = {"login": "testuser"}
+            sess["gh_repos"] = ["owner/repo"]
+        with client.application.test_request_context():
+            from flask import session
+            session["gh_user"] = {"login": "testuser"}
+            session["gh_repos"] = ["owner/repo"]
+            with patch("oauth.is_oauth_configured", return_value=True):
+                items = [{"target_repo": "owner/repo"}, {"target_repo": "other/repo"}]
+                result = filter_by_user_access(items)
+                assert len(result) == 1
+                assert result[0]["target_repo"] == "owner/repo"

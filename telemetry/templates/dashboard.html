@@ -14,8 +14,10 @@
       <button class="btn" onclick="refreshData()" id="btn-refresh">Refresh Data</button>
       <button class="btn btn-primary" onclick="pollSessions()" id="btn-poll">Poll Sessions</button>
       <button class="btn btn-primary" onclick="openDispatchModal()" id="btn-dispatch" style="background:#1f6feb;border-color:#388bfd">Trigger Action</button>
+      <a class="btn" href="/api/report/pdf" id="btn-pdf">PDF Report</a>
       <button class="density-toggle" id="density-toggle" title="Toggle compact mode">Compact</button>
       <button class="theme-toggle" id="theme-toggle"></button>
+      <span id="user-info"></span>
     </div>
   </header>
 
@@ -78,6 +80,7 @@
     <div class="panel-header">
       Issue Tracking
       <span id="issues-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      <button class="btn btn-sm" onclick="exportAllIssuesCsv()" style="margin-left:auto">Export CSV</button>
     </div>
     <div class="panel-body table-scroll-wrapper" id="issues-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
   </div>
@@ -555,6 +558,7 @@ async function checkConfig() {
 
 async function init() {
   await checkConfig();
+  renderUserInfo();
   await fetchAll();
   if (configWarning) setStatus(configWarning);
 }
