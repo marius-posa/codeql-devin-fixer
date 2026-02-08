@@ -26,7 +26,16 @@ Usage
 import json
 import os
 from dataclasses import dataclass, field
+from pathlib import PurePosixPath
 from typing import Any
+
+DEFAULT_ACU_BUDGET = 10
+MIN_ACU_BUDGET = 3
+MAX_ACU_BUDGET = 30
+HIGH_FIX_RATE_THRESHOLD = 0.7
+LOW_FIX_RATE_THRESHOLD = 0.3
+MAX_FIX_EXAMPLE_DIFF_CHARS = 2000
+MAX_FIX_EXAMPLES_PER_PROMPT = 3
 
 
 CWE_FIX_HINTS: dict[str, str] = {
@@ -212,4 +221,73 @@ class FixLearning:
                 f"Historical fix rate for {family}: {pct:.0f}% "
                 f"({s.finished_sessions}/{s.total_sessions} sessions completed)"
             )
+        return "\n".join(parts)
+
+    def compute_acu_budget(
+        self, family: str, base_budget: int | None = None,
+    ) -> int:
+        """Return a dynamic ACU budget for *family* based on historical fix rates.
+
+        Families with high fix rates get a smaller budget (they resolve quickly),
+        while families with low fix rates get a larger budget (Devin needs more
+        time).  When no historical data is available the *base_budget* (or
+        ``DEFAULT_ACU_BUDGET``) is returned unchanged.
+        """
+        base = base_budget if base_budget is not None else DEFAULT_ACU_BUDGET
+        rates = self.family_fix_rates()
+        stats = rates.get(family)
+        if stats is None or stats.total_sessions == 0:
+            return max(MIN_ACU_BUDGET, min(base, MAX_ACU_BUDGET))
+        rate = stats.fix_rate
+        if rate >= HIGH_FIX_RATE_THRESHOLD:
+            budget = int(base * 0.6)
+        elif rate <= LOW_FIX_RATE_THRESHOLD:
+            budget = int(base * 1.8)
+        else:
+            scale = 1.0 + 0.8 * (0.5 - rate)
+            budget = int(base * scale)
+        return max(MIN_ACU_BUDGET, min(budget, MAX_ACU_BUDGET))
+
+    def find_fix_examples(
+        self, family: str, file_patterns: list[str] | None = None,
+    ) -> list[dict[str, str]]:
+        """Find historical fix examples for *family*, optionally filtered by file patterns.
+
+        Returns a list of dicts with keys ``cwe_family``, ``file``, ``diff``
+        from past successful sessions.  Results are ordered by relevance:
+        examples matching both family and file pattern come first.
+        """
+        examples: list[dict[str, str]] = []
+        pattern_dirs: set[str] = set()
+        if file_patterns:
+            for fp in file_patterns:
+                pattern_dirs.add(str(PurePosixPath(fp).parent))
+
+        for run in self.runs:
+            for ex in run.get("fix_examples", []):
+                if ex.get("cwe_family") != family:
+                    continue
+                if not ex.get("diff"):
+                    continue
+                examples.append(ex)
+
+        if pattern_dirs and examples:
+            def _relevance(ex: dict[str, str]) -> int:
+                ex_dir = str(PurePosixPath(ex.get("file", "")).parent)
+                return 0 if ex_dir in pattern_dirs else 1
+            examples.sort(key=_relevance)
+
+        return examples[:MAX_FIX_EXAMPLES_PER_PROMPT]
+
+    def prompt_fix_examples(self, family: str, file_patterns: list[str] | None = None) -> str:
+        """Return formatted fix examples for inclusion in a Devin prompt."""
+        examples = self.find_fix_examples(family, file_patterns)
+        if not examples:
+            return ""
+        parts = ["Historical fix examples for similar issues:"]
+        for i, ex in enumerate(examples, 1):
+            diff = ex["diff"]
+            if len(diff) > MAX_FIX_EXAMPLE_DIFF_CHARS:
+                diff = diff[:MAX_FIX_EXAMPLE_DIFF_CHARS] + "\n... (truncated)"
+            parts.append(f"\nExample {i} ({ex.get('file', 'unknown')}):\n```diff\n{diff}\n```")
         return "\n".join(parts)

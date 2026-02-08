@@ -62,6 +62,7 @@ try:
     from parse_sarif import BATCHES_SCHEMA_VERSION
     from pipeline_config import PipelineConfig
     from playbook_manager import PlaybookManager
+    from repo_context import RepoContext, analyze_repo
     from retry_utils import exponential_backoff_delay
 except ImportError:
     from scripts.fix_learning import CWE_FIX_HINTS, FixLearning
@@ -69,6 +70,7 @@ except ImportError:
     from scripts.parse_sarif import BATCHES_SCHEMA_VERSION
     from scripts.pipeline_config import PipelineConfig
     from scripts.playbook_manager import PlaybookManager
+    from scripts.repo_context import RepoContext, analyze_repo
     from scripts.retry_utils import exponential_backoff_delay
 
 DEVIN_API_BASE = "https://api.devin.ai/v1"
@@ -234,6 +236,7 @@ def build_batch_prompt(
     target_dir: str = "",
     fix_learning: FixLearning | None = None,
     playbook_mgr: PlaybookManager | None = None,
+    repo_context: RepoContext | None = None,
 ) -> str:
     """Construct a detailed, Markdown-formatted prompt for a Devin session.
 
@@ -257,6 +260,10 @@ def build_batch_prompt(
     When *is_own_repo* is True the target repo belongs to the user (not a
     fork of an upstream project) so the prompt omits the "not the upstream"
     caveat and tells Devin to work directly on the repo.
+
+    When *repo_context* is provided, dependency, testing framework, and
+    code style information is included so Devin can produce fixes that
+    conform to the project's tooling and conventions.
     """
     family = batch["cwe_family"]
     tier = batch["severity_tier"]
@@ -297,6 +304,14 @@ def build_batch_prompt(
                 if line and not line.startswith("Fix pattern hint"):
                     prompt_parts.append(line)
             prompt_parts.append("")
+
+        file_patterns = sorted(file_list) if file_list else None
+        fix_examples = fix_learning.prompt_fix_examples(family, file_patterns)
+        if fix_examples:
+            prompt_parts.extend([fix_examples, ""])
+
+    if repo_context and not repo_context.is_empty():
+        prompt_parts.extend([repo_context.to_prompt_section(), ""])
 
     prompt_parts.extend(["Issues to fix:", ""])
 
@@ -478,6 +493,19 @@ def main() -> None:
                 print(f"  {fam}: {rate * 100:.0f}%")
             print()
 
+    repo_ctx: RepoContext | None = None
+    if target_dir:
+        repo_ctx = analyze_repo(target_dir)
+        if not repo_ctx.is_empty():
+            print("Repository context discovered:")
+            if repo_ctx.dependencies:
+                print(f"  Dependencies: {', '.join(repo_ctx.dependencies.keys())}")
+            if repo_ctx.test_frameworks:
+                print(f"  Test frameworks: {', '.join(repo_ctx.test_frameworks)}")
+            if repo_ctx.style_configs:
+                print(f"  Style configs: {', '.join(repo_ctx.style_configs)}")
+            print()
+
     if not api_key and not dry_run:
         print("ERROR: DEVIN_API_KEY is required (set DRY_RUN=true to skip)")
         sys.exit(1)
@@ -541,6 +569,13 @@ def main() -> None:
     sessions: list[dict] = []
 
     for batch in batches:
+        family = batch["cwe_family"]
+        batch_acu = max_acu
+        if fix_learn and max_acu:
+            batch_acu = fix_learn.compute_acu_budget(family, max_acu)
+        elif fix_learn and not max_acu:
+            batch_acu = fix_learn.compute_acu_budget(family)
+
         if prompt_template:
             prompt = _render_template_prompt(
                 prompt_template, batch, repo_url, default_branch,
@@ -551,6 +586,7 @@ def main() -> None:
                 batch, repo_url, default_branch, is_own_repo,
                 target_dir=target_dir, fix_learning=fix_learn,
                 playbook_mgr=playbook_mgr,
+                repo_context=repo_ctx,
             )
         batch_id = batch["batch_id"]
 
@@ -562,6 +598,8 @@ def main() -> None:
         print(f"  Category: {batch['cwe_family']}")
         print(f"  Severity: {batch['severity_tier'].upper()}")
         print(f"  Issues: {batch['issue_count']}")
+        if batch_acu and batch_acu != max_acu:
+            print(f"  ACU budget: {batch_acu} (dynamic, base={max_acu or 'default'})")
 
         if dry_run:
             print(f"  [DRY RUN] Prompt saved to {prompt_path}")
@@ -576,7 +614,7 @@ def main() -> None:
             continue
 
         try:
-            result = create_devin_session(api_key, prompt, batch, max_acu)
+            result = create_devin_session(api_key, prompt, batch, batch_acu)
             session_id = result["session_id"]
             url = result["url"]
             print(f"  Session created: {url}")
