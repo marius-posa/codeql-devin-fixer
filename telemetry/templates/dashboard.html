@@ -127,6 +127,36 @@
 
 {% include 'dispatch_modal.html' %}
 
+<div class="modal-overlay" id="add-repo-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Add Repository to Scheduler</h2>
+      <button class="modal-close" onclick="_closeAddRepoModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label for="add-repo-url">Repository URL *</label>
+        <input class="form-input" id="add-repo-url" type="text" placeholder="https://github.com/owner/repo">
+        <div class="hint">Full GitHub repository URL to add to the scheduler</div>
+      </div>
+      <div class="form-group">
+        <label for="add-repo-schedule">Schedule</label>
+        <select class="form-input" id="add-repo-schedule">
+          <option value="daily">daily</option>
+          <option value="weekly" selected>weekly</option>
+          <option value="monthly">monthly</option>
+        </select>
+        <div class="hint">How often to scan this repository</div>
+      </div>
+      <div class="dispatch-result" id="add-repo-result"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="_closeAddRepoModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="_submitAddRepo()">Add Repository</button>
+    </div>
+  </div>
+</div>
+
 <script src="/static/shared.js"></script>
 <script>
 let allRuns = [];
@@ -209,7 +239,6 @@ function renderSlaPanel(sla) {
   el.innerHTML = html;
 }
 
->>>>>>> origin/main
 function renderMetrics(s) {
   const grid = document.getElementById('metrics-grid');
   const latestIssues = s.latest_issues != null ? s.latest_issues : s.total_issues;
@@ -602,7 +631,108 @@ function renderAll() {
   renderIssuesTable(allIssues, 'issues-table-container', 'issues-count');
   renderSlaPanel(slaData);
   renderVerificationPanel(verificationData);
-  if (registryData) renderRegistryTable(registryData, 'registry-table-container', 'registry-count');
+  renderRegistryPanel();
+}
+
+function renderRegistryPanel() {
+  var callbacks = {
+    actionRepo: _flaskActionRepo,
+    onToggle: function(idx) { _flaskRegistryToggle(idx); },
+    onScheduleChange: function(idx, val) { _flaskRegistrySchedule(idx, val); },
+    onRemove: function(idx) { _flaskRegistryRemove(idx); },
+    onAdd: function(url, schedule) { _flaskRegistryAdd(url, schedule); },
+  };
+  if (registryData) renderRegistryTable(registryData, 'registry-table-container', 'registry-count', callbacks);
+}
+
+async function _saveRegistryFlask() {
+  setStatus('Saving registry...');
+  try {
+    var res = await _authedFetch(API + '/api/registry', {
+      method: 'PUT',
+      headers: Object.assign({}, _authHeaders(), { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ repos: registryData.repos, defaults: registryData.defaults, concurrency: registryData.concurrency }),
+    });
+    if (!res.ok) { setStatus('Registry save failed: ' + res.status); return false; }
+    registryData = await res.json();
+    setStatus('Registry saved');
+    setUpdated();
+    return true;
+  } catch (e) {
+    setStatus('Registry save error: ' + e.message);
+    return false;
+  }
+}
+
+async function _flaskRegistryToggle(idx) {
+  var repo = registryData.repos[idx];
+  var prev = repo.enabled;
+  repo.enabled = repo.enabled === false ? true : false;
+  renderRegistryPanel();
+  var ok = await _saveRegistryFlask();
+  if (!ok) { repo.enabled = prev; renderRegistryPanel(); }
+}
+
+async function _flaskRegistrySchedule(idx, val) {
+  var prev = registryData.repos[idx].schedule;
+  registryData.repos[idx].schedule = val;
+  var ok = await _saveRegistryFlask();
+  if (!ok) { registryData.repos[idx].schedule = prev; renderRegistryPanel(); }
+}
+
+async function _flaskRegistryRemove(idx) {
+  var removed = registryData.repos[idx];
+  registryData.repos.splice(idx, 1);
+  renderRegistryPanel();
+  try {
+    var res = await _authedFetch(API + '/api/registry/repos', {
+      method: 'DELETE',
+      headers: Object.assign({}, _authHeaders(), { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ repo: removed.repo }),
+    });
+    if (!res.ok) {
+      registryData.repos.splice(idx, 0, removed);
+      renderRegistryPanel();
+      setStatus('Remove failed: ' + res.status);
+      return;
+    }
+    setStatus('Repo removed');
+    setUpdated();
+  } catch (e) {
+    registryData.repos.splice(idx, 0, removed);
+    renderRegistryPanel();
+    setStatus('Remove error: ' + e.message);
+  }
+}
+
+async function _flaskRegistryAdd(url, schedule) {
+  var resultEl = document.getElementById('add-repo-result');
+  try {
+    var res = await _authedFetch(API + '/api/registry/repos', {
+      method: 'POST',
+      headers: Object.assign({}, _authHeaders(), { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ repo: url, schedule: schedule, enabled: true, overrides: {} }),
+    });
+    if (res.status === 409) {
+      resultEl.textContent = 'Repo already registered.';
+      resultEl.className = 'dispatch-result error';
+      return;
+    }
+    if (!res.ok) {
+      resultEl.textContent = 'Failed to add repo: ' + res.status;
+      resultEl.className = 'dispatch-result error';
+      return;
+    }
+    var entry = await res.json();
+    registryData.repos.push(entry);
+    _closeAddRepoModal();
+    renderRegistryPanel();
+    setStatus('Repo added');
+    setUpdated();
+  } catch (e) {
+    resultEl.textContent = 'Error: ' + e.message;
+    resultEl.className = 'dispatch-result error';
+  }
 }
 
 async function pollSessions() {
@@ -644,10 +774,12 @@ async function refreshData() {
 }
 
 let configWarning = '';
+let _flaskActionRepo = '';
 async function checkConfig() {
   try {
     const res = await fetch(API + '/api/config');
     const cfg = await res.json();
+    _flaskActionRepo = cfg.action_repo || '';
     const warnings = [];
     if (!cfg.github_token_set) warnings.push('GITHUB_TOKEN not set in .env \u2014 PR discovery disabled');
     if (!cfg.devin_api_key_set) warnings.push('DEVIN_API_KEY not set in .env \u2014 session polling disabled');

@@ -234,3 +234,35 @@ a:hover { text-decoration: underline; }
   display: flex; align-items: center; justify-content: center;
   padding: 40px 20px; color: var(--text-muted); gap: 8px; font-size: 13px;
 }
+
+.registry-toolbar {
+  display: flex; gap: 8px; align-items: center; margin-bottom: 12px;
+}
+.registry-link-btn {
+  font-size: 12px; padding: 4px 12px;
+}
+.registry-add-btn {
+  font-size: 12px; padding: 4px 12px;
+}
+.registry-toggle-btn {
+  font-size: 11px; padding: 2px 10px; text-transform: uppercase; font-weight: 600;
+  border-radius: 12px; min-width: 70px; text-align: center;
+}
+.registry-enabled {
+  background: #1a4023; color: var(--accent-green); border-color: #2a5033;
+}
+.registry-enabled:hover { background: #2a5033; }
+.registry-disabled {
+  background: #4a1a1a; color: var(--accent-red); border-color: #5a2a2a;
+}
+.registry-disabled:hover { background: #5a2a2a; }
+.registry-schedule-select {
+  padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--bg-tertiary); color: var(--text-primary); font-size: 12px;
+  cursor: pointer;
+}
+.registry-schedule-select:focus { outline: none; border-color: var(--accent-blue); }
+.registry-remove-btn {
+  font-size: 11px; padding: 2px 10px; color: var(--accent-red); border-color: #5a2a2a;
+}
+.registry-remove-btn:hover { background: #4a1a1a; }

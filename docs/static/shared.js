@@ -316,33 +316,126 @@ function renderIssuesTable(issues, containerId, countId) {
   _renderIssuesFiltered(issues, issues, containerId, countId);
 }
 
-function renderRegistryTable(registry, containerId, countId) {
+var _registryCallbacks = {};
+
+function renderRegistryTable(registry, containerId, countId, callbacks) {
   var el = document.getElementById(containerId);
   var countEl = document.getElementById(countId);
   var repos = (registry && registry.repos) || [];
   if (countEl) countEl.textContent = repos.length + ' repos';
+  _registryCallbacks = callbacks || {};
+
+  var actionRepo = '';
+  if (typeof getConfig === 'function') {
+    actionRepo = getConfig().actionRepo || 'marius-posa/codeql-devin-fixer';
+  } else {
+    actionRepo = 'marius-posa/codeql-devin-fixer';
+  }
+  var schedulerUrl = 'https://github.com/' + actionRepo + '/actions/workflows/scheduled-scan.yml';
+
+  var toolbar = '<div class="registry-toolbar">';
+  toolbar += '<a href="' + escapeHtml(schedulerUrl) + '" target="_blank" class="btn registry-link-btn" title="View scheduler workflow on GitHub">View Scheduler Action</a>';
+  if (_registryCallbacks.onAdd) {
+    toolbar += ' <button class="btn btn-primary registry-add-btn" onclick="_openAddRepoModal()">Add Repo</button>';
+  }
+  toolbar += '</div>';
+
   if (repos.length === 0) {
-    el.innerHTML = '<div class="empty-state">No repos registered for scheduled scanning.</div>';
+    el.innerHTML = toolbar + '<div class="empty-state">No repos registered for scheduled scanning.</div>';
     return;
   }
   var rows = '';
-  repos.forEach(function(r) {
+  repos.forEach(function(r, idx) {
     var short = escapeHtml(repoShort(r.repo));
     var overrides = r.overrides || {};
     var overrideKeys = Object.keys(overrides);
     var overrideStr = overrideKeys.length > 0
       ? overrideKeys.map(function(k) { return escapeHtml(k) + '=' + escapeHtml(String(overrides[k])); }).join(', ')
       : '<span style="color:var(--text-muted)">defaults</span>';
+    var enabled = r.enabled !== false;
+    var schedule = r.schedule || 'weekly';
+
+    var enabledCell;
+    if (_registryCallbacks.onToggle) {
+      enabledCell = '<button class="btn registry-toggle-btn ' + (enabled ? 'registry-enabled' : 'registry-disabled') + '" '
+        + 'onclick="_toggleRegistryRepo(' + idx + ')" title="Click to ' + (enabled ? 'disable' : 'enable') + '">'
+        + (enabled ? 'enabled' : 'disabled') + '</button>';
+    } else {
+      enabledCell = '<span class="badge ' + (enabled ? 'badge-open' : 'badge-closed') + '">' + (enabled ? 'enabled' : 'disabled') + '</span>';
+    }
+
+    var scheduleCell;
+    if (_registryCallbacks.onScheduleChange) {
+      scheduleCell = '<select class="registry-schedule-select" onchange="_changeRegistrySchedule(' + idx + ', this.value)">'
+        + '<option value="daily"' + (schedule === 'daily' ? ' selected' : '') + '>daily</option>'
+        + '<option value="weekly"' + (schedule === 'weekly' ? ' selected' : '') + '>weekly</option>'
+        + '<option value="monthly"' + (schedule === 'monthly' ? ' selected' : '') + '>monthly</option>'
+        + '</select>';
+    } else {
+      scheduleCell = escapeHtml(schedule);
+    }
+
+    var actionsCell = '';
+    if (_registryCallbacks.onRemove) {
+      actionsCell = '<button class="btn registry-remove-btn" onclick="_removeRegistryRepo(' + idx + ')" title="Remove from registry">Remove</button>';
+    }
+
     rows += '<tr>'
       + '<td><a href="' + escapeHtml(r.repo) + '" target="_blank">' + short + '</a></td>'
-      + '<td><span class="badge ' + (r.enabled !== false ? 'badge-open' : 'badge-closed') + '">' + (r.enabled !== false ? 'enabled' : 'disabled') + '</span></td>'
-      + '<td>' + escapeHtml(r.schedule || 'weekly') + '</td>'
+      + '<td>' + enabledCell + '</td>'
+      + '<td>' + scheduleCell + '</td>'
       + '<td style="font-size:11px">' + overrideStr + '</td>'
+      + (actionsCell ? '<td style="white-space:nowrap">' + actionsCell + '</td>' : '')
       + '</tr>';
   });
-  el.innerHTML = '<table><thead><tr>'
+  el.innerHTML = toolbar + '<table><thead><tr>'
     + '<th>Repository</th><th>Status</th><th>Schedule</th><th>Overrides</th>'
+    + (_registryCallbacks.onRemove ? '<th></th>' : '')
     + '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+function _toggleRegistryRepo(idx) {
+  if (_registryCallbacks.onToggle) _registryCallbacks.onToggle(idx);
+}
+
+function _changeRegistrySchedule(idx, value) {
+  if (_registryCallbacks.onScheduleChange) _registryCallbacks.onScheduleChange(idx, value);
+}
+
+function _removeRegistryRepo(idx) {
+  if (!_registryCallbacks.onRemove) return;
+  if (!confirm('Remove this repo from the scheduled scan registry?')) return;
+  _registryCallbacks.onRemove(idx);
+}
+
+function _openAddRepoModal() {
+  var modal = document.getElementById('add-repo-modal');
+  if (modal) {
+    modal.classList.add('active');
+    var input = document.getElementById('add-repo-url');
+    if (input) { input.value = ''; input.focus(); }
+    var result = document.getElementById('add-repo-result');
+    if (result) { result.className = 'dispatch-result'; result.textContent = ''; }
+  }
+}
+
+function _closeAddRepoModal() {
+  var modal = document.getElementById('add-repo-modal');
+  if (modal) modal.classList.remove('active');
+}
+
+function _submitAddRepo() {
+  if (_registryCallbacks.onAdd) {
+    var url = (document.getElementById('add-repo-url').value || '').trim();
+    var schedule = document.getElementById('add-repo-schedule').value;
+    if (!url) {
+      var result = document.getElementById('add-repo-result');
+      result.textContent = 'Repository URL is required.';
+      result.className = 'dispatch-result error';
+      return;
+    }
+    _registryCallbacks.onAdd(url, schedule);
+  }
 }
 
 var _trendMode = 'repo';

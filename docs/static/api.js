@@ -807,6 +807,37 @@ async function fetchRegistry() {
   }
 }
 
+async function updateRegistryOnGitHub(registry) {
+  var cfg = getConfig();
+  if (!cfg.githubToken) return { error: 'GitHub token required' };
+  var repo = cfg.actionRepo;
+  var metaUrl = GH_API + '/repos/' + repo + '/contents/repo_registry.json?ref=main';
+  try {
+    var metaResp = await fetch(metaUrl, { headers: ghHeaders() });
+    if (!metaResp.ok) return { error: 'Failed to fetch registry metadata' };
+    var meta = await metaResp.json();
+    var sha = meta.sha;
+    var content = btoa(unescape(encodeURIComponent(JSON.stringify(registry, null, 2) + '\n')));
+    var putResp = await fetch(GH_API + '/repos/' + repo + '/contents/repo_registry.json', {
+      method: 'PUT',
+      headers: Object.assign({}, ghHeaders(), { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        message: 'Update repo_registry.json via dashboard',
+        content: content,
+        sha: sha,
+        branch: 'main',
+      }),
+    });
+    if (!putResp.ok) {
+      var err = await putResp.json().catch(function() { return {}; });
+      return { error: err.message || 'Failed to update registry' };
+    }
+    return { success: true };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
 async function dispatchPreflight(targetRepo, runs, prs, sessions) {
   const openPrs = prs.filter(function(p) { return p.state === 'open' && !p.merged; });
   const repoOpenPrs = [];
