@@ -170,15 +170,12 @@ runs:
           exit 1
         fi
         if [ -n "$GITHUB_TOKEN" ]; then
-          ASKPASS_SCRIPT=$(mktemp "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/git_askpass_XXXXXX.sh")
-          printf '#!/bin/sh\necho "$GIT_ASKPASS_TOKEN"\n' > "$ASKPASS_SCRIPT"
-          chmod 700 "$ASKPASS_SCRIPT"
-          export GIT_ASKPASS="$ASKPASS_SCRIPT"
-          export GIT_ASKPASS_TOKEN="x-access-token:$GITHUB_TOKEN"
-          export GIT_TERMINAL_PROMPT=0
-          trap 'rm -f "$ASKPASS_SCRIPT"' EXIT
+          CREDS=$(printf "x-access-token:%s" "$GITHUB_TOKEN" | base64)
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $CREDS" \
+            clone --depth 1 --single-branch -- "$REPO_URL" "$TARGET_DIR"
+        else
+          git clone --depth 1 --single-branch -- "$REPO_URL" "$TARGET_DIR"
         fi
-        git clone --depth 1 --single-branch -- "$REPO_URL" "$TARGET_DIR"
         echo "TARGET_DIR=$TARGET_DIR" >> "$GITHUB_ENV"
         echo "SCAN_REPO_URL=$REPO_URL" >> "$GITHUB_ENV"
 
