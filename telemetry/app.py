@@ -2,39 +2,8 @@
 """Centralized telemetry server for CodeQL Devin Fixer.
 
 Aggregates data from all action runs across every target repository into a
-single dashboard.  Run data is stored as JSON files under ``telemetry/runs/``
-in this repository -- each action run pushes one file via the GitHub Contents
-API (see ``scripts/persist_telemetry.py``).
-
-Scalability
------------
-* **In-memory cache** -- run data is loaded once and refreshed only when the
-  runs directory changes (based on file count + mtime of newest file).  This
-  avoids re-reading every JSON file on each request.
-* **Pagination** -- ``/api/runs``, ``/api/sessions``, and ``/api/prs`` accept
-  ``page`` and ``per_page`` query parameters.  Defaults: page=1, per_page=50.
-* **Cached PR / session data** -- GitHub and Devin API results are cached for
-  a configurable TTL (default 120 s) so repeated page loads don't hammer
-  external APIs.
-
-Endpoints
----------
-GET  /                  Serve the dashboard UI.
-GET  /api/runs          Return paginated run records.
-GET  /api/sessions      Return paginated Devin sessions (aggregated from runs).
-GET  /api/prs           Return paginated PRs fetched from the GitHub API.
-GET  /api/stats         Return aggregated statistics.
-POST /api/poll          Poll Devin API for live session statuses.
-POST /api/poll-prs      Poll GitHub API for PR statuses.
-POST /api/refresh       Pull latest telemetry data from the repo.
-
-Configuration is via environment variables or a ``.env`` file in this
-directory:
-
-GITHUB_TOKEN   PAT with ``repo`` scope (for GitHub API calls).
-DEVIN_API_KEY  Devin API key (for polling session statuses).
-ACTION_REPO    The repo where telemetry lives, e.g. ``your-username/codeql-devin-fixer``.
-CACHE_TTL      Seconds to cache external API results (default 120).
+single dashboard.  Run data is stored in a SQLite database (migrated from
+JSON files under ``telemetry/runs/``).
 """
 
 import functools
@@ -43,19 +12,31 @@ import io
 import json
 import os
 import pathlib
-import time
-import threading
-from datetime import datetime, timedelta, timezone
 
 import requests
 from flask import Flask, jsonify, render_template, request as flask_request, send_file
 from flask_cors import CORS
 
 from config import RUNS_DIR, gh_headers
-from github_service import fetch_prs_from_github, link_prs_to_sessions
-from devin_service import poll_devin_sessions, save_session_updates
-from issue_tracking import track_issues_across_runs
-from aggregation import aggregate_sessions, aggregate_stats, build_repos_dict, compute_sla_summary
+from database import (
+    get_connection,
+    insert_run,
+    query_runs,
+    query_all_runs,
+    query_sessions,
+    query_all_sessions,
+    query_prs,
+    query_all_prs,
+    query_stats,
+    query_repos,
+    query_issues,
+    search_issues,
+    backfill_pr_urls,
+)
+from migrate_json_to_sqlite import ensure_db_populated
+from github_service import fetch_prs_from_github_to_db, link_prs_to_sessions_db
+from devin_service import poll_devin_sessions_db
+from aggregation import compute_sla_summary
 from verification import (
     load_verification_records,
     build_session_verification_map,
@@ -66,11 +47,14 @@ from oauth import oauth_bp, is_oauth_configured, get_current_user, filter_by_use
 from pdf_report import generate_pdf
 
 REGISTRY_PATH = pathlib.Path(__file__).resolve().parent.parent / "repo_registry.json"
+SAMPLE_DATA_DIR = pathlib.Path(__file__).parent / "sample_data"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(32).hex())
 CORS(app)
 app.register_blueprint(oauth_bp)
+
+ensure_db_populated(RUNS_DIR, SAMPLE_DATA_DIR)
 
 
 @app.after_request
@@ -120,113 +104,6 @@ def require_api_key(fn):
     return wrapper
 
 
-class _Cache:
-    """Thread-safe in-memory cache with TTL for external API results."""
-
-    def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._runs: list[dict] = []
-        self._runs_fingerprint: str = ""
-        self._prs: list[dict] = []
-        self._prs_ts: float = 0.0
-        self._sessions_polled: list[dict] = []
-        self._sessions_ts: float = 0.0
-
-    @property
-    def ttl(self) -> float:
-        return float(os.environ.get("CACHE_TTL", "120"))
-
-    def _runs_fp(self) -> str:
-        if not RUNS_DIR.is_dir():
-            return ""
-        files = sorted(RUNS_DIR.glob("*.json"))
-        if not files:
-            return ""
-        newest_mtime = max(f.stat().st_mtime for f in files)
-        return f"{len(files)}:{newest_mtime}"
-
-    def get_runs(self) -> list[dict]:
-        fp = self._runs_fp()
-        with self._lock:
-            if fp == self._runs_fingerprint and self._runs:
-                return self._runs
-        runs = _load_runs_from_disk()
-        if not runs:
-            runs = _load_sample_data()
-        with self._lock:
-            self._runs = runs
-            self._runs_fingerprint = fp
-        return runs
-
-    def invalidate_runs(self) -> None:
-        with self._lock:
-            self._runs_fingerprint = ""
-            self._runs = []
-
-    def get_prs(self, runs: list[dict]) -> list[dict]:
-        with self._lock:
-            if self._prs and (time.time() - self._prs_ts) < self.ttl:
-                return self._prs
-        prs = fetch_prs_from_github(runs)
-        with self._lock:
-            self._prs = prs
-            self._prs_ts = time.time()
-        return prs
-
-    def set_prs(self, prs: list[dict]) -> None:
-        with self._lock:
-            self._prs = prs
-            self._prs_ts = time.time()
-
-    def get_polled_sessions(self) -> list[dict] | None:
-        with self._lock:
-            if self._sessions_polled and (time.time() - self._sessions_ts) < self.ttl:
-                return self._sessions_polled
-        return None
-
-    def set_polled_sessions(self, sessions: list[dict]) -> None:
-        with self._lock:
-            self._sessions_polled = sessions
-            self._sessions_ts = time.time()
-
-
-cache = _Cache()
-
-
-SAMPLE_DATA_DIR = pathlib.Path(__file__).parent / "sample_data"
-
-
-def _load_runs_from_disk() -> list[dict]:
-    runs = []
-    if not RUNS_DIR.is_dir():
-        return runs
-    for fp in sorted(RUNS_DIR.glob("*.json")):
-        try:
-            with open(fp) as f:
-                data = json.load(f)
-                data["_file"] = fp.name
-                runs.append(data)
-        except (json.JSONDecodeError, OSError):
-            continue
-    return runs
-
-
-def _load_sample_data() -> list[dict]:
-    """Load sample telemetry data for first-run / demo scenarios."""
-    runs = []
-    if not SAMPLE_DATA_DIR.is_dir():
-        return runs
-    for fp in sorted(SAMPLE_DATA_DIR.glob("*.json")):
-        try:
-            with open(fp) as f:
-                data = json.load(f)
-                data["_file"] = fp.name
-                runs.append(data)
-        except (json.JSONDecodeError, OSError):
-            continue
-    return runs
-
-
 def _paginate(items: list, page: int, per_page: int) -> dict:
     total = len(items)
     start = (page - 1) * per_page
@@ -260,153 +137,172 @@ def repo_page(repo_url):
 @app.route("/api/repo/<path:repo_url>")
 def api_repo_detail(repo_url):
     full_url = "https://github.com/" + repo_url
-    runs = cache.get_runs()
-    sessions = aggregate_sessions(runs)
-    prs = cache.get_prs(runs)
+    conn = get_connection()
+    try:
+        runs = query_all_runs(conn, target_repo=full_url)
+        sessions = query_all_sessions(conn, target_repo=full_url)
+        all_prs = query_all_prs(conn)
 
-    repo_runs = [r for r in runs if r.get("target_repo", "") == full_url]
-    repo_sessions = [s for s in sessions if s.get("target_repo", "") == full_url]
+        repo_info = None
+        all_repos = query_repos(conn)
+        for r in all_repos:
+            if r["repo"] == full_url:
+                repo_info = r
+                break
 
-    repo_info = None
-    all_repos = build_repos_dict(runs, sessions, prs)
-    for r in all_repos:
-        if r["repo"] == full_url:
-            repo_info = r
-            break
+        fork_url = repo_info["fork_url"] if repo_info else ""
+        repo_prs = [p for p in all_prs if fork_url and p.get("repo", "") and p["repo"] in fork_url]
 
-    fork_url = repo_info["fork_url"] if repo_info else ""
-    repo_prs = [p for p in prs if fork_url and p.get("repo", "") and fork_url and p["repo"] in fork_url]
+        pr_merged = sum(1 for p in repo_prs if p.get("merged", False))
+        pr_open = sum(1 for p in repo_prs if p.get("state") == "open")
+        pr_closed = sum(1 for p in repo_prs if p.get("state") == "closed" and not p.get("merged", False))
 
-    pr_merged = sum(1 for p in repo_prs if p.get("merged", False))
-    pr_open = sum(1 for p in repo_prs if p.get("state") == "open")
-    pr_closed = sum(1 for p in repo_prs if p.get("state") == "closed" and not p.get("merged", False))
+        severity_agg: dict[str, int] = {}
+        category_agg: dict[str, int] = {}
+        for run in runs:
+            for tier, count in run.get("severity_breakdown", {}).items():
+                severity_agg[tier] = severity_agg.get(tier, 0) + count
+            for cat, count in run.get("category_breakdown", {}).items():
+                category_agg[cat] = category_agg.get(cat, 0) + count
 
-    severity_agg: dict[str, int] = {}
-    category_agg: dict[str, int] = {}
-    for run in repo_runs:
-        for tier, count in run.get("severity_breakdown", {}).items():
-            severity_agg[tier] = severity_agg.get(tier, 0) + count
-        for cat, count in run.get("category_breakdown", {}).items():
-            category_agg[cat] = category_agg.get(cat, 0) + count
+        sessions_created = len([s for s in sessions if s.get("session_id")])
+        sessions_finished = len([s for s in sessions if s.get("status") in ("finished", "stopped")])
 
-    sessions_created = len([s for s in repo_sessions if s.get("session_id")])
-    sessions_finished = len([s for s in repo_sessions if s.get("status") in ("finished", "stopped")])
+        stats = {
+            "total_runs": len(runs),
+            "total_issues": sum(r.get("issues_found", 0) for r in runs),
+            "sessions_created": sessions_created,
+            "sessions_finished": sessions_finished,
+            "prs_total": len(repo_prs),
+            "prs_merged": pr_merged,
+            "prs_open": pr_open,
+            "prs_closed": pr_closed,
+            "fix_rate": round(pr_merged / max(len(repo_prs), 1) * 100, 1),
+            "severity_breakdown": severity_agg,
+            "category_breakdown": category_agg,
+        }
 
-    stats = {
-        "total_runs": len(repo_runs),
-        "total_issues": sum(r.get("issues_found", 0) for r in repo_runs),
-        "sessions_created": sessions_created,
-        "sessions_finished": sessions_finished,
-        "prs_total": len(repo_prs),
-        "prs_merged": pr_merged,
-        "prs_open": pr_open,
-        "prs_closed": pr_closed,
-        "fix_rate": round(pr_merged / max(len(repo_prs), 1) * 100, 1),
-        "severity_breakdown": severity_agg,
-        "category_breakdown": category_agg,
-    }
+        page, per_page = _get_pagination()
+        sorted_runs = sorted(runs, key=lambda r: r.get("run_number", 0), reverse=True)
+        issues = query_issues(conn, target_repo=full_url)
 
-    page, per_page = _get_pagination()
-    sorted_runs = sorted(repo_runs, key=lambda r: r.get("run_number", 0), reverse=True)
-
-    issues = track_issues_across_runs(repo_runs)
-
-    return jsonify({
-        "stats": stats,
-        "runs": _paginate(sorted_runs, page, per_page),
-        "sessions": _paginate(repo_sessions, page, per_page),
-        "prs": _paginate(repo_prs, page, per_page),
-        "issues": _paginate(issues, page, per_page),
-    })
+        return jsonify({
+            "stats": stats,
+            "runs": _paginate(sorted_runs, page, per_page),
+            "sessions": _paginate(sessions, page, per_page),
+            "prs": _paginate(repo_prs, page, per_page),
+            "issues": _paginate(issues, page, per_page),
+        })
+    finally:
+        conn.close()
 
 
 @app.route("/api/runs")
 def api_runs():
-    runs = cache.get_runs()
     page, per_page = _get_pagination()
-    sorted_runs = sorted(runs, key=lambda r: r.get("run_number", 0), reverse=True)
-    return jsonify(_paginate(sorted_runs, page, per_page))
+    conn = get_connection()
+    try:
+        return jsonify(query_runs(conn, page=page, per_page=per_page))
+    finally:
+        conn.close()
 
 
 @app.route("/api/sessions")
 def api_sessions():
-    runs = cache.get_runs()
-    sessions = aggregate_sessions(runs)
-    prs = cache.get_prs(runs)
-    sessions = link_prs_to_sessions(sessions, prs)
     page, per_page = _get_pagination()
-    return jsonify(_paginate(sessions, page, per_page))
+    conn = get_connection()
+    try:
+        result = query_sessions(conn, page=page, per_page=per_page)
+        all_prs = query_all_prs(conn)
+        _link_prs_to_session_items(result["items"], all_prs)
+        return jsonify(result)
+    finally:
+        conn.close()
+
+
+def _link_prs_to_session_items(sessions: list[dict], prs: list[dict]) -> None:
+    pr_by_session: dict[str, str] = {}
+    pr_by_issue: dict[str, str] = {}
+    for p in prs:
+        sid = p.get("session_id", "")
+        if sid:
+            pr_by_session[sid] = p.get("html_url", "")
+        for iid in p.get("issue_ids", []):
+            if iid:
+                pr_by_issue[iid] = p.get("html_url", "")
+    for s in sessions:
+        if s.get("pr_url"):
+            continue
+        sid = s.get("session_id", "")
+        clean = sid.replace("devin-", "") if sid.startswith("devin-") else sid
+        if clean in pr_by_session:
+            s["pr_url"] = pr_by_session[clean]
+            continue
+        for iid in s.get("issue_ids", []):
+            if iid in pr_by_issue:
+                s["pr_url"] = pr_by_issue[iid]
+                break
 
 
 @app.route("/api/prs")
 def api_prs():
-    runs = cache.get_runs()
-    prs = cache.get_prs(runs)
     page, per_page = _get_pagination()
-    return jsonify(_paginate(prs, page, per_page))
-
-
-def _filter_by_period(runs: list[dict], period: str) -> list[dict]:
-    """Filter runs to those within the given period (7d, 30d, 90d)."""
-    if not period or period == "all":
-        return runs
-    days_map = {"7d": 7, "30d": 30, "90d": 90}
-    days = days_map.get(period)
-    if days is None:
-        return runs
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    return [r for r in runs if r.get("timestamp", "") >= cutoff]
+    conn = get_connection()
+    try:
+        return jsonify(query_prs(conn, page=page, per_page=per_page))
+    finally:
+        conn.close()
 
 
 @app.route("/api/stats")
 def api_stats():
-    runs = cache.get_runs()
     period = flask_request.args.get("period", "all")
-    filtered_runs = _filter_by_period(runs, period)
-    sessions = aggregate_sessions(filtered_runs)
-    prs = cache.get_prs(runs)
-    if period != "all":
-        session_ids = {s["session_id"] for s in sessions if s.get("session_id")}
-        all_issue_ids = {iid for s in sessions for iid in s.get("issue_ids", [])}
-        prs = [p for p in prs if p.get("session_id") in session_ids
-               or any(pid in all_issue_ids for pid in p.get("issue_ids", []))]
-    result = aggregate_stats(filtered_runs, sessions, prs)
-    result["period"] = period
-    return jsonify(result)
+    conn = get_connection()
+    try:
+        result = query_stats(conn, period=period)
+        result["period"] = period
+        return jsonify(result)
+    finally:
+        conn.close()
 
 
 @app.route("/api/repos")
 def api_repos():
-    runs = cache.get_runs()
-    sessions = aggregate_sessions(runs)
-    prs = cache.get_prs(runs)
-    return jsonify(build_repos_dict(runs, sessions, prs))
+    conn = get_connection()
+    try:
+        return jsonify(query_repos(conn))
+    finally:
+        conn.close()
 
 
 @app.route("/api/poll", methods=["POST"])
 @require_api_key
 def api_poll():
-    runs = cache.get_runs()
-    sessions = aggregate_sessions(runs)
-    updated = poll_devin_sessions(sessions)
-    if save_session_updates(updated):
-        cache.invalidate_runs()
-    cache.set_polled_sessions(updated)
-    prs = fetch_prs_from_github(runs)
-    cache.set_prs(prs)
-    updated = link_prs_to_sessions(updated, prs)
-    if save_session_updates(updated):
-        cache.invalidate_runs()
-    return jsonify({"sessions": updated, "polled": len(updated), "prs_found": len(prs)})
+    conn = get_connection()
+    try:
+        sessions = query_all_sessions(conn)
+        updated = poll_devin_sessions_db(conn, sessions)
+        conn.commit()
+        prs_count = fetch_prs_from_github_to_db(conn)
+        conn.commit()
+        link_prs_to_sessions_db(conn)
+        conn.commit()
+        return jsonify({"sessions": updated, "polled": len(updated), "prs_found": prs_count})
+    finally:
+        conn.close()
 
 
 @app.route("/api/poll-prs", methods=["POST"])
 @require_api_key
 def api_poll_prs():
-    runs = cache.get_runs()
-    prs = fetch_prs_from_github(runs)
-    cache.set_prs(prs)
-    return jsonify({"prs": prs, "total": len(prs)})
+    conn = get_connection()
+    try:
+        prs_count = fetch_prs_from_github_to_db(conn)
+        conn.commit()
+        all_prs = query_all_prs(conn)
+        return jsonify({"prs": all_prs, "total": prs_count})
+    finally:
+        conn.close()
 
 
 @app.route("/api/refresh", methods=["POST"])
@@ -418,45 +314,54 @@ def api_refresh():
         return jsonify({"error": "GITHUB_TOKEN and ACTION_REPO required"}), 400
 
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    conn = get_connection()
     downloaded = 0
-    gh_page = 1
-    while True:
-        url = (f"https://api.github.com/repos/{action_repo}"
-               f"/contents/telemetry/runs?per_page=100&page={gh_page}")
-        resp = requests.get(url, headers=gh_headers(), timeout=30)
-        if resp.status_code != 200:
-            break
-        items = resp.json()
-        if not items:
-            break
-        for item in items:
-            if not item.get("name", "").endswith(".json"):
-                continue
-            local_path = RUNS_DIR / item["name"]
-            remote_size = item.get("size", 0)
-            if local_path.exists() and local_path.stat().st_size == remote_size:
-                continue
-            dl_resp = requests.get(item["download_url"], timeout=30)
-            if dl_resp.status_code == 200:
-                local_path.write_text(dl_resp.text)
-                downloaded += 1
-        if len(items) < 100:
-            break
-        gh_page += 1
+    try:
+        gh_page = 1
+        while True:
+            url = (f"https://api.github.com/repos/{action_repo}"
+                   f"/contents/telemetry/runs?per_page=100&page={gh_page}")
+            resp = requests.get(url, headers=gh_headers(), timeout=30)
+            if resp.status_code != 200:
+                break
+            items = resp.json()
+            if not items:
+                break
+            for item in items:
+                if not item.get("name", "").endswith(".json"):
+                    continue
+                local_path = RUNS_DIR / item["name"]
+                remote_size = item.get("size", 0)
+                if local_path.exists() and local_path.stat().st_size == remote_size:
+                    continue
+                dl_resp = requests.get(item["download_url"], timeout=30)
+                if dl_resp.status_code == 200:
+                    local_path.write_text(dl_resp.text)
+                    try:
+                        data = dl_resp.json()
+                        result = insert_run(conn, data, item["name"])
+                        if result is not None:
+                            downloaded += 1
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+            if len(items) < 100:
+                break
+            gh_page += 1
 
-    cache.invalidate_runs()
-    runs = cache.get_runs()
-    prs = fetch_prs_from_github(runs)
-    cache.set_prs(prs)
-    sessions = aggregate_sessions(runs)
-    link_prs_to_sessions(sessions, prs)
-    if save_session_updates(sessions):
-        cache.invalidate_runs()
-    return jsonify({
-        "downloaded": downloaded,
-        "total_files": len(list(RUNS_DIR.glob("*.json"))),
-        "prs_found": len(prs),
-    })
+        conn.commit()
+        prs_count = fetch_prs_from_github_to_db(conn)
+        conn.commit()
+        link_prs_to_sessions_db(conn)
+        conn.commit()
+
+        total_files = len(list(RUNS_DIR.glob("*.json")))
+        return jsonify({
+            "downloaded": downloaded,
+            "total_files": total_files,
+            "prs_found": prs_count,
+        })
+    finally:
+        conn.close()
 
 
 @app.route("/api/config")
@@ -476,103 +381,128 @@ def api_config():
 
 @app.route("/api/report/pdf")
 def api_report_pdf():
-    runs = cache.get_runs()
-    repo_filter = flask_request.args.get("repo", "")
-    if repo_filter:
-        runs = [r for r in runs if r.get("target_repo") == repo_filter]
-    runs = filter_by_user_access(runs)
-    sessions = aggregate_sessions(runs)
-    prs = cache.get_prs(runs)
-    stats = aggregate_stats(runs, sessions, prs)
-    issues = track_issues_across_runs(runs)
-    pdf_bytes = generate_pdf(stats, issues, repo_filter=repo_filter)
-    buf = io.BytesIO(pdf_bytes)
-    buf.seek(0)
-    filename = "security-report"
-    if repo_filter:
-        short = repo_filter.replace("https://github.com/", "").replace("/", "-")
-        filename += f"-{short}"
-    filename += ".pdf"
-    return send_file(buf, mimetype="application/pdf", as_attachment=True, download_name=filename)
+    conn = get_connection()
+    try:
+        repo_filter = flask_request.args.get("repo", "")
+        if repo_filter:
+            runs = query_all_runs(conn, target_repo=repo_filter)
+        else:
+            runs = query_all_runs(conn)
+        runs = filter_by_user_access(runs)
+        stats = query_stats(conn, target_repo=repo_filter)
+        issues = query_issues(conn, target_repo=repo_filter)
+        pdf_bytes = generate_pdf(stats, issues, repo_filter=repo_filter)
+        buf = io.BytesIO(pdf_bytes)
+        buf.seek(0)
+        filename = "security-report"
+        if repo_filter:
+            short = repo_filter.replace("https://github.com/", "").replace("/", "-")
+            filename += f"-{short}"
+        filename += ".pdf"
+        return send_file(buf, mimetype="application/pdf", as_attachment=True, download_name=filename)
+    finally:
+        conn.close()
 
 
 @app.route("/api/backfill", methods=["POST"])
 @require_api_key
 def api_backfill():
-    runs = cache.get_runs()
-    sessions = aggregate_sessions(runs)
-    prs = cache.get_prs(runs)
-    pr_issue_map: dict[str, str] = {}
-    for p in prs:
-        for iid in p.get("issue_ids", []):
-            if iid:
-                pr_issue_map[iid] = p.get("html_url", "")
-    patched = 0
-    for fp in RUNS_DIR.glob("*.json"):
-        try:
-            with open(fp) as f:
-                run_data = json.load(f)
-        except (json.JSONDecodeError, OSError):
-            continue
-        changed = False
-        for s in run_data.get("sessions", []):
-            old_ids = s.get("issue_ids", [])
-            if old_ids and all(iid == "" for iid in old_ids):
-                batch_id = s.get("batch_id")
-                run_num = run_data.get("run_number")
-                if run_num and batch_id is not None:
-                    s["issue_ids"] = []
-                    changed = True
-            if not s.get("pr_url"):
-                for iid in s.get("issue_ids", []):
-                    if iid in pr_issue_map:
-                        s["pr_url"] = pr_issue_map[iid]
+    conn = get_connection()
+    try:
+        patched = backfill_pr_urls(conn)
+        conn.commit()
+
+        patched_files = 0
+        all_prs = query_all_prs(conn)
+        pr_issue_map: dict[str, str] = {}
+        for p in all_prs:
+            for iid in p.get("issue_ids", []):
+                if iid:
+                    pr_issue_map[iid] = p.get("html_url", "")
+        for fp in RUNS_DIR.glob("*.json"):
+            if fp.name.startswith("verification_"):
+                continue
+            try:
+                with open(fp) as f:
+                    run_data = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                continue
+            changed = False
+            for s in run_data.get("sessions", []):
+                old_ids = s.get("issue_ids", [])
+                if old_ids and all(iid == "" for iid in old_ids):
+                    batch_id = s.get("batch_id")
+                    run_num = run_data.get("run_number")
+                    if run_num and batch_id is not None:
+                        s["issue_ids"] = []
                         changed = True
-                        break
-        if changed:
-            patched += 1
-            with open(fp, "w") as f:
-                json.dump(run_data, f, indent=2)
-    if patched:
-        cache.invalidate_runs()
-    return jsonify({"patched_files": patched})
+                if not s.get("pr_url"):
+                    for iid in s.get("issue_ids", []):
+                        if iid in pr_issue_map:
+                            s["pr_url"] = pr_issue_map[iid]
+                            changed = True
+                            break
+            if changed:
+                patched_files += 1
+                with open(fp, "w") as f:
+                    json.dump(run_data, f, indent=2)
+
+        return jsonify({"patched_files": patched_files, "db_patched": patched})
+    finally:
+        conn.close()
 
 
 @app.route("/api/issues")
 def api_issues():
-    runs = cache.get_runs()
+    conn = get_connection()
+    try:
+        repo_filter = flask_request.args.get("repo", "")
+        issues = query_issues(conn, target_repo=repo_filter)
+
+        verification_records = load_verification_records(RUNS_DIR)
+        fp_fix_map = build_fingerprint_fix_map(verification_records)
+        for issue in issues:
+            fp = issue.get("fingerprint", "")
+            if fp in fp_fix_map:
+                fix_info = fp_fix_map[fp]
+                issue["fixed_by_session"] = fix_info["fixed_by_session"]
+                issue["fixed_by_pr"] = fix_info["fixed_by_pr"]
+                issue["verified_at"] = fix_info["verified_at"]
+
+        page, per_page = _get_pagination()
+        return jsonify(_paginate(issues, page, per_page))
+    finally:
+        conn.close()
+
+
+@app.route("/api/issues/search")
+def api_issues_search():
+    q = flask_request.args.get("q", "").strip()
+    if not q:
+        return jsonify({"error": "q parameter is required"}), 400
     repo_filter = flask_request.args.get("repo", "")
-    if repo_filter:
-        runs = [r for r in runs if r.get("target_repo") == repo_filter]
-    issues = track_issues_across_runs(runs)
-
-    verification_records = load_verification_records(RUNS_DIR)
-    fp_fix_map = build_fingerprint_fix_map(verification_records)
-    for issue in issues:
-        fp = issue.get("fingerprint", "")
-        if fp in fp_fix_map:
-            fix_info = fp_fix_map[fp]
-            issue["fixed_by_session"] = fix_info["fixed_by_session"]
-            issue["fixed_by_pr"] = fix_info["fixed_by_pr"]
-            issue["verified_at"] = fix_info["verified_at"]
-
-    page, per_page = _get_pagination()
-    return jsonify(_paginate(issues, page, per_page))
+    conn = get_connection()
+    try:
+        results = search_issues(conn, q, target_repo=repo_filter)
+        page, per_page = _get_pagination()
+        return jsonify(_paginate(results, page, per_page))
+    finally:
+        conn.close()
 
 
 @app.route("/api/sla")
 def api_sla():
-    runs = cache.get_runs()
-    repo_filter = flask_request.args.get("repo", "")
-    if repo_filter:
-        runs = [r for r in runs if r.get("target_repo") == repo_filter]
-    issues = track_issues_across_runs(runs)
-    return jsonify(compute_sla_summary(issues))
+    conn = get_connection()
+    try:
+        repo_filter = flask_request.args.get("repo", "")
+        issues = query_issues(conn, target_repo=repo_filter)
+        return jsonify(compute_sla_summary(issues))
+    finally:
+        conn.close()
 
 
 @app.route("/api/verification")
 def api_verification():
-    """Return verification records and aggregate stats."""
     verification_records = load_verification_records(RUNS_DIR)
     session_map = build_session_verification_map(verification_records)
     stats = aggregate_verification_stats(verification_records)
@@ -591,41 +521,45 @@ def api_dispatch_preflight():
     if not target_repo:
         return jsonify({"error": "target_repo is required"}), 400
 
-    runs = cache.get_runs()
-    prs = cache.get_prs(runs)
+    conn = get_connection()
+    try:
+        all_prs = query_all_prs(conn)
+        open_prs = [
+            p for p in all_prs
+            if p.get("state") == "open" and not p.get("merged", False)
+        ]
 
-    open_prs = [
-        p for p in prs
-        if p.get("state") == "open" and not p.get("merged", False)
-    ]
+        sessions = query_all_sessions(conn)
+        runs = query_all_runs(conn)
 
-    sessions = aggregate_sessions(runs)
-    repo_open_prs = []
-    for p in open_prs:
-        pr_repo = p.get("repo", "")
-        if not pr_repo:
-            continue
-        for s in sessions:
-            if s.get("target_repo", "") == target_repo and s.get("pr_url", "") == p.get("html_url", ""):
-                repo_open_prs.append(p)
-                break
-        else:
-            fork_url = ""
-            for run in runs:
-                if run.get("target_repo", "") == target_repo:
-                    fork_url = run.get("fork_url", "")
+        repo_open_prs = []
+        for p in open_prs:
+            pr_repo = p.get("repo", "")
+            if not pr_repo:
+                continue
+            for s in sessions:
+                if s.get("target_repo", "") == target_repo and s.get("pr_url", "") == p.get("html_url", ""):
+                    repo_open_prs.append(p)
                     break
-            if fork_url and pr_repo in fork_url:
-                repo_open_prs.append(p)
+            else:
+                fork_url = ""
+                for run in runs:
+                    if run.get("target_repo", "") == target_repo:
+                        fork_url = run.get("fork_url", "")
+                        break
+                if fork_url and pr_repo in fork_url:
+                    repo_open_prs.append(p)
 
-    return jsonify({
-        "target_repo": target_repo,
-        "open_prs": len(repo_open_prs),
-        "prs": [
-            {"pr_number": p.get("pr_number"), "title": p.get("title"), "html_url": p.get("html_url")}
-            for p in repo_open_prs
-        ],
-    })
+        return jsonify({
+            "target_repo": target_repo,
+            "open_prs": len(repo_open_prs),
+            "prs": [
+                {"pr_number": p.get("pr_number"), "title": p.get("title"), "html_url": p.get("html_url")}
+                for p in repo_open_prs
+            ],
+        })
+    finally:
+        conn.close()
 
 
 @app.route("/api/dispatch", methods=["POST"])
