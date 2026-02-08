@@ -115,7 +115,7 @@ class Objective:
         matching = [
             i for i in current_issues
             if i.get("severity_tier") == self.target_severity
-            and i.get("status") in ("new", "recurring")
+            and i.get("derived_state", i.get("status")) in ("new", "recurring")
         ]
         return {
             "objective": self.name,
@@ -188,29 +188,53 @@ def get_repo_config(registry: dict[str, Any], repo_url: str) -> dict[str, Any]:
     return defaults
 
 
+def _build_fp_to_tracking_ids(
+    issues: list[dict[str, Any]],
+) -> dict[str, set[str]]:
+    mapping: dict[str, set[str]] = {}
+    for issue in issues:
+        fp = issue.get("fingerprint", "")
+        if not fp:
+            continue
+        if fp not in mapping:
+            mapping[fp] = set()
+        lid = issue.get("latest_issue_id", "")
+        if lid:
+            mapping[fp].add(lid)
+    return mapping
+
+
 def _derive_issue_state(
     issue: dict[str, Any],
     sessions: list[dict[str, Any]],
     prs: list[dict[str, Any]],
     fp_fix_map: dict[str, dict[str, Any]],
     dispatch_history: dict[str, dict[str, Any]],
+    fp_to_tracking_ids: dict[str, set[str]] | None = None,
 ) -> str:
     fp = issue.get("fingerprint", "")
     base_status = issue.get("status", "new")
+
+    tracking_ids = set()
+    if fp_to_tracking_ids and fp in fp_to_tracking_ids:
+        tracking_ids = fp_to_tracking_ids[fp]
+    lid = issue.get("latest_issue_id", "")
+    if lid:
+        tracking_ids.add(lid)
 
     if fp in fp_fix_map:
         return "verified_fixed"
 
     for pr in prs:
-        if pr.get("merged") and fp in _pr_fingerprints(pr, sessions):
+        if pr.get("merged") and _pr_matches_issue(pr, sessions, fp, tracking_ids):
             return "pr_merged"
 
     for pr in prs:
-        if pr.get("state") == "open" and not pr.get("merged") and fp in _pr_fingerprints(pr, sessions):
+        if pr.get("state") == "open" and not pr.get("merged") and _pr_matches_issue(pr, sessions, fp, tracking_ids):
             return "pr_open"
 
     for s in sessions:
-        if fp in _session_fingerprints(s) and s.get("status") not in ("finished", "stopped", "error", "failed"):
+        if _session_matches_issue(s, fp, tracking_ids) and s.get("status") not in ("finished", "stopped", "error", "failed"):
             if s.get("session_id") and s.get("session_id") != "dry-run":
                 return "session_dispatched"
 
@@ -220,30 +244,58 @@ def _derive_issue_state(
     return base_status
 
 
+def _session_matches_issue(
+    session: dict[str, Any],
+    fingerprint: str,
+    tracking_ids: set[str],
+) -> bool:
+    session_ids = set(session.get("issue_ids", []))
+    if fingerprint and fingerprint in session_ids:
+        return True
+    return bool(tracking_ids & session_ids)
+
+
 def _session_fingerprints(session: dict[str, Any]) -> set[str]:
-    issue_ids = set(session.get("issue_ids", []))
-    return issue_ids
+    return set(session.get("issue_ids", []))
+
+
+def _pr_matches_issue(
+    pr: dict[str, Any],
+    sessions: list[dict[str, Any]],
+    fingerprint: str,
+    tracking_ids: set[str],
+) -> bool:
+    all_ids = _collect_pr_ids(pr, sessions)
+    if fingerprint and fingerprint in all_ids:
+        return True
+    return bool(tracking_ids & all_ids)
 
 
 def _pr_fingerprints(
     pr: dict[str, Any], sessions: list[dict[str, Any]]
 ) -> set[str]:
-    fps: set[str] = set()
+    return _collect_pr_ids(pr, sessions)
+
+
+def _collect_pr_ids(
+    pr: dict[str, Any], sessions: list[dict[str, Any]]
+) -> set[str]:
+    ids: set[str] = set()
     pr_url = pr.get("html_url", "")
     session_id = pr.get("session_id", "")
     for iid in pr.get("issue_ids", []):
         if iid:
-            fps.add(iid)
+            ids.add(iid)
     for s in sessions:
         sid = s.get("session_id", "")
         if not sid:
             continue
         if s.get("pr_url") == pr_url:
-            fps.update(s.get("issue_ids", []))
+            ids.update(s.get("issue_ids", []))
         clean_sid = sid.replace("devin-", "") if sid.startswith("devin-") else sid
         if session_id and clean_sid == session_id:
-            fps.update(s.get("issue_ids", []))
-    return fps
+            ids.update(s.get("issue_ids", []))
+    return ids
 
 
 def should_skip_issue(
@@ -352,9 +404,12 @@ def build_global_issue_state(
         state = load_state()
         dispatch_history = state.get("dispatch_history", {})
 
+        fp_to_tracking_ids = _build_fp_to_tracking_ids(issues)
+
         for issue in issues:
             derived = _derive_issue_state(
                 issue, sessions, prs, fp_fix_map, dispatch_history,
+                fp_to_tracking_ids,
             )
             issue["derived_state"] = derived
 

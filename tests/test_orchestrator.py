@@ -18,6 +18,9 @@ from scripts.orchestrator import (
     save_state,
     should_skip_issue,
     _derive_issue_state,
+    _build_fp_to_tracking_ids,
+    _session_matches_issue,
+    _pr_matches_issue,
     _fallback_fingerprint,
     _session_fingerprints,
     _pr_fingerprints,
@@ -203,6 +206,19 @@ class TestObjective:
         assert not p["met"]
         assert p["current_count"] == 2
 
+    def test_progress_uses_derived_state(self):
+        obj = Objective(
+            name="Fix all critical",
+            target_severity="critical",
+            target_count=0,
+        )
+        issues = [
+            {"severity_tier": "critical", "status": "new", "derived_state": "pr_merged"},
+            {"severity_tier": "critical", "status": "recurring", "derived_state": "new"},
+        ]
+        p = obj.progress(issues)
+        assert p["current_count"] == 1
+
     def test_from_dict(self):
         data = {
             "name": "Reduce high",
@@ -241,10 +257,17 @@ class TestDeriveIssueState:
         state = _derive_issue_state(issue, [], [], fp_fix_map, {})
         assert state == "verified_fixed"
 
-    def test_pr_merged(self):
+    def test_pr_merged_by_fingerprint(self):
         issue = {"fingerprint": "fp-1", "status": "new"}
         prs = [{"merged": True, "state": "closed", "html_url": "url", "issue_ids": ["fp-1"]}]
         state = _derive_issue_state(issue, [], prs, {}, {})
+        assert state == "pr_merged"
+
+    def test_pr_merged_by_tracking_id(self):
+        issue = {"fingerprint": "fp-hash-1", "status": "new", "latest_issue_id": "CQLF-R1-0001"}
+        prs = [{"merged": True, "state": "closed", "html_url": "url", "issue_ids": ["CQLF-R1-0001"]}]
+        fp_map = {"fp-hash-1": {"CQLF-R1-0001"}}
+        state = _derive_issue_state(issue, [], prs, {}, {}, fp_map)
         assert state == "pr_merged"
 
     def test_pr_open(self):
@@ -253,7 +276,7 @@ class TestDeriveIssueState:
         state = _derive_issue_state(issue, [], prs, {}, {})
         assert state == "pr_open"
 
-    def test_session_dispatched(self):
+    def test_session_dispatched_by_fingerprint(self):
         issue = {"fingerprint": "fp-1", "status": "new"}
         sessions = [{
             "session_id": "sess-1",
@@ -262,6 +285,57 @@ class TestDeriveIssueState:
         }]
         state = _derive_issue_state(issue, sessions, [], {}, {})
         assert state == "session_dispatched"
+
+    def test_session_dispatched_by_tracking_id(self):
+        issue = {"fingerprint": "fp-hash-1", "status": "new", "latest_issue_id": "CQLF-R1-0001"}
+        sessions = [{
+            "session_id": "sess-1",
+            "status": "running",
+            "issue_ids": ["CQLF-R1-0001"],
+        }]
+        fp_map = {"fp-hash-1": {"CQLF-R1-0001"}}
+        state = _derive_issue_state(issue, sessions, [], {}, {}, fp_map)
+        assert state == "session_dispatched"
+
+
+class TestBuildFpToTrackingIds:
+    def test_builds_mapping(self):
+        issues = [
+            {"fingerprint": "fp-1", "latest_issue_id": "CQLF-R1-0001"},
+            {"fingerprint": "fp-2", "latest_issue_id": "CQLF-R1-0002"},
+        ]
+        mapping = _build_fp_to_tracking_ids(issues)
+        assert "CQLF-R1-0001" in mapping["fp-1"]
+        assert "CQLF-R1-0002" in mapping["fp-2"]
+
+    def test_skips_empty_fingerprints(self):
+        issues = [{"fingerprint": "", "latest_issue_id": "CQLF-R1-0001"}]
+        mapping = _build_fp_to_tracking_ids(issues)
+        assert len(mapping) == 0
+
+
+class TestSessionMatchesIssue:
+    def test_matches_by_fingerprint(self):
+        session = {"issue_ids": ["fp-1", "fp-2"]}
+        assert _session_matches_issue(session, "fp-1", set())
+
+    def test_matches_by_tracking_id(self):
+        session = {"issue_ids": ["CQLF-R1-0001"]}
+        assert _session_matches_issue(session, "fp-hash", {"CQLF-R1-0001"})
+
+    def test_no_match(self):
+        session = {"issue_ids": ["CQLF-R1-0001"]}
+        assert not _session_matches_issue(session, "fp-hash", {"CQLF-R1-9999"})
+
+
+class TestPrMatchesIssue:
+    def test_matches_by_tracking_id(self):
+        pr = {"html_url": "url", "issue_ids": ["CQLF-R1-0001"]}
+        assert _pr_matches_issue(pr, [], "fp-hash", {"CQLF-R1-0001"})
+
+    def test_no_match(self):
+        pr = {"html_url": "url", "issue_ids": ["CQLF-R1-9999"]}
+        assert not _pr_matches_issue(pr, [], "fp-hash", {"CQLF-R1-0001"})
 
 
 class TestShouldSkipIssue:
