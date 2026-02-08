@@ -22,12 +22,6 @@ from reportlab.platypus import (
 
 
 _SEVERITY_ORDER = ["critical", "high", "medium", "low"]
-_SEV_COLORS = {
-    "critical": colors.HexColor("#cf222e"),
-    "high": colors.HexColor("#9a6700"),
-    "medium": colors.HexColor("#8250df"),
-    "low": colors.HexColor("#0969da"),
-}
 
 
 def _header_style() -> ParagraphStyle:
