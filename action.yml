@@ -60,6 +60,10 @@ inputs:
     description: "Persist run logs to the fork repository"
     required: false
     default: "true"
+  exclude_paths:
+    description: "Comma-separated glob patterns to exclude from CodeQL analysis"
+    required: false
+    default: ""
   max_failure_rate:
     description: "Maximum session failure rate (0-100) before the dispatch step exits non-zero"
     required: false
@@ -117,7 +121,7 @@ runs:
 
     - name: Install Python dependencies
       shell: bash
-      run: pip install requests jinja2
+      run: pip install requests jinja2 pyyaml
 
     - name: Normalize target repo URL
       id: normalize
