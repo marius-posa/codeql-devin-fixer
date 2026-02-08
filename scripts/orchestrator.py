@@ -75,6 +75,8 @@ RUNS_DIR = _TELEMETRY_DIR / "runs"
 
 MAX_DISPATCH_ATTEMPTS_DEFAULT = 3
 
+COOLDOWN_HOURS: list[int] = [24, 72, 168]
+
 
 @dataclass
 class RateLimiter:
@@ -312,6 +314,29 @@ def _collect_pr_ids(
     return ids
 
 
+def _cooldown_remaining_hours(
+    history: dict[str, Any],
+    cooldown_schedule: list[int] | None = None,
+) -> float:
+    """Return hours remaining in cooldown, or 0 if cooldown has elapsed."""
+    if cooldown_schedule is None:
+        cooldown_schedule = COOLDOWN_HOURS
+    failed_count = history.get("consecutive_failures", 0)
+    if failed_count <= 0:
+        return 0.0
+    last_dispatched = history.get("last_dispatched", "")
+    if not last_dispatched:
+        return 0.0
+    last_dt = _parse_ts(last_dispatched)
+    if last_dt is None:
+        return 0.0
+    idx = min(failed_count - 1, len(cooldown_schedule) - 1)
+    cooldown_h = cooldown_schedule[idx]
+    elapsed = (datetime.now(timezone.utc) - last_dt).total_seconds() / 3600.0
+    remaining = cooldown_h - elapsed
+    return max(remaining, 0.0)
+
+
 def should_skip_issue(
     issue: dict[str, Any],
     derived_state: str,
@@ -334,8 +359,17 @@ def should_skip_issue(
     fp = issue.get("fingerprint", "")
     history = dispatch_history.get(fp, {})
     dispatch_count = history.get("dispatch_count", 0)
+
+    consecutive_failures = history.get("consecutive_failures", 0)
+    if consecutive_failures >= max_dispatch_attempts + 1:
+        return True, f"needs_human_review ({consecutive_failures} consecutive failures)"
+
     if dispatch_count >= max_dispatch_attempts:
         return True, f"max_attempts_reached ({dispatch_count})"
+
+    remaining = _cooldown_remaining_hours(history)
+    if remaining > 0:
+        return True, f"cooldown_active ({remaining:.0f}h remaining)"
 
     family = issue.get("cwe_family", "other")
     if fix_learning.should_skip_family(family):
@@ -1051,6 +1085,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
                 dispatch_history[fp]["dispatch_count"] += 1
                 dispatch_history[fp]["last_dispatched"] = datetime.now(timezone.utc).isoformat()
                 dispatch_history[fp]["last_session_id"] = session_id
+                dispatch_history[fp]["consecutive_failures"] = 0
 
             results.append({
                 "batch_id": batch["batch_id"],
@@ -1069,6 +1104,15 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         except Exception as e:
             if not output_json:
                 print(f"ERROR creating session for batch {batch['batch_id']}: {e}", file=sys.stderr)
+            for issue in batch["issues"]:
+                fp = issue.get("fingerprint", "")
+                if not fp:
+                    continue
+                if fp not in dispatch_history:
+                    dispatch_history[fp] = {"dispatch_count": 0, "fingerprint": fp}
+                prev_failures = dispatch_history[fp].get("consecutive_failures", 0)
+                dispatch_history[fp]["consecutive_failures"] = prev_failures + 1
+                dispatch_history[fp]["last_dispatched"] = datetime.now(timezone.utc).isoformat()
             results.append({
                 "batch_id": batch["batch_id"],
                 "target_repo": repo_url,
@@ -1118,9 +1162,51 @@ SCHEDULE_INTERVALS: dict[str, timedelta] = {
 }
 
 
+ADAPTIVE_COMMIT_THRESHOLD = 50
+
+
+def _check_commit_velocity(
+    repo_url: str,
+    since_iso: str,
+    github_token: str = "",
+) -> int | None:
+    """Return number of commits on the default branch since *since_iso*.
+
+    Returns ``None`` if the API call fails or requests is unavailable.
+    """
+    if not _HAS_REQUESTS or not github_token:
+        return None
+    from github_utils import parse_repo_url
+    try:
+        owner, repo = parse_repo_url(repo_url)
+    except ValueError:
+        return None
+    api_url = f"https://api.github.com/repos/{owner}/{repo}/commits"
+    params = {"since": since_iso, "per_page": "1"}
+    try:
+        resp = request_with_retry(
+            "HEAD", api_url,
+            headers=gh_headers(github_token),
+            params=params,
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            return None
+        link = resp.headers.get("Link", "")
+        if 'rel="last"' in link:
+            import re as _re
+            m = _re.search(r'[&?]page=(\d+)>;\s*rel="last"', link)
+            if m:
+                return int(m.group(1))
+        return 1
+    except Exception:
+        return None
+
+
 def _is_scan_due(
     repo_config: dict[str, Any],
     scan_schedule: dict[str, dict[str, Any]],
+    github_token: str = "",
 ) -> bool:
     repo_url = repo_config.get("repo", "")
     if not repo_config.get("enabled", True):
@@ -1140,7 +1226,20 @@ def _is_scan_due(
     if last_scan is None:
         return True
 
-    return datetime.now(timezone.utc) - last_scan >= interval
+    if datetime.now(timezone.utc) - last_scan >= interval:
+        return True
+
+    threshold = repo_config.get(
+        "adaptive_commit_threshold", ADAPTIVE_COMMIT_THRESHOLD,
+    )
+    if threshold and github_token:
+        commit_count = _check_commit_velocity(
+            repo_url, last_scan_str, github_token,
+        )
+        if commit_count is not None and commit_count >= threshold:
+            return True
+
+    return False
 
 
 def _resolve_target_repo(
@@ -1265,7 +1364,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
             continue
 
         repo_config = get_repo_config(registry, repo_url)
-        if not _is_scan_due(repo_config, scan_schedule):
+        if not _is_scan_due(repo_config, scan_schedule, github_token):
             results.append({"repo": repo_url, "status": "not_due"})
             continue
 
@@ -1315,8 +1414,75 @@ def cmd_scan(args: argparse.Namespace) -> int:
     return 1 if errors > 0 and triggered == 0 and dry_run_count == 0 else 0
 
 
+def _collect_fix_examples(
+    prs: list[dict[str, Any]],
+    fp_fix_map: dict[str, dict[str, Any]],
+    github_token: str = "",
+    max_diff_chars: int = 4000,
+) -> list[dict[str, Any]]:
+    """Fetch diffs from verified-fix PRs and return fix example records."""
+    if not _HAS_REQUESTS or not github_token:
+        return []
+    from github_utils import parse_repo_url
+    examples: list[dict[str, Any]] = []
+    seen_prs: set[str] = set()
+    for fix_info in fp_fix_map.values():
+        pr_url = fix_info.get("fixed_by_pr", "")
+        if not pr_url or pr_url in seen_prs:
+            continue
+        seen_prs.add(pr_url)
+        pr_match = None
+        for pr in prs:
+            if pr.get("html_url") == pr_url:
+                pr_match = pr
+                break
+        if not pr_match or not pr_match.get("merged"):
+            continue
+        repo_url = pr_match.get("target_repo", "")
+        if not repo_url:
+            head = pr_match.get("head", {})
+            repo_obj = head.get("repo", {}) if isinstance(head, dict) else {}
+            if isinstance(repo_obj, dict):
+                repo_url = repo_obj.get("html_url", "")
+        if not repo_url:
+            continue
+        try:
+            owner, repo = parse_repo_url(repo_url)
+        except ValueError:
+            continue
+        pr_number = pr_match.get("number")
+        if not pr_number:
+            import re as _re
+            m = _re.search(r"/pull/(\d+)", pr_url)
+            if m:
+                pr_number = int(m.group(1))
+        if not pr_number:
+            continue
+        diff_url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+        try:
+            resp = request_with_retry(
+                "GET", diff_url,
+                headers={**gh_headers(github_token), "Accept": "application/vnd.github.diff"},
+                timeout=30,
+            )
+            if resp.status_code == 200:
+                diff_text = resp.text[:max_diff_chars]
+                examples.append({
+                    "pr_url": pr_url,
+                    "repo": f"{owner}/{repo}",
+                    "diff_truncated": diff_text,
+                    "fingerprints": [
+                        fp for fp, info in fp_fix_map.items()
+                        if info.get("fixed_by_pr") == pr_url
+                    ],
+                })
+        except Exception:
+            continue
+    return examples
+
+
 def cmd_cycle(args: argparse.Namespace) -> int:
-    """Full orchestrator cycle: scan due repos, update state, dispatch."""
+    """Full orchestrator cycle: scan due repos, update state, dispatch, alert."""
     repo_filter = args.repo or ""
     dry_run = args.dry_run
     output_json = args.json
@@ -1328,6 +1494,8 @@ def cmd_cycle(args: argparse.Namespace) -> int:
         "dry_run": dry_run,
         "scan": None,
         "dispatch": None,
+        "alerts": None,
+        "fix_examples_collected": 0,
     }
 
     scan_args = argparse.Namespace(
@@ -1381,10 +1549,6 @@ def cmd_cycle(args: argparse.Namespace) -> int:
     except (json.JSONDecodeError, ValueError):
         cycle_results["dispatch"] = {"raw": dispatch_output, "exit_code": dispatch_exit}
 
-    state = load_state()
-    state["last_cycle"] = now
-    save_state(state)
-
     if not output_json:
         dispatch_data = cycle_results["dispatch"]
         if isinstance(dispatch_data, dict) and "sessions_created" in dispatch_data:
@@ -1394,6 +1558,83 @@ def cmd_cycle(args: argparse.Namespace) -> int:
             print(f"  Rate limit remaining: {dispatch_data.get('rate_limit_remaining', '?')}")
         elif isinstance(dispatch_data, dict) and "status" in dispatch_data:
             print(f"  {dispatch_data.get('message', dispatch_data.get('status', ''))}")
+        print()
+        print("--- Phase 3: Alerts & Learning ---")
+
+    registry = load_registry()
+    orch_config = registry.get("orchestrator", {})
+    state = load_state()
+
+    global_state = build_global_issue_state(repo_filter)
+    all_issues = global_state["issues"]
+    fp_fix_map = global_state["fp_fix_map"]
+    prs = global_state["prs"]
+
+    objectives = [Objective.from_dict(o) for o in orch_config.get("objectives", [])]
+    current_progress = [obj.progress(all_issues) for obj in objectives]
+    previous_progress = state.get("objective_progress", [])
+
+    github_token = os.environ.get("GITHUB_TOKEN", "")
+
+    if not dry_run:
+        _GITHUB_APP_DIR = _ROOT_DIR / "github_app"
+        if str(_GITHUB_APP_DIR) not in sys.path:
+            sys.path.insert(0, str(_GITHUB_APP_DIR))
+        try:
+            from alerts import process_cycle_alerts, send_cycle_summary_alert
+            alert_results = process_cycle_alerts(
+                all_issues, fp_fix_map, current_progress, previous_progress,
+                orch_config, github_token,
+            )
+            cycle_results["alerts"] = alert_results
+        except ImportError:
+            cycle_results["alerts"] = {"error": "alerts module not available"}
+    else:
+        cycle_results["alerts"] = {"dry_run": True}
+
+    if github_token and not dry_run:
+        examples = _collect_fix_examples(prs, fp_fix_map, github_token)
+        cycle_results["fix_examples_collected"] = len(examples)
+        if examples:
+            fix_examples_path = RUNS_DIR / "fix_examples.json"
+            existing: list[dict[str, Any]] = []
+            if fix_examples_path.exists():
+                try:
+                    with open(fix_examples_path) as f:
+                        existing = json.load(f)
+                except (json.JSONDecodeError, OSError):
+                    pass
+            existing_urls = {e.get("pr_url") for e in existing}
+            for ex in examples:
+                if ex["pr_url"] not in existing_urls:
+                    existing.append(ex)
+            with open(fix_examples_path, "w") as f:
+                json.dump(existing, f, indent=2)
+                f.write("\n")
+
+    state["last_cycle"] = now
+    state["objective_progress"] = current_progress
+    save_state(state)
+
+    if not dry_run:
+        try:
+            from alerts import send_cycle_summary_alert
+            send_cycle_summary_alert(cycle_results)
+        except ImportError:
+            pass
+
+    if not output_json:
+        alerts_data = cycle_results.get("alerts") or {}
+        if isinstance(alerts_data, dict) and not alerts_data.get("dry_run"):
+            vf = alerts_data.get("verified_fixes_alerted", 0)
+            om = alerts_data.get("objectives_newly_met", 0)
+            sb = alerts_data.get("sla_breaches_alerted", 0)
+            print(f"  Verified fix alerts: {vf}")
+            print(f"  Objectives newly met: {om}")
+            print(f"  SLA breach alerts: {sb}")
+        fe = cycle_results.get("fix_examples_collected", 0)
+        if fe:
+            print(f"  Fix examples collected: {fe}")
         print()
         print("Cycle complete.")
     else:

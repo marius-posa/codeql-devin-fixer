@@ -16,10 +16,15 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import logging
+import pathlib
 from typing import Callable
 
 log = logging.getLogger(__name__)
+
+_ROOT_DIR = pathlib.Path(__file__).resolve().parent.parent
+REGISTRY_PATH = _ROOT_DIR / "repo_registry.json"
 
 
 def verify_signature(payload_body: bytes, signature: str, secret: str) -> bool:
@@ -53,6 +58,7 @@ def handle_installation(payload: dict) -> dict:
             "App installed by %s (installation %s) on %d repo(s): %s",
             login, installation_id, len(repos), ", ".join(repo_names[:5]),
         )
+        _update_registry_installation_id(installation_id, repo_names)
         return {
             "status": "installed",
             "installation_id": installation_id,
@@ -91,6 +97,7 @@ def handle_installation_repositories(payload: dict) -> dict:
             "Repos added to installation %s: %s",
             installation_id, ", ".join(repo_names),
         )
+        _update_registry_installation_id(installation_id, repo_names)
         return {
             "status": "repos_added",
             "installation_id": installation_id,
@@ -143,6 +150,44 @@ def handle_push(payload: dict) -> dict:
         "pusher": pusher,
         "commit_count": len(commits),
     }
+
+
+def _update_registry_installation_id(
+    installation_id: int | None,
+    repo_names: list[str],
+) -> None:
+    """Store the GitHub App installation_id for repos in the registry."""
+    if not installation_id or not repo_names:
+        return
+    if not REGISTRY_PATH.exists():
+        return
+    try:
+        with open(REGISTRY_PATH) as f:
+            registry = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return
+
+    changed = False
+    full_urls = {f"https://github.com/{name}" for name in repo_names}
+    for repo_entry in registry.get("repos", []):
+        repo_url = repo_entry.get("repo", "")
+        owner_repo = repo_url.replace("https://github.com/", "")
+        if repo_url in full_urls or owner_repo in repo_names:
+            if repo_entry.get("installation_id") != installation_id:
+                repo_entry["installation_id"] = installation_id
+                changed = True
+
+    if changed:
+        try:
+            with open(REGISTRY_PATH, "w") as f:
+                json.dump(registry, f, indent=2)
+                f.write("\n")
+            log.info(
+                "Updated installation_id=%s for %d repo(s) in registry",
+                installation_id, len(repo_names),
+            )
+        except OSError as exc:
+            log.warning("Failed to update registry: %s", exc)
 
 
 _EVENT_HANDLERS: dict[str, Callable[..., dict]] = {

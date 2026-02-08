@@ -28,7 +28,6 @@ import hashlib
 import hmac
 import json
 import os
-import sys
 import time
 from datetime import datetime, timezone
 
@@ -84,6 +83,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Send pipeline webhook")
     parser.add_argument("--event", required=True, choices=[
         "scan_started", "scan_completed", "session_created",
+        "fix_verified", "objective_met", "sla_breach", "cycle_completed",
     ])
     parser.add_argument("--target-repo", default="")
     parser.add_argument("--run-id", default="")
