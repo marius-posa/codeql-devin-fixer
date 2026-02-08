@@ -640,6 +640,8 @@ def api_registry_update():
         registry["defaults"] = body["defaults"]
     if "concurrency" in body:
         registry["concurrency"] = body["concurrency"]
+    if "orchestrator" in body:
+        registry["orchestrator"] = body["orchestrator"]
     if "repos" in body:
         registry["repos"] = body["repos"]
     _save_registry(registry)

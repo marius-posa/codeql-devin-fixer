@@ -437,6 +437,7 @@ runs:
         SEVERITY_THRESHOLD: ${{ steps.repo-config.outputs.severity_threshold || inputs.severity_threshold }}
         RUN_NUMBER: ${{ github.run_number }}
         CUSTOM_CWE_FAMILIES: ${{ steps.repo-config.outputs.custom_cwe_families }}
+        MODE: ${{ inputs.mode }}
       run: |
         python "${{ github.action_path }}/scripts/parse_sarif.py" \
           "${{ runner.temp }}/codeql-results" \

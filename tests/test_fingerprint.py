@@ -6,7 +6,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
-from scripts.parse_sarif import compute_fingerprint, FINGERPRINT_LENGTH, _read_source_line
+from scripts.parse_sarif import compute_fingerprint, FINGERPRINT_LENGTH
 
 
 def _make_issue(
