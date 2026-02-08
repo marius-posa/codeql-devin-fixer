@@ -225,6 +225,36 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="add-repo-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Add Repository to Scheduler</h2>
+      <button class="modal-close" onclick="_closeAddRepoModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label for="add-repo-url">Repository URL *</label>
+        <input class="form-input" id="add-repo-url" type="text" placeholder="https://github.com/owner/repo">
+        <div class="hint">Full GitHub repository URL to add to the scheduler</div>
+      </div>
+      <div class="form-group">
+        <label for="add-repo-schedule">Schedule</label>
+        <select class="form-input" id="add-repo-schedule">
+          <option value="daily">daily</option>
+          <option value="weekly" selected>weekly</option>
+          <option value="monthly">monthly</option>
+        </select>
+        <div class="hint">How often to scan this repository</div>
+      </div>
+      <div class="dispatch-result" id="add-repo-result"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="_closeAddRepoModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="_submitAddRepo()">Add Repository</button>
+    </div>
+  </div>
+</div>
+
 <script src="static/api.js"></script>
 <script src="static/shared.js"></script>
 <script>
@@ -395,7 +425,70 @@ function renderAll() {
   renderPrsTable(allPrs, 'prs-table-container', 'prs-count');
   renderIssuesTable(allIssues, 'issues-table-container', 'issues-count');
   renderVerificationPanel(verificationRecords);
-  if (registryData) renderRegistryTable(registryData, 'registry-table-container', 'registry-count');
+  renderRegistryPanel();
+}
+
+function renderRegistryPanel() {
+  var cfg = getConfig();
+  var hasToken = !!cfg.githubToken;
+  var callbacks = hasToken ? {
+    onToggle: function(idx) { _staticRegistryToggle(idx); },
+    onScheduleChange: function(idx, val) { _staticRegistrySchedule(idx, val); },
+    onRemove: function(idx) { _staticRegistryRemove(idx); },
+    onAdd: function(url, schedule) { _staticRegistryAdd(url, schedule); },
+  } : {};
+  if (registryData) renderRegistryTable(registryData, 'registry-table-container', 'registry-count', callbacks);
+}
+
+async function _saveRegistryStatic() {
+  setStatus('Saving registry to GitHub...');
+  var result = await updateRegistryOnGitHub(registryData);
+  if (result.error) {
+    setStatus('Registry save failed: ' + result.error);
+    return false;
+  }
+  setStatus('Registry saved');
+  setUpdated();
+  return true;
+}
+
+async function _staticRegistryToggle(idx) {
+  var repo = registryData.repos[idx];
+  repo.enabled = repo.enabled === false ? true : false;
+  renderRegistryPanel();
+  await _saveRegistryStatic();
+}
+
+async function _staticRegistrySchedule(idx, val) {
+  registryData.repos[idx].schedule = val;
+  await _saveRegistryStatic();
+}
+
+async function _staticRegistryRemove(idx) {
+  registryData.repos.splice(idx, 1);
+  renderRegistryPanel();
+  await _saveRegistryStatic();
+}
+
+async function _staticRegistryAdd(url, schedule) {
+  var resultEl = document.getElementById('add-repo-result');
+  for (var i = 0; i < (registryData.repos || []).length; i++) {
+    if (registryData.repos[i].repo === url) {
+      resultEl.textContent = 'Repo already registered.';
+      resultEl.className = 'dispatch-result error';
+      return;
+    }
+  }
+  registryData.repos.push({ repo: url, enabled: true, schedule: schedule, overrides: {} });
+  var ok = await _saveRegistryStatic();
+  if (ok) {
+    _closeAddRepoModal();
+    renderRegistryPanel();
+  } else {
+    registryData.repos.pop();
+    resultEl.textContent = 'Failed to save. Check your GitHub token.';
+    resultEl.className = 'dispatch-result error';
+  }
 }
 
 async function fetchAll() {
