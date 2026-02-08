@@ -9,6 +9,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from scripts.fix_learning import (
     CWE_FIX_HINTS,
+    DEFAULT_ACU_BUDGET,
+    MAX_ACU_BUDGET,
+    MAX_FIX_EXAMPLES_PER_PROMPT,
+    MIN_ACU_BUDGET,
     FamilyStats,
     FixLearning,
 )
@@ -171,3 +175,151 @@ class TestFixLearning:
         fl = FixLearning(runs=[])
         ctx = fl.prompt_context_for_family("unknown-family-xyz")
         assert ctx == ""
+
+
+class TestComputeAcuBudget:
+    def test_no_history_returns_base(self):
+        fl = FixLearning(runs=[])
+        budget = fl.compute_acu_budget("injection", base_budget=10)
+        assert budget == 10
+
+    def test_no_history_returns_default(self):
+        fl = FixLearning(runs=[])
+        budget = fl.compute_acu_budget("injection")
+        assert budget == DEFAULT_ACU_BUDGET
+
+    def test_high_fix_rate_reduces_budget(self):
+        runs = []
+        for _ in range(5):
+            runs.append(_make_telemetry_run(["xss"], ["finished"]))
+        fl = FixLearning(runs=runs)
+        budget = fl.compute_acu_budget("xss", base_budget=10)
+        assert budget < 10
+
+    def test_low_fix_rate_increases_budget(self):
+        runs = []
+        for _ in range(5):
+            runs.append(_make_telemetry_run(["crypto"], ["error: fail"]))
+        fl = FixLearning(runs=runs)
+        budget = fl.compute_acu_budget("crypto", base_budget=10)
+        assert budget > 10
+
+    def test_budget_clamped_to_min(self):
+        runs = []
+        for _ in range(5):
+            runs.append(_make_telemetry_run(["xss"], ["finished"]))
+        fl = FixLearning(runs=runs)
+        budget = fl.compute_acu_budget("xss", base_budget=3)
+        assert budget >= MIN_ACU_BUDGET
+
+    def test_budget_clamped_to_max(self):
+        runs = []
+        for _ in range(5):
+            runs.append(_make_telemetry_run(["crypto"], ["error: fail"]))
+        fl = FixLearning(runs=runs)
+        budget = fl.compute_acu_budget("crypto", base_budget=25)
+        assert budget <= MAX_ACU_BUDGET
+
+    def test_medium_fix_rate_moderate_budget(self):
+        runs = []
+        for i in range(4):
+            status = "finished" if i < 2 else "error: fail"
+            runs.append(_make_telemetry_run(["auth"], [status]))
+        fl = FixLearning(runs=runs)
+        budget = fl.compute_acu_budget("auth", base_budget=10)
+        assert MIN_ACU_BUDGET <= budget <= MAX_ACU_BUDGET
+
+    def test_unknown_family_returns_base(self):
+        run = _make_telemetry_run(["injection"], ["finished"])
+        fl = FixLearning(runs=[run])
+        budget = fl.compute_acu_budget("unknown-family", base_budget=15)
+        assert budget == 15
+
+
+class TestFindFixExamples:
+    def _run_with_examples(self, examples):
+        return {
+            "target_repo": "https://github.com/org/repo",
+            "run_number": 1,
+            "timestamp": "2025-01-01T00:00:00Z",
+            "issues_found": 0,
+            "issue_fingerprints": [],
+            "sessions": [],
+            "fix_examples": examples,
+        }
+
+    def test_no_examples(self):
+        fl = FixLearning(runs=[])
+        assert fl.find_fix_examples("injection") == []
+
+    def test_finds_matching_family(self):
+        examples = [
+            {"cwe_family": "injection", "file": "src/db.js", "diff": "- bad\n+ good"},
+            {"cwe_family": "xss", "file": "src/view.js", "diff": "- xss\n+ safe"},
+        ]
+        fl = FixLearning(runs=[self._run_with_examples(examples)])
+        result = fl.find_fix_examples("injection")
+        assert len(result) == 1
+        assert result[0]["file"] == "src/db.js"
+
+    def test_skips_empty_diffs(self):
+        examples = [
+            {"cwe_family": "injection", "file": "src/db.js", "diff": ""},
+        ]
+        fl = FixLearning(runs=[self._run_with_examples(examples)])
+        assert fl.find_fix_examples("injection") == []
+
+    def test_limits_to_max_examples(self):
+        examples = [
+            {"cwe_family": "injection", "file": f"src/file{i}.js", "diff": f"diff-{i}"}
+            for i in range(10)
+        ]
+        fl = FixLearning(runs=[self._run_with_examples(examples)])
+        result = fl.find_fix_examples("injection")
+        assert len(result) == MAX_FIX_EXAMPLES_PER_PROMPT
+
+    def test_prioritizes_matching_file_patterns(self):
+        examples = [
+            {"cwe_family": "injection", "file": "lib/other.js", "diff": "diff-other"},
+            {"cwe_family": "injection", "file": "src/db.js", "diff": "diff-match"},
+        ]
+        fl = FixLearning(runs=[self._run_with_examples(examples)])
+        result = fl.find_fix_examples("injection", file_patterns=["src/app.js"])
+        assert len(result) == 2
+        assert result[0]["file"] == "src/db.js"
+
+
+class TestPromptFixExamples:
+    def _run_with_examples(self, examples):
+        return {
+            "target_repo": "https://github.com/org/repo",
+            "run_number": 1,
+            "timestamp": "2025-01-01T00:00:00Z",
+            "issues_found": 0,
+            "issue_fingerprints": [],
+            "sessions": [],
+            "fix_examples": examples,
+        }
+
+    def test_empty_when_no_examples(self):
+        fl = FixLearning(runs=[])
+        assert fl.prompt_fix_examples("injection") == ""
+
+    def test_formats_examples(self):
+        examples = [
+            {"cwe_family": "injection", "file": "src/db.js", "diff": "- bad\n+ good"},
+        ]
+        fl = FixLearning(runs=[self._run_with_examples(examples)])
+        result = fl.prompt_fix_examples("injection")
+        assert "Historical fix examples" in result
+        assert "Example 1 (src/db.js)" in result
+        assert "```diff" in result
+        assert "- bad" in result
+
+    def test_truncates_long_diffs(self):
+        examples = [
+            {"cwe_family": "injection", "file": "src/db.js", "diff": "x" * 5000},
+        ]
+        fl = FixLearning(runs=[self._run_with_examples(examples)])
+        result = fl.prompt_fix_examples("injection")
+        assert "truncated" in result

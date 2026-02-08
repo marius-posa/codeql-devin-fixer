@@ -21,6 +21,7 @@ from scripts.dispatch_devin import (
     _find_related_test_files,
 )
 from scripts.fix_learning import FixLearning
+from scripts.repo_context import RepoContext
 
 
 class TestBuildBatchPrompt:
@@ -467,3 +468,127 @@ class TestSanitizePromptText:
         result = sanitize_prompt_text(text, 300)
         assert "SQL injection found." in result
         assert "[REDACTED]" in result
+
+
+class TestRepoContextInPrompt:
+    def _batch(self):
+        return {
+            "batch_id": 1,
+            "cwe_family": "injection",
+            "severity_tier": "critical",
+            "max_severity_score": 9.8,
+            "issue_count": 1,
+            "file_count": 1,
+            "issues": [{
+                "id": "CQLF-R1-0001",
+                "rule_id": "js/sql-injection",
+                "rule_name": "SqlInjection",
+                "rule_description": "",
+                "rule_help": "",
+                "message": "SQL injection",
+                "severity_score": 9.8,
+                "severity_tier": "critical",
+                "cwes": ["cwe-89"],
+                "cwe_family": "injection",
+                "locations": [{"file": "src/db.js", "start_line": 5}],
+            }],
+        }
+
+    def test_repo_context_included_in_prompt(self):
+        ctx = RepoContext(
+            dependencies={"npm": ["express", "lodash"]},
+            test_frameworks=["jest"],
+            style_configs=[".eslintrc.json"],
+        )
+        prompt = build_batch_prompt(
+            self._batch(), "https://github.com/o/r", "main",
+            repo_context=ctx,
+        )
+        assert "Repository context:" in prompt
+        assert "npm: express, lodash" in prompt
+        assert "jest" in prompt
+        assert ".eslintrc.json" in prompt
+
+    def test_empty_repo_context_not_included(self):
+        ctx = RepoContext()
+        prompt = build_batch_prompt(
+            self._batch(), "https://github.com/o/r", "main",
+            repo_context=ctx,
+        )
+        assert "Repository context:" not in prompt
+
+    def test_none_repo_context_no_error(self):
+        prompt = build_batch_prompt(
+            self._batch(), "https://github.com/o/r", "main",
+            repo_context=None,
+        )
+        assert "Repository context:" not in prompt
+
+
+class TestFixExamplesInPrompt:
+    def _batch(self):
+        return {
+            "batch_id": 1,
+            "cwe_family": "injection",
+            "severity_tier": "critical",
+            "max_severity_score": 9.8,
+            "issue_count": 1,
+            "file_count": 1,
+            "issues": [{
+                "id": "CQLF-R1-0001",
+                "rule_id": "js/sql-injection",
+                "rule_name": "SqlInjection",
+                "rule_description": "",
+                "rule_help": "",
+                "message": "SQL injection",
+                "severity_score": 9.8,
+                "severity_tier": "critical",
+                "cwes": ["cwe-89"],
+                "cwe_family": "injection",
+                "locations": [{"file": "src/db.js", "start_line": 5}],
+            }],
+        }
+
+    def test_fix_examples_included_in_prompt(self):
+        run = {
+            "target_repo": "https://github.com/o/r",
+            "run_number": 1,
+            "timestamp": "2025-01-01T00:00:00Z",
+            "issues_found": 1,
+            "issue_fingerprints": [{
+                "id": "CQLF-R1-0001",
+                "fingerprint": "fp1",
+                "rule_id": "js/sql-injection",
+                "severity_tier": "critical",
+                "cwe_family": "injection",
+                "file": "src/db.js",
+                "start_line": 5,
+            }],
+            "sessions": [{
+                "session_id": "s1",
+                "session_url": "u1",
+                "batch_id": 1,
+                "status": "finished",
+                "issue_ids": ["CQLF-R1-0001"],
+            }],
+            "fix_examples": [{
+                "cwe_family": "injection",
+                "file": "src/db.js",
+                "diff": "- db.query(userInput)\n+ db.query(prepared, [userInput])",
+            }],
+        }
+        fl = FixLearning(runs=[run])
+        prompt = build_batch_prompt(
+            self._batch(), "https://github.com/o/r", "main",
+            fix_learning=fl,
+        )
+        assert "Historical fix examples" in prompt
+        assert "db.query(prepared" in prompt
+
+    def test_no_fix_examples_when_none_available(self):
+        fl = FixLearning(runs=[])
+        prompt = build_batch_prompt(
+            self._batch(), "https://github.com/o/r", "main",
+            fix_learning=fl,
+        )
+        assert "Historical fix examples" not in prompt

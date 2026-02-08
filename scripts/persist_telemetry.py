@@ -59,6 +59,80 @@ def load_output_file(output_dir: str, filename: str) -> list | dict | None:
     return None
 
 
+MAX_DIFF_SIZE = 5000
+
+
+def _collect_fix_examples(
+    output_dir: str,
+    sessions: list,
+    batches: list,
+    issues: list,
+) -> list[dict]:
+    """Collect fix diffs from successful sessions to store as fix examples.
+
+    Reads ``fix_diffs.json`` from *output_dir* (produced by a post-session
+    diff collection step) and correlates each diff with its CWE family and
+    file path.  Only diffs from sessions with ``finished`` or ``stopped``
+    status are included.
+    """
+    diff_data = load_output_file(output_dir, "fix_diffs.json")
+    if not diff_data:
+        return []
+    if not isinstance(diff_data, list):
+        diff_data = [diff_data]
+
+    finished_session_ids: set[str] = set()
+    session_to_batch: dict[str, int] = {}
+    for s in sessions:
+        sid = s.get("session_id", "")
+        status = s.get("status", "")
+        if status in ("finished", "stopped", "created"):
+            finished_session_ids.add(sid)
+        bid = s.get("batch_id")
+        if bid is not None:
+            session_to_batch[sid] = bid
+
+    batch_families: dict[int, str] = {}
+    batch_files: dict[int, list[str]] = {}
+    for b in batches:
+        bid = b.get("batch_id")
+        if bid is not None:
+            batch_families[bid] = b.get("cwe_family", "other")
+            files = []
+            for issue in b.get("issues", []):
+                for loc in issue.get("locations", []):
+                    f = loc.get("file", "")
+                    if f:
+                        files.append(f)
+            batch_files[bid] = files
+
+    examples: list[dict] = []
+    for entry in diff_data:
+        sid = entry.get("session_id", "")
+        if sid and sid not in finished_session_ids:
+            continue
+        diff = entry.get("diff", "")
+        if not diff:
+            continue
+        if len(diff) > MAX_DIFF_SIZE:
+            diff = diff[:MAX_DIFF_SIZE]
+
+        bid = session_to_batch.get(sid)
+        family = batch_families.get(bid, "other") if bid is not None else entry.get("cwe_family", "other")
+        file_path = entry.get("file", "")
+        if not file_path and bid is not None:
+            files = batch_files.get(bid, [])
+            file_path = files[0] if files else ""
+
+        examples.append({
+            "cwe_family": family,
+            "file": file_path,
+            "diff": diff,
+            "session_id": sid,
+        })
+    return examples
+
+
 def build_telemetry_record(output_dir: str) -> dict:
     target_repo = os.environ.get("TARGET_REPO", "")
     fork_url = os.environ.get("FORK_URL", "")
@@ -128,6 +202,8 @@ def build_telemetry_record(output_dir: str) -> dict:
                 i.get("id", "") for i in batch.get("issues", [])
             ]
 
+    fix_examples = _collect_fix_examples(output_dir, sessions, batches, issues)
+
     if issues and not issue_fingerprints:
         print(
             "WARNING: issues.json has entries but none contain a fingerprint. "
@@ -139,7 +215,7 @@ def build_telemetry_record(output_dir: str) -> dict:
     if action_repo and run_id and not redact_urls:
         run_url = f"https://github.com/{action_repo}/actions/runs/{run_id}"
 
-    return {
+    record: dict = {
         "target_repo": target_repo,
         "fork_url": fork_url if not redact_urls else "",
         "run_number": int(run_number),
@@ -155,6 +231,9 @@ def build_telemetry_record(output_dir: str) -> dict:
         "issue_fingerprints": issue_fingerprints,
         "zero_issue_run": len(issues) == 0,
     }
+    if fix_examples:
+        record["fix_examples"] = fix_examples
+    return record
 
 
 def push_telemetry(token: str, action_repo: str, record: dict) -> bool:
