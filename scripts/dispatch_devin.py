@@ -92,7 +92,8 @@ def _load_prompt_template(template_path: str) -> "jinja2.Template | None":
         print("WARNING: jinja2 not installed; custom templates disabled")
         return None
     with open(template_path) as f:
-        return jinja2.Template(f.read())
+        env = jinja2.Environment(autoescape=True)
+        return env.from_string(f.read())
 
 
 def _render_template_prompt(
