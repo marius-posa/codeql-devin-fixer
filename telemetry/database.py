@@ -469,6 +469,9 @@ def query_all_runs(conn: sqlite3.Connection, target_repo: str = "") -> list[dict
                 "cwe_family": fr["cwe_family"],
                 "file": fr["file"],
                 "start_line": fr["start_line"],
+                "description": fr["description"],
+                "resolution": fr["resolution"],
+                "code_churn": fr["code_churn"],
             }
             for fr in fps_rows
         ]
@@ -896,8 +899,9 @@ def query_issues(conn: sqlite3.Connection, target_repo: str = "") -> list[dict]:
             runs_with_fps_per_repo[repo] = runs_with_fps_per_repo.get(repo, 0) + 1
 
     latest_run_per_repo: dict[str, int] = {}
+    latest_where = "WHERE" if not repo_filter_sql else repo_filter_sql + " AND"
     lr_rows = conn.execute(
-        f"SELECT target_repo, MAX(id) as latest_run_id FROM runs r {repo_filter_sql} GROUP BY target_repo",
+        f"SELECT target_repo, id as latest_run_id FROM runs r {latest_where} id IN (SELECT r2.id FROM runs r2 WHERE r2.target_repo = r.target_repo ORDER BY r2.timestamp DESC LIMIT 1)",
         repo_params,
     ).fetchall()
     for lr in lr_rows:
