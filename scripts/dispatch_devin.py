@@ -44,6 +44,7 @@ DRY_RUN : str
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from pathlib import PurePosixPath
@@ -51,21 +52,99 @@ from pathlib import PurePosixPath
 import requests
 
 try:
+    import jinja2
+except ImportError:
+    jinja2 = None  # type: ignore[assignment]
+
+try:
     from fix_learning import CWE_FIX_HINTS, FixLearning
     from github_utils import validate_repo_url
     from parse_sarif import BATCHES_SCHEMA_VERSION
     from pipeline_config import PipelineConfig
+    from playbook_manager import PlaybookManager
     from retry_utils import exponential_backoff_delay
 except ImportError:
     from scripts.fix_learning import CWE_FIX_HINTS, FixLearning
     from scripts.github_utils import validate_repo_url
     from scripts.parse_sarif import BATCHES_SCHEMA_VERSION
     from scripts.pipeline_config import PipelineConfig
+    from scripts.playbook_manager import PlaybookManager
     from scripts.retry_utils import exponential_backoff_delay
 
 DEVIN_API_BASE = "https://api.devin.ai/v1"
 
 MAX_RETRIES = 3
+
+
+def _load_prompt_template(template_path: str) -> "jinja2.Template | None":
+    """Load a Jinja2 prompt template from a file path.
+
+    Returns ``None`` if the file doesn't exist or Jinja2 isn't available.
+    """
+    if not template_path:
+        return None
+    if not os.path.isfile(template_path):
+        print(f"WARNING: Prompt template not found: {template_path}")
+        return None
+    if jinja2 is None:
+        print("WARNING: jinja2 not installed; custom templates disabled")
+        return None
+    with open(template_path) as f:
+        return jinja2.Template(f.read())
+
+
+def _render_template_prompt(
+    template: "jinja2.Template",
+    batch: dict,
+    repo_url: str,
+    default_branch: str,
+    is_own_repo: bool = False,
+    fix_learning: "FixLearning | None" = None,
+) -> str:
+    """Render a batch prompt using a custom Jinja2 template."""
+    family = batch["cwe_family"]
+    context = {
+        "batch": batch,
+        "repo_url": repo_url,
+        "default_branch": default_branch,
+        "is_own_repo": is_own_repo,
+        "family": family,
+        "tier": batch["severity_tier"],
+        "issues": batch["issues"],
+        "issue_count": batch["issue_count"],
+        "max_severity_score": batch["max_severity_score"],
+        "fix_hint": CWE_FIX_HINTS.get(family, ""),
+        "issue_ids": [i.get("id", "") for i in batch["issues"] if i.get("id")],
+    }
+    if fix_learning:
+        context["fix_learning_context"] = fix_learning.prompt_context_for_family(family)
+    return template.render(**context)
+
+
+def _send_session_webhook(
+    session_id: str, session_url: str, batch_id: int,
+    target_repo: str, run_id: str,
+) -> None:
+    """Send a session_created webhook if WEBHOOK_URL is configured."""
+    webhook_url = os.environ.get("WEBHOOK_URL", "")
+    if not webhook_url:
+        return
+    webhook_secret = os.environ.get("WEBHOOK_SECRET", "")
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        cmd = [
+            sys.executable, os.path.join(script_dir, "webhook.py"),
+            "--event", "session_created",
+            "--target-repo", target_repo,
+            "--run-id", run_id,
+            "--session-id", session_id,
+            "--session-url", session_url,
+            "--batch-id", str(batch_id),
+        ]
+        env = {**os.environ, "WEBHOOK_URL": webhook_url, "WEBHOOK_SECRET": webhook_secret}
+        subprocess.run(cmd, env=env, timeout=30, check=False)
+    except Exception as e:
+        print(f"  WARNING: session_created webhook failed: {e}")
 
 _PROMPT_INJECTION_PATTERNS = re.compile(
     r"(?:ignore\s+(?:all\s+)?(?:previous|above)\s+instructions"
@@ -154,6 +233,7 @@ def build_batch_prompt(
     is_own_repo: bool = False,
     target_dir: str = "",
     fix_learning: FixLearning | None = None,
+    playbook_mgr: PlaybookManager | None = None,
 ) -> str:
     """Construct a detailed, Markdown-formatted prompt for a Devin session.
 
@@ -169,6 +249,10 @@ def build_batch_prompt(
 
     When *fix_learning* is provided, historical fix-rate context is
     included to help Devin understand past success patterns.
+
+    When *playbook_mgr* is provided and a playbook exists for the batch's
+    CWE family, structured step-by-step instructions are included in the
+    prompt along with a request for Devin to suggest playbook improvements.
 
     When *is_own_repo* is True the target repo belongs to the user (not a
     fork of an upstream project) so the prompt omits the "not the upstream"
@@ -197,9 +281,14 @@ def build_batch_prompt(
         "",
     ]
 
-    fix_hint = CWE_FIX_HINTS.get(family)
-    if fix_hint:
-        prompt_parts.extend([f"Fix pattern hint for {family}: {fix_hint}", ""])
+    playbook = playbook_mgr.get_playbook(family) if playbook_mgr else None
+    if playbook:
+        prompt_parts.append(playbook_mgr.format_for_prompt(playbook))
+        prompt_parts.append("")
+    else:
+        fix_hint = CWE_FIX_HINTS.get(family)
+        if fix_hint:
+            prompt_parts.extend([f"Fix pattern hint for {family}: {fix_hint}", ""])
 
     if fix_learning:
         context = fix_learning.prompt_context_for_family(family)
@@ -282,6 +371,9 @@ def build_batch_prompt(
         prompt_parts.extend(["", "Related test files (review and update if needed):"])
         for tf in sorted(all_test_files):
             prompt_parts.append(f"- {tf}")
+
+    if playbook and playbook_mgr:
+        prompt_parts.extend(["", playbook_mgr.format_improvement_request(playbook)])
 
     return "\n".join(prompt_parts)
 
@@ -367,6 +459,14 @@ def main() -> None:
         print(f"WARNING: TARGET_DIR '{target_dir}' does not exist; code snippets disabled")
         target_dir = ""
     telemetry_dir = cfg.telemetry_dir
+    playbooks_dir = cfg.playbooks_dir
+
+    playbook_mgr: PlaybookManager | None = None
+    if playbooks_dir and os.path.isdir(playbooks_dir):
+        playbook_mgr = PlaybookManager(playbooks_dir)
+        families = playbook_mgr.available_families
+        if families:
+            print(f"Loaded playbooks for: {', '.join(families)}")
 
     fix_learn: FixLearning | None = None
     if telemetry_dir and os.path.isdir(telemetry_dir):
@@ -423,20 +523,35 @@ def main() -> None:
             print("All batches skipped due to low fix rates. Exiting.")
             return
 
+    template_path = os.environ.get("PROMPT_TEMPLATE", "")
+    prompt_template = _load_prompt_template(template_path)
+    if prompt_template:
+        print(f"Using custom prompt template: {template_path}")
+
     print(f"Processing {len(batches)} batches for {repo_url}")
     print(f"Default branch: {default_branch}")
     print(f"Dry run: {dry_run}")
     if target_dir:
         print(f"Target dir: {target_dir} (code snippets enabled)")
+    if playbook_mgr:
+        print(f"Playbooks dir: {playbooks_dir}")
     print()
 
+    run_id = os.environ.get("RUN_ID", "")
     sessions: list[dict] = []
 
     for batch in batches:
-        prompt = build_batch_prompt(
-            batch, repo_url, default_branch, is_own_repo,
-            target_dir=target_dir, fix_learning=fix_learn,
-        )
+        if prompt_template:
+            prompt = _render_template_prompt(
+                prompt_template, batch, repo_url, default_branch,
+                is_own_repo, fix_learn,
+            )
+        else:
+            prompt = build_batch_prompt(
+                batch, repo_url, default_branch, is_own_repo,
+                target_dir=target_dir, fix_learning=fix_learn,
+                playbook_mgr=playbook_mgr,
+            )
         batch_id = batch["batch_id"]
 
         prompt_path = os.path.join(output_dir, f"prompt_batch_{batch_id}.txt")
@@ -472,6 +587,9 @@ def main() -> None:
                     "url": url,
                     "status": "created",
                 }
+            )
+            _send_session_webhook(
+                session_id, url, batch_id, repo_url, run_id,
             )
             time.sleep(2)
         except requests.exceptions.RequestException as e:

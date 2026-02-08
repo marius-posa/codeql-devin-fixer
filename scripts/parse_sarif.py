@@ -144,6 +144,38 @@ for _family, _members in CWE_FAMILIES.items():
         _CWE_FAMILY_INDEX[_cwe] = _family
 
 
+def _load_custom_cwe_families() -> None:
+    """Extend the CWE family index with custom mappings from env var.
+
+    The ``CUSTOM_CWE_FAMILIES`` environment variable should contain a
+    JSON-encoded dict mapping family names to lists of CWE IDs.  These
+    extend (not replace) the built-in ``CWE_FAMILIES`` definitions.
+    """
+    raw = os.environ.get("CUSTOM_CWE_FAMILIES", "").strip()
+    if not raw:
+        return
+    try:
+        custom: dict[str, list[str]] = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        print(f"WARNING: CUSTOM_CWE_FAMILIES is not valid JSON; ignoring")
+        return
+    if not isinstance(custom, dict):
+        print("WARNING: CUSTOM_CWE_FAMILIES must be a JSON object; ignoring")
+        return
+    for family, members in custom.items():
+        if not isinstance(members, list):
+            continue
+        for cwe_id in members:
+            normalized = normalize_cwe(str(cwe_id))
+            _CWE_FAMILY_INDEX[normalized] = family
+        if family not in CWE_FAMILIES:
+            CWE_FAMILIES[family] = []
+        CWE_FAMILIES[family].extend(
+            normalize_cwe(str(c)) for c in members
+            if normalize_cwe(str(c)) not in CWE_FAMILIES[family]
+        )
+
+
 def normalize_cwe(cwe: str) -> str:
     """Normalise a CWE identifier to lowercase ``cwe-{number}`` form.
 
@@ -601,6 +633,8 @@ def main() -> None:
     max_batches = cfg.max_sessions
     threshold = cfg.severity_threshold
     run_number = cfg.run_number
+
+    _load_custom_cwe_families()
 
     os.makedirs(output_dir, exist_ok=True)
 

@@ -626,16 +626,51 @@ function _updateBulkActions() {
 function _bulkExportCsv() {
   if (_bulkSelected.size === 0) return;
   var selected = _issuesAllData.filter(function(i) { return _bulkSelected.has(i.fingerprint); });
-  var headers = ['rule_id','severity_tier','status','cwe_family','file','start_line','appearances','first_seen_date','last_seen_date'];
+  _downloadIssuesCsv(selected, 'issues-selected.csv');
+}
+
+function exportAllIssuesCsv() {
+  var data = _issuesAllData;
+  if (!data || data.length === 0) return;
+  var filtered = data;
+  if (_issuesFilterState.status) {
+    filtered = filtered.filter(function(i) { return i.status === _issuesFilterState.status; });
+  }
+  if (_issuesFilterState.severity) {
+    filtered = filtered.filter(function(i) { return (i.severity_tier || '').toLowerCase() === _issuesFilterState.severity; });
+  }
+  if (_issuesFilterState.repo) {
+    filtered = filtered.filter(function(i) { return repoShort(i.target_repo) === _issuesFilterState.repo; });
+  }
+  _downloadIssuesCsv(filtered, 'issues-export.csv');
+}
+
+function _downloadIssuesCsv(items, filename) {
+  var headers = ['rule_id','severity_tier','status','cwe_family','file','start_line','appearances','first_seen_date','last_seen_date','target_repo','fingerprint'];
   var csv = headers.join(',') + '\n';
-  selected.forEach(function(i) {
+  items.forEach(function(i) {
     csv += headers.map(function(h) { return '"' + String(i[h] || '').replace(/"/g, '""') + '"'; }).join(',') + '\n';
   });
   var blob = new Blob([csv], { type: 'text/csv' });
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'issues-export.csv';
+  a.download = filename;
   a.click();
+}
+
+function renderUserInfo() {
+  var el = document.getElementById('user-info');
+  if (!el) return;
+  fetch(API + '/api/me').then(function(res) { return res.json(); }).then(function(data) {
+    if (data.logged_in && data.user) {
+      el.innerHTML = '<span class="user-badge">' +
+        '<img src="' + escapeHtml(data.user.avatar_url) + '" class="user-avatar" alt="">' +
+        '<span>' + escapeHtml(data.user.login) + '</span>' +
+        '</span> <a href="/logout" class="btn btn-sm">Logout</a>';
+    } else if (data.oauth_configured) {
+      el.innerHTML = '<a href="/login" class="btn btn-sm" style="background:#238636;border-color:#2ea043;color:#fff">Login with GitHub</a>';
+    }
+  }).catch(function() {});
 }
 
 function initTableScrollDetection() {
