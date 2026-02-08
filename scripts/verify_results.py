@@ -33,6 +33,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 from datetime import datetime, timezone
 from typing import Any
 
@@ -164,7 +165,8 @@ def find_original_issues_from_telemetry(
                 fps = data.get("issue_fingerprints", [])
                 if fps:
                     out = os.path.join(
-                        telemetry_dir, f".tmp_original_{run_number}.json",
+                        tempfile.gettempdir(),
+                        f".tmp_original_{run_number}.json",
                     )
                     with open(out, "w") as f:
                         json.dump({"issue_fingerprints": fps}, f, indent=2)
