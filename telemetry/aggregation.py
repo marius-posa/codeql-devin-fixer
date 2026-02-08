@@ -50,7 +50,9 @@ def compute_sla_summary(issues: list[dict]) -> dict:
             "min": round(sorted_d[0], 1),
             "max": round(sorted_d[-1], 1),
             "avg": round(sum(sorted_d) / n, 1),
-            "median": round(sorted_d[n // 2], 1),
+            "median": round(
+                (sorted_d[n // 2] + sorted_d[(n - 1) // 2]) / 2, 1
+            ),
         }
 
     return {

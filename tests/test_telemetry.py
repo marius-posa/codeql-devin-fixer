@@ -413,6 +413,13 @@ class TestComputeSlaStatus:
         result = compute_sla_status("critical", found, fixed)
         assert result["sla_status"] == "breached"
 
+    def test_at_risk_boundary_exactly_75_percent(self):
+        from datetime import timedelta
+        now = datetime.now(timezone.utc)
+        found = now - timedelta(hours=75)
+        result = compute_sla_status("high", found, None, {"high": 100})
+        assert result["sla_status"] == "at-risk"
+
     def test_unknown_severity(self):
         found = datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc)
         result = compute_sla_status("exotic", found, None)
@@ -461,6 +468,17 @@ class TestComputeSlaSummary:
         assert ttf["max"] == 15.0
         assert ttf["avg"] == 10.0
         assert ttf["median"] == 10.0
+
+    def test_median_even_count(self):
+        issues = [
+            {"sla_status": "met", "severity_tier": "high", "fix_duration_hours": 4.0},
+            {"sla_status": "met", "severity_tier": "high", "fix_duration_hours": 6.0},
+            {"sla_status": "met", "severity_tier": "high", "fix_duration_hours": 10.0},
+            {"sla_status": "met", "severity_tier": "high", "fix_duration_hours": 20.0},
+        ]
+        result = compute_sla_summary(issues)
+        ttf = result["time_to_fix_by_severity"]["high"]
+        assert ttf["median"] == 8.0
 
     def test_by_severity_breakdown(self):
         issues = [
