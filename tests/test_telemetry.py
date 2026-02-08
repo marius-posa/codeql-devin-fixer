@@ -9,8 +9,10 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "telemetry"))
 
-from aggregation import aggregate_sessions, aggregate_stats, build_repos_dict
-from issue_tracking import track_issues_across_runs, _parse_ts
+from datetime import datetime, timezone
+
+from aggregation import aggregate_sessions, aggregate_stats, build_repos_dict, compute_sla_summary
+from issue_tracking import track_issues_across_runs, _parse_ts, compute_sla_status, DEFAULT_SLA_HOURS
 
 
 class TestAggregateSessions:
@@ -323,6 +325,151 @@ class TestTrackIssuesEdgeCases:
         result = track_issues_across_runs(runs)
         assert result[0]["status"] == "recurring"
         assert result[0]["fix_duration_hours"] is None
+
+
+class TestSlaFieldsInTrackedIssues:
+    def _run(self, run_number, repo, fingerprints, ts=None):
+        return {
+            "run_number": run_number,
+            "target_repo": repo,
+            "timestamp": ts or f"2026-01-01T00:00:{run_number:02d}Z",
+            "issue_fingerprints": fingerprints,
+        }
+
+    def _fp(self, fingerprint, severity="high"):
+        return {
+            "fingerprint": fingerprint,
+            "id": "I1",
+            "rule_id": "r1",
+            "severity_tier": severity,
+            "cwe_family": "xss",
+            "file": "a.js",
+            "start_line": 1,
+        }
+
+    def test_new_issue_has_sla_fields(self):
+        runs = [self._run(1, "r", [self._fp("aaa")])]
+        result = track_issues_across_runs(runs)
+        r = result[0]
+        assert "sla_status" in r
+        assert "sla_limit_hours" in r
+        assert "sla_hours_elapsed" in r
+        assert "sla_hours_remaining" in r
+        assert "found_at" in r
+        assert "fixed_at" in r
+        assert r["found_at"] is not None
+        assert r["fixed_at"] is None
+
+    def test_fixed_issue_has_fixed_at(self):
+        fp = self._fp("bbb")
+        runs = [
+            self._run(1, "r", [fp], "2026-01-01T00:00:00Z"),
+            self._run(2, "r", [fp], "2026-01-01T02:00:00Z"),
+            self._run(3, "r", [], "2026-01-01T06:00:00Z"),
+        ]
+        result = track_issues_across_runs(runs)
+        r = result[0]
+        assert r["status"] == "fixed"
+        assert r["fixed_at"] == "2026-01-01T02:00:00Z"
+        assert r["sla_status"] == "met"
+
+    def test_sla_limit_matches_severity(self):
+        runs = [self._run(1, "r", [self._fp("ccc", "critical")])]
+        result = track_issues_across_runs(runs)
+        assert result[0]["sla_limit_hours"] == 48
+
+
+class TestComputeSlaStatus:
+    def test_on_track(self):
+        found = datetime.now(timezone.utc)
+        result = compute_sla_status("high", found, None, {"high": 100})
+        assert result["sla_status"] == "on-track"
+        assert result["sla_limit_hours"] == 100
+
+    def test_at_risk(self):
+        now = datetime.now(timezone.utc)
+        from datetime import timedelta
+        found = now - timedelta(hours=80)
+        result = compute_sla_status("high", found, None, {"high": 100})
+        assert result["sla_status"] == "at-risk"
+        assert result["sla_limit_hours"] == 100
+
+    def test_breached_open(self):
+        found = datetime(2020, 1, 1, 0, 0, tzinfo=timezone.utc)
+        result = compute_sla_status("high", found, None)
+        assert result["sla_status"] == "breached"
+        assert result["sla_hours_remaining"] < 0
+
+    def test_met_fixed_within_sla(self):
+        found = datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc)
+        fixed = datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc)
+        result = compute_sla_status("high", found, fixed)
+        assert result["sla_status"] == "met"
+        assert result["sla_hours_elapsed"] == 10.0
+
+    def test_breached_fixed_after_sla(self):
+        found = datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc)
+        fixed = datetime(2026, 1, 10, 0, 0, tzinfo=timezone.utc)
+        result = compute_sla_status("critical", found, fixed)
+        assert result["sla_status"] == "breached"
+
+    def test_unknown_severity(self):
+        found = datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc)
+        result = compute_sla_status("exotic", found, None)
+        assert result["sla_status"] == "unknown"
+
+    def test_none_found_at(self):
+        result = compute_sla_status("high", None, None)
+        assert result["sla_status"] == "unknown"
+
+    def test_default_thresholds(self):
+        assert DEFAULT_SLA_HOURS["critical"] == 48
+        assert DEFAULT_SLA_HOURS["high"] == 96
+        assert DEFAULT_SLA_HOURS["medium"] == 168
+        assert DEFAULT_SLA_HOURS["low"] == 336
+
+
+class TestComputeSlaSummary:
+    def test_empty_issues(self):
+        result = compute_sla_summary([])
+        assert result["total_breached"] == 0
+        assert result["total_on_track"] == 0
+        assert result["time_to_fix_by_severity"] == {}
+
+    def test_counts_by_status(self):
+        issues = [
+            {"sla_status": "on-track", "severity_tier": "high"},
+            {"sla_status": "on-track", "severity_tier": "high"},
+            {"sla_status": "breached", "severity_tier": "critical"},
+            {"sla_status": "met", "severity_tier": "medium", "fix_duration_hours": 10.0},
+        ]
+        result = compute_sla_summary(issues)
+        assert result["total_on_track"] == 2
+        assert result["total_breached"] == 1
+        assert result["total_met"] == 1
+
+    def test_time_to_fix_stats(self):
+        issues = [
+            {"sla_status": "met", "severity_tier": "high", "fix_duration_hours": 5.0},
+            {"sla_status": "met", "severity_tier": "high", "fix_duration_hours": 15.0},
+            {"sla_status": "met", "severity_tier": "high", "fix_duration_hours": 10.0},
+        ]
+        result = compute_sla_summary(issues)
+        ttf = result["time_to_fix_by_severity"]["high"]
+        assert ttf["count"] == 3
+        assert ttf["min"] == 5.0
+        assert ttf["max"] == 15.0
+        assert ttf["avg"] == 10.0
+        assert ttf["median"] == 10.0
+
+    def test_by_severity_breakdown(self):
+        issues = [
+            {"sla_status": "on-track", "severity_tier": "critical"},
+            {"sla_status": "breached", "severity_tier": "critical"},
+        ]
+        result = compute_sla_summary(issues)
+        assert result["by_severity"]["critical"]["on-track"] == 1
+        assert result["by_severity"]["critical"]["breached"] == 1
 
 
 class TestParseTs:

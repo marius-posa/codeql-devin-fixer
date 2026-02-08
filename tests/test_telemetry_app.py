@@ -202,6 +202,16 @@ class TestApiEndpoints:
         assert "items" in data
 
     @patch("app.cache")
+    def test_api_sla_returns_json(self, mock_cache, client):
+        mock_cache.get_runs.return_value = []
+        resp = client.get("/api/sla")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "total_breached" in data
+        assert "total_on_track" in data
+        assert "time_to_fix_by_severity" in data
+
+    @patch("app.cache")
     def test_api_dispatch_preflight_requires_target_repo(self, mock_cache, client):
         resp = client.get("/api/dispatch/preflight")
         assert resp.status_code == 400
