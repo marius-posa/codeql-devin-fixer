@@ -136,6 +136,12 @@ def _run_fork(
         return {"error": str(exc), "status": "failed"}
 
 
+def _redact_token(text: str, token: str) -> str:
+    if token and token in text:
+        return text.replace(token, "***")
+    return text
+
+
 def _run_clone(repo_url: str, clone_dir: str, github_token: str) -> dict:
     try:
         cmd = ["git", "clone", "--depth", "1", "--single-branch"]
@@ -162,12 +168,13 @@ def _run_clone(repo_url: str, clone_dir: str, github_token: str) -> dict:
             timeout=300,
         )
         if result.returncode != 0:
-            return {"error": result.stderr.strip(), "status": "failed"}
+            err = _redact_token(result.stderr.strip(), github_token)
+            return {"error": err, "status": "failed"}
         return {"status": "ok"}
     except subprocess.TimeoutExpired:
         return {"error": "clone timed out", "status": "failed"}
     except Exception as exc:
-        return {"error": str(exc), "status": "failed"}
+        return {"error": _redact_token(str(exc), github_token), "status": "failed"}
 
 
 def _run_parse(

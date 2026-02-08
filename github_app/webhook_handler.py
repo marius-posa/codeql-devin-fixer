@@ -10,8 +10,6 @@ installation / installation_repositories
     When the app is installed or repos are added/removed.
 push
     When code is pushed to a repo where the app is installed.
-workflow_dispatch (custom)
-    Manual scan trigger via the app's API.
 """
 
 from __future__ import annotations
