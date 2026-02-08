@@ -1,0 +1,633 @@
+"""Unit tests for scripts/orchestrator.py — orchestrator engine CLI."""
+
+import json
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "telemetry"))
+
+import pytest
+from scripts.orchestrator import (
+    RateLimiter,
+    Objective,
+    compute_issue_priority,
+    get_repo_config,
+    load_registry,
+    load_state,
+    save_state,
+    should_skip_issue,
+    _derive_issue_state,
+    _fallback_fingerprint,
+    _session_fingerprints,
+    _pr_fingerprints,
+    cmd_ingest,
+    cmd_plan,
+    cmd_status,
+    SEVERITY_WEIGHTS,
+)
+from scripts.fix_learning import FixLearning
+import database as database_mod
+from database import get_connection, init_db, insert_run
+import scripts.orchestrator as orchestrator_mod
+
+
+@pytest.fixture
+def tmp_env(monkeypatch, tmp_path):
+    db_path = tmp_path / "test.db"
+    state_path = tmp_path / "orchestrator_state.json"
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    registry_path = tmp_path / "repo_registry.json"
+    registry_path.write_text(json.dumps({
+        "version": "2.0",
+        "defaults": {
+            "enabled": True,
+            "importance": "medium",
+            "importance_score": 50,
+            "schedule": "weekly",
+            "max_sessions_per_cycle": 5,
+        },
+        "orchestrator": {
+            "global_session_limit": 20,
+            "global_session_limit_period_hours": 24,
+            "objectives": [],
+            "alert_on_verified_fix": True,
+            "alert_severities": ["critical", "high"],
+        },
+        "repos": [
+            {
+                "repo": "https://github.com/owner/repo",
+                "enabled": True,
+                "importance": "high",
+                "importance_score": 90,
+                "schedule": "weekly",
+                "max_sessions_per_cycle": 10,
+                "auto_scan": True,
+                "auto_dispatch": True,
+                "tags": ["web-app"],
+                "overrides": {},
+            }
+        ],
+    }))
+
+    monkeypatch.setattr(orchestrator_mod, "REGISTRY_PATH", registry_path)
+    monkeypatch.setattr(orchestrator_mod, "STATE_PATH", state_path)
+    monkeypatch.setattr(orchestrator_mod, "RUNS_DIR", runs_dir)
+    monkeypatch.setattr(database_mod, "DB_PATH", db_path)
+
+    conn = get_connection(db_path)
+    init_db(conn)
+    conn.close()
+
+    return {
+        "db_path": db_path,
+        "state_path": state_path,
+        "runs_dir": runs_dir,
+        "registry_path": registry_path,
+        "tmp_path": tmp_path,
+    }
+
+
+def _sample_run(run_number=1, repo="https://github.com/owner/repo", label=None):
+    return {
+        "target_repo": repo,
+        "fork_url": "https://github.com/fork/repo",
+        "run_number": run_number,
+        "run_id": f"id-{run_number}",
+        "run_url": f"https://github.com/owner/repo/actions/runs/{run_number}",
+        "run_label": label or f"owner_repo_run_{run_number}_20260101_120000",
+        "timestamp": f"2026-01-{run_number:02d}T12:00:00Z",
+        "issues_found": 3,
+        "batches_created": 1,
+        "zero_issue_run": False,
+        "severity_breakdown": {"high": 2, "medium": 1},
+        "category_breakdown": {"injection": 2, "xss": 1},
+        "sessions": [
+            {
+                "session_id": f"sess-{run_number}-1",
+                "session_url": f"https://app.devin.ai/sessions/sess-{run_number}-1",
+                "batch_id": 1,
+                "status": "finished",
+                "issue_ids": [f"CQLF-R{run_number}-0001", f"CQLF-R{run_number}-0002"],
+                "pr_url": "",
+            }
+        ],
+        "issue_fingerprints": [
+            {
+                "fingerprint": f"fp-{run_number}-a",
+                "id": f"CQLF-R{run_number}-0001",
+                "rule_id": "js/sql-injection",
+                "severity_tier": "high",
+                "cwe_family": "injection",
+                "file": "src/db.js",
+                "start_line": 42,
+                "description": "SQL injection in query",
+            },
+            {
+                "fingerprint": f"fp-{run_number}-b",
+                "id": f"CQLF-R{run_number}-0002",
+                "rule_id": "js/xss",
+                "severity_tier": "medium",
+                "cwe_family": "xss",
+                "file": "src/view.js",
+                "start_line": 10,
+                "description": "XSS in template",
+            },
+            {
+                "fingerprint": f"fp-{run_number}-c",
+                "id": f"CQLF-R{run_number}-0003",
+                "rule_id": "js/path-injection",
+                "severity_tier": "high",
+                "cwe_family": "path-traversal",
+                "file": "src/files.js",
+                "start_line": 55,
+                "description": "Path traversal vulnerability",
+            },
+        ],
+    }
+
+
+class TestRateLimiter:
+    def test_initial_state_can_create(self):
+        rl = RateLimiter(max_sessions=5, period_hours=24)
+        assert rl.can_create_session()
+        assert rl.recent_count() == 0
+
+    def test_after_recording_session(self):
+        rl = RateLimiter(max_sessions=5, period_hours=24)
+        rl.record_session()
+        assert rl.recent_count() == 1
+        assert rl.can_create_session()
+
+    def test_at_limit(self):
+        rl = RateLimiter(max_sessions=2, period_hours=24)
+        rl.record_session()
+        rl.record_session()
+        assert rl.recent_count() == 2
+        assert not rl.can_create_session()
+
+    def test_serialization_roundtrip(self):
+        rl = RateLimiter(max_sessions=10, period_hours=12)
+        rl.record_session()
+        data = rl.to_dict()
+        rl2 = RateLimiter.from_dict(data)
+        assert rl2.max_sessions == 10
+        assert rl2.period_hours == 12
+        assert len(rl2.created_timestamps) == 1
+
+
+class TestObjective:
+    def test_progress_no_matching(self):
+        obj = Objective(
+            name="Fix all critical",
+            target_severity="critical",
+            target_count=0,
+        )
+        issues = [{"severity_tier": "high", "status": "new"}]
+        p = obj.progress(issues)
+        assert p["met"]
+        assert p["current_count"] == 0
+
+    def test_progress_with_matching(self):
+        obj = Objective(
+            name="Fix all critical",
+            target_severity="critical",
+            target_count=0,
+        )
+        issues = [
+            {"severity_tier": "critical", "status": "new"},
+            {"severity_tier": "critical", "status": "recurring"},
+        ]
+        p = obj.progress(issues)
+        assert not p["met"]
+        assert p["current_count"] == 2
+
+    def test_from_dict(self):
+        data = {
+            "name": "Reduce high",
+            "target_severity": "high",
+            "target_count": 5,
+            "priority": 2,
+        }
+        obj = Objective.from_dict(data)
+        assert obj.name == "Reduce high"
+        assert obj.target_count == 5
+
+
+class TestGetRepoConfig:
+    def test_known_repo(self, tmp_env):
+        registry = load_registry()
+        config = get_repo_config(registry, "https://github.com/owner/repo")
+        assert config["importance_score"] == 90
+        assert config["max_sessions_per_cycle"] == 10
+
+    def test_unknown_repo_gets_defaults(self, tmp_env):
+        registry = load_registry()
+        config = get_repo_config(registry, "https://github.com/unknown/repo")
+        assert config["importance_score"] == 50
+        assert config["max_sessions_per_cycle"] == 5
+
+
+class TestDeriveIssueState:
+    def test_new_issue(self):
+        issue = {"fingerprint": "fp-new", "status": "new"}
+        state = _derive_issue_state(issue, [], [], {}, {})
+        assert state == "new"
+
+    def test_verified_fixed(self):
+        issue = {"fingerprint": "fp-fixed", "status": "new"}
+        fp_fix_map = {"fp-fixed": {"fixed_by_session": "s1"}}
+        state = _derive_issue_state(issue, [], [], fp_fix_map, {})
+        assert state == "verified_fixed"
+
+    def test_pr_merged(self):
+        issue = {"fingerprint": "fp-1", "status": "new"}
+        prs = [{"merged": True, "state": "closed", "html_url": "url", "issue_ids": ["fp-1"]}]
+        state = _derive_issue_state(issue, [], prs, {}, {})
+        assert state == "pr_merged"
+
+    def test_pr_open(self):
+        issue = {"fingerprint": "fp-1", "status": "new"}
+        prs = [{"merged": False, "state": "open", "html_url": "url", "issue_ids": ["fp-1"]}]
+        state = _derive_issue_state(issue, [], prs, {}, {})
+        assert state == "pr_open"
+
+    def test_session_dispatched(self):
+        issue = {"fingerprint": "fp-1", "status": "new"}
+        sessions = [{
+            "session_id": "sess-1",
+            "status": "running",
+            "issue_ids": ["fp-1"],
+        }]
+        state = _derive_issue_state(issue, sessions, [], {}, {})
+        assert state == "session_dispatched"
+
+
+class TestShouldSkipIssue:
+    def test_skip_fixed(self):
+        fl = FixLearning(runs=[])
+        skip, reason = should_skip_issue({}, "fixed", {}, fl)
+        assert skip
+        assert reason == "already_resolved"
+
+    def test_skip_verified_fixed(self):
+        fl = FixLearning(runs=[])
+        skip, reason = should_skip_issue({}, "verified_fixed", {}, fl)
+        assert skip
+        assert reason == "already_resolved"
+
+    def test_skip_session_active(self):
+        fl = FixLearning(runs=[])
+        skip, reason = should_skip_issue({}, "session_dispatched", {}, fl)
+        assert skip
+        assert reason == "session_active"
+
+    def test_skip_pr_open(self):
+        fl = FixLearning(runs=[])
+        skip, reason = should_skip_issue({}, "pr_open", {}, fl)
+        assert skip
+        assert reason == "pr_awaiting_review"
+
+    def test_skip_max_attempts(self):
+        fl = FixLearning(runs=[])
+        dispatch_history = {"fp-1": {"dispatch_count": 5}}
+        skip, reason = should_skip_issue(
+            {"fingerprint": "fp-1"}, "new", dispatch_history, fl,
+        )
+        assert skip
+        assert "max_attempts_reached" in reason
+
+    def test_no_skip_new_issue(self):
+        fl = FixLearning(runs=[])
+        skip, reason = should_skip_issue(
+            {"fingerprint": "fp-new", "cwe_family": "injection"}, "new", {}, fl,
+        )
+        assert not skip
+        assert reason == ""
+
+
+class TestComputeIssuePriority:
+    def test_high_importance_high_severity(self):
+        issue = {
+            "severity_tier": "critical",
+            "cwe_family": "injection",
+            "appearances": 3,
+            "sla_status": "breached",
+        }
+        repo_config = {"importance_score": 90}
+        fl = FixLearning(runs=[])
+        score = compute_issue_priority(issue, repo_config, [], fl)
+        assert score > 0.5
+
+    def test_low_importance_low_severity(self):
+        issue = {
+            "severity_tier": "low",
+            "cwe_family": "info-disclosure",
+            "appearances": 1,
+        }
+        repo_config = {"importance_score": 20}
+        fl = FixLearning(runs=[])
+        score = compute_issue_priority(issue, repo_config, [], fl)
+        assert score < 0.5
+
+    def test_objective_boost(self):
+        issue = {"severity_tier": "critical", "cwe_family": "injection", "status": "new"}
+        repo_config = {"importance_score": 50}
+        fl = FixLearning(runs=[])
+        obj = Objective(name="Fix critical", target_severity="critical", target_count=0, priority=1)
+        score_with = compute_issue_priority(issue, repo_config, [obj], fl)
+        score_without = compute_issue_priority(issue, repo_config, [], fl)
+        assert score_with > score_without
+
+
+class TestFallbackFingerprint:
+    def test_produces_fingerprint(self):
+        issue = {"rule_id": "js/sql-injection", "file": "src/db.js", "start_line": 42}
+        fp = _fallback_fingerprint(issue)
+        assert len(fp) == 20
+        assert isinstance(fp, str)
+
+    def test_deterministic(self):
+        issue = {"rule_id": "js/sql-injection", "file": "src/db.js", "start_line": 42}
+        fp1 = _fallback_fingerprint(issue)
+        fp2 = _fallback_fingerprint(issue)
+        assert fp1 == fp2
+
+    def test_different_for_different_input(self):
+        issue1 = {"rule_id": "js/sql-injection", "file": "src/db.js", "start_line": 42}
+        issue2 = {"rule_id": "js/xss", "file": "src/view.js", "start_line": 10}
+        assert _fallback_fingerprint(issue1) != _fallback_fingerprint(issue2)
+
+
+class TestStatePersistence:
+    def test_save_and_load(self, tmp_env):
+        state = {
+            "last_cycle": "2026-01-01T00:00:00Z",
+            "rate_limiter": {"max_sessions": 10},
+            "dispatch_history": {"fp-1": {"dispatch_count": 2}},
+            "objective_progress": [],
+            "scan_schedule": {},
+        }
+        save_state(state)
+        loaded = load_state()
+        assert loaded["last_cycle"] == "2026-01-01T00:00:00Z"
+        assert loaded["dispatch_history"]["fp-1"]["dispatch_count"] == 2
+
+    def test_load_missing_returns_defaults(self, tmp_env):
+        state = load_state()
+        assert state["last_cycle"] is None
+        assert state["dispatch_history"] == {}
+
+
+class TestCmdIngest:
+    def test_ingest_creates_db_record(self, tmp_env):
+        batches = {"batches": [{"id": 1, "issues": ["I1"]}]}
+        issues = {"issues": [
+            {
+                "id": "I1",
+                "fingerprint": "fp-ingest-1",
+                "rule_id": "js/sql-injection",
+                "severity_tier": "high",
+                "cwe_family": "injection",
+                "message": "SQL injection",
+                "locations": [{"file": "src/db.js", "start_line": 42}],
+            }
+        ]}
+        batches_path = tmp_env["tmp_path"] / "batches.json"
+        issues_path = tmp_env["tmp_path"] / "issues.json"
+        batches_path.write_text(json.dumps(batches))
+        issues_path.write_text(json.dumps(issues))
+
+        class Args:
+            pass
+        args = Args()
+        args.batches = str(batches_path)
+        args.issues = str(issues_path)
+        args.run_label = "test-run-1"
+        args.target_repo = "https://github.com/owner/repo"
+
+        result = cmd_ingest(args)
+        assert result == 0
+
+        conn = get_connection(tmp_env["db_path"])
+        init_db(conn)
+        count = conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
+        assert count == 1
+        conn.close()
+
+    def test_ingest_updates_state(self, tmp_env):
+        batches = {"batches": []}
+        issues = {"issues": []}
+        batches_path = tmp_env["tmp_path"] / "batches.json"
+        issues_path = tmp_env["tmp_path"] / "issues.json"
+        batches_path.write_text(json.dumps(batches))
+        issues_path.write_text(json.dumps(issues))
+
+        class Args:
+            pass
+        args = Args()
+        args.batches = str(batches_path)
+        args.issues = str(issues_path)
+        args.run_label = "test-run-2"
+        args.target_repo = "https://github.com/owner/repo"
+
+        cmd_ingest(args)
+        state = load_state()
+        assert state["last_cycle"] is not None
+        assert "https://github.com/owner/repo" in state["scan_schedule"]
+
+    def test_ingest_missing_file_returns_error(self, tmp_env):
+        class Args:
+            pass
+        args = Args()
+        args.batches = "/nonexistent/batches.json"
+        args.issues = "/nonexistent/issues.json"
+        args.run_label = "test-run-3"
+        args.target_repo = "https://github.com/owner/repo"
+
+        result = cmd_ingest(args)
+        assert result == 1
+
+
+class TestCmdPlan:
+    def test_plan_empty_db(self, tmp_env, capsys):
+        class Args:
+            pass
+        args = Args()
+        args.repo = ""
+        args.json = True
+
+        result = cmd_plan(args)
+        assert result == 0
+
+        output = json.loads(capsys.readouterr().out)
+        assert output["total_issues"] == 0
+        assert output["sessions_planned"] == 0
+
+    def test_plan_with_issues(self, tmp_env, capsys):
+        conn = get_connection(tmp_env["db_path"])
+        init_db(conn)
+        insert_run(conn, _sample_run(run_number=1, label="r1"))
+        conn.commit()
+        conn.close()
+
+        class Args:
+            pass
+        args = Args()
+        args.repo = ""
+        args.json = True
+
+        result = cmd_plan(args)
+        assert result == 0
+
+        output = json.loads(capsys.readouterr().out)
+        assert output["total_issues"] >= 1
+        assert output["rate_limit_max"] == 20
+
+    def test_plan_text_output(self, tmp_env, capsys):
+        conn = get_connection(tmp_env["db_path"])
+        init_db(conn)
+        insert_run(conn, _sample_run(run_number=1, label="r1"))
+        conn.commit()
+        conn.close()
+
+        class Args:
+            pass
+        args = Args()
+        args.repo = ""
+        args.json = False
+
+        result = cmd_plan(args)
+        assert result == 0
+
+        output = capsys.readouterr().out
+        assert "ORCHESTRATOR DISPATCH PLAN" in output
+
+    def test_plan_respects_repo_filter(self, tmp_env, capsys):
+        conn = get_connection(tmp_env["db_path"])
+        init_db(conn)
+        insert_run(conn, _sample_run(run_number=1, repo="https://github.com/a/b", label="r1"))
+        insert_run(conn, _sample_run(run_number=2, repo="https://github.com/c/d", label="r2"))
+        conn.commit()
+        conn.close()
+
+        class Args:
+            pass
+        args = Args()
+        args.repo = "https://github.com/a/b"
+        args.json = True
+
+        result = cmd_plan(args)
+        assert result == 0
+
+        output = json.loads(capsys.readouterr().out)
+        assert output["repo_filter"] == "https://github.com/a/b"
+
+
+class TestCmdStatus:
+    def test_status_empty_db(self, tmp_env, capsys):
+        class Args:
+            pass
+        args = Args()
+        args.repo = ""
+        args.json = True
+
+        result = cmd_status(args)
+        assert result == 0
+
+        output = json.loads(capsys.readouterr().out)
+        assert output["total_issues"] == 0
+        assert output["total_sessions"] == 0
+
+    def test_status_with_data(self, tmp_env, capsys):
+        conn = get_connection(tmp_env["db_path"])
+        init_db(conn)
+        insert_run(conn, _sample_run(run_number=1, label="r1"))
+        conn.commit()
+        conn.close()
+
+        class Args:
+            pass
+        args = Args()
+        args.repo = ""
+        args.json = True
+
+        result = cmd_status(args)
+        assert result == 0
+
+        output = json.loads(capsys.readouterr().out)
+        assert output["total_issues"] >= 1
+        assert output["total_sessions"] >= 1
+        assert "rate_limit" in output
+
+    def test_status_text_output(self, tmp_env, capsys):
+        class Args:
+            pass
+        args = Args()
+        args.repo = ""
+        args.json = False
+
+        result = cmd_status(args)
+        assert result == 0
+
+        output = capsys.readouterr().out
+        assert "ORCHESTRATOR STATUS" in output
+
+    def test_status_rate_limit_info(self, tmp_env, capsys):
+        class Args:
+            pass
+        args = Args()
+        args.repo = ""
+        args.json = True
+
+        result = cmd_status(args)
+        assert result == 0
+
+        output = json.loads(capsys.readouterr().out)
+        rl = output["rate_limit"]
+        assert rl["max"] == 20
+        assert rl["period_hours"] == 24
+        assert rl["remaining"] == 20
+
+
+class TestSessionFingerprints:
+    def test_extracts_issue_ids(self):
+        session = {"issue_ids": ["fp-1", "fp-2"]}
+        fps = _session_fingerprints(session)
+        assert fps == {"fp-1", "fp-2"}
+
+    def test_empty_session(self):
+        session = {}
+        fps = _session_fingerprints(session)
+        assert fps == set()
+
+
+class TestPrFingerprints:
+    def test_extracts_from_issue_ids(self):
+        pr = {"html_url": "url1", "issue_ids": ["fp-1", "fp-2"]}
+        fps = _pr_fingerprints(pr, [])
+        assert fps == {"fp-1", "fp-2"}
+
+    def test_extracts_from_linked_sessions(self):
+        pr = {"html_url": "url1", "issue_ids": [], "session_id": "sess-1"}
+        sessions = [{
+            "session_id": "sess-1",
+            "pr_url": "url1",
+            "issue_ids": ["fp-3"],
+        }]
+        fps = _pr_fingerprints(pr, sessions)
+        assert "fp-3" in fps
+
+
+class TestSeverityWeights:
+    def test_all_severities_present(self):
+        assert "critical" in SEVERITY_WEIGHTS
+        assert "high" in SEVERITY_WEIGHTS
+        assert "medium" in SEVERITY_WEIGHTS
+        assert "low" in SEVERITY_WEIGHTS
+
+    def test_ordering(self):
+        assert SEVERITY_WEIGHTS["critical"] > SEVERITY_WEIGHTS["high"]
+        assert SEVERITY_WEIGHTS["high"] > SEVERITY_WEIGHTS["medium"]
+        assert SEVERITY_WEIGHTS["medium"] > SEVERITY_WEIGHTS["low"]
