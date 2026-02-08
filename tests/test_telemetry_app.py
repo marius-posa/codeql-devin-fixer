@@ -13,7 +13,7 @@ from unittest.mock import patch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "telemetry"))
 
 import pytest
-from app import app, _paginate, _Cache, _load_runs_from_disk
+from app import app, _paginate, _Cache, _load_runs_from_disk, _filter_by_period, _load_registry, _save_registry, REGISTRY_PATH
 
 
 @pytest.fixture
@@ -218,6 +218,29 @@ class TestApiEndpoints:
         data = resp.get_json()
         assert "error" in data
 
+    @patch("app.cache")
+    def test_api_stats_accepts_period(self, mock_cache, client):
+        mock_cache.get_runs.return_value = [
+            {"run_number": 1, "timestamp": "2020-01-01T00:00:00Z", "issues_found": 1,
+             "severity_breakdown": {}, "category_breakdown": {}, "sessions": []},
+            {"run_number": 2, "timestamp": "2099-01-01T00:00:00Z", "issues_found": 2,
+             "severity_breakdown": {}, "category_breakdown": {}, "sessions": []},
+        ]
+        mock_cache.get_prs.return_value = []
+        resp = client.get("/api/stats?period=7d")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["period"] == "7d"
+        assert data["total_runs"] == 1
+
+    def test_api_registry_get(self, client):
+        with patch("app.REGISTRY_PATH", Path("/nonexistent")):
+            resp = client.get("/api/registry")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert "repos" in data
+            assert data["repos"] == []
+
     def test_api_config_includes_oauth_status(self, client):
         resp = client.get("/api/config")
         assert resp.status_code == 200
@@ -244,6 +267,56 @@ class TestApiEndpoints:
         resp = client.get("/api/report/pdf?repo=https://github.com/owner/repo")
         assert resp.status_code == 200
         assert "owner-repo" in resp.headers.get("Content-Disposition", "")
+
+
+class TestFilterByPeriod:
+    def test_all_returns_everything(self):
+        runs = [{"timestamp": "2020-01-01T00:00:00Z"}, {"timestamp": "2099-01-01T00:00:00Z"}]
+        assert len(_filter_by_period(runs, "all")) == 2
+
+    def test_empty_period_returns_everything(self):
+        runs = [{"timestamp": "2020-01-01T00:00:00Z"}]
+        assert len(_filter_by_period(runs, "")) == 1
+
+    def test_7d_filters_old(self):
+        runs = [
+            {"timestamp": "2020-01-01T00:00:00Z"},
+            {"timestamp": "2099-12-31T00:00:00Z"},
+        ]
+        result = _filter_by_period(runs, "7d")
+        assert len(result) == 1
+        assert result[0]["timestamp"] == "2099-12-31T00:00:00Z"
+
+    def test_invalid_period_returns_everything(self):
+        runs = [{"timestamp": "2020-01-01T00:00:00Z"}]
+        assert len(_filter_by_period(runs, "invalid")) == 1
+
+
+class TestRegistryEndpoints:
+    def test_load_registry_missing_file(self):
+        with patch("app.REGISTRY_PATH", Path("/nonexistent/file.json")):
+            data = _load_registry()
+            assert data["repos"] == []
+            assert data["version"] == "1.0"
+
+    def test_load_registry_reads_file(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump({"version": "1.0", "repos": [{"repo": "test"}]}, f)
+            f.flush()
+            with patch("app.REGISTRY_PATH", Path(f.name)):
+                data = _load_registry()
+                assert len(data["repos"]) == 1
+            os.unlink(f.name)
+
+    def test_save_and_load_registry(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write("{}")
+            f.flush()
+            with patch("app.REGISTRY_PATH", Path(f.name)):
+                _save_registry({"version": "1.0", "repos": [{"repo": "a"}]})
+                data = _load_registry()
+                assert data["repos"] == [{"repo": "a"}]
+            os.unlink(f.name)
 
 
 class TestOAuth:

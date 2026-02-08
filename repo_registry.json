@@ -1,0 +1,30 @@
+{
+  "version": "1.0",
+  "defaults": {
+    "languages": "",
+    "queries": "security-extended",
+    "batch_size": 5,
+    "max_sessions": 5,
+    "severity_threshold": "low",
+    "default_branch": "main",
+    "persist_logs": true,
+    "dry_run": false,
+    "include_paths": "",
+    "exclude_paths": ""
+  },
+  "concurrency": {
+    "max_parallel": 3,
+    "delay_seconds": 30
+  },
+  "repos": [
+    {
+      "repo": "https://github.com/juice-shop/juice-shop",
+      "enabled": true,
+      "schedule": "weekly",
+      "overrides": {
+        "languages": "javascript",
+        "severity_threshold": "medium"
+      }
+    }
+  ]
+}

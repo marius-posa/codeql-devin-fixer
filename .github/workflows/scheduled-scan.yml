@@ -1,0 +1,139 @@
+name: Scheduled Multi-Repo Scan
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      filter_schedule:
+        description: "Only dispatch repos matching this schedule (daily, weekly, monthly, or empty for all enabled)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  dispatch-scans:
+    name: Dispatch Registered Repo Scans
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Dispatch scans from registry
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          ACTION_REPO: ${{ github.repository }}
+          FILTER_SCHEDULE: ${{ inputs.filter_schedule || '' }}
+        shell: python
+        run: |
+          import json
+          import os
+          import sys
+          import time
+          import urllib.request
+          import urllib.error
+
+          registry_path = os.path.join(os.environ["GITHUB_WORKSPACE"], "repo_registry.json")
+          with open(registry_path) as f:
+              registry = json.load(f)
+
+          defaults = registry.get("defaults", {})
+          concurrency = registry.get("concurrency", {})
+          max_parallel = concurrency.get("max_parallel", 3)
+          delay_seconds = concurrency.get("delay_seconds", 30)
+          repos = registry.get("repos", [])
+
+          filter_schedule = os.environ.get("FILTER_SCHEDULE", "").strip()
+          action_repo = os.environ["ACTION_REPO"]
+          token = os.environ["GH_TOKEN"]
+
+          today = time.strftime("%A").lower()
+          day_of_month = int(time.strftime("%d"))
+
+          def should_run(repo_entry):
+              if not repo_entry.get("enabled", True):
+                  return False
+              schedule = repo_entry.get("schedule", "weekly")
+              if filter_schedule and schedule != filter_schedule:
+                  return False
+              if not filter_schedule:
+                  if schedule == "daily":
+                      return True
+                  if schedule == "weekly":
+                      return today == "monday"
+                  if schedule == "monthly":
+                      return day_of_month == 1
+              return True
+
+          eligible = [r for r in repos if should_run(r)]
+          print(f"Registry has {len(repos)} repos, {len(eligible)} eligible for dispatch")
+
+          dispatched = 0
+          failed = 0
+
+          for i, entry in enumerate(eligible):
+              repo_url = entry["repo"]
+              overrides = entry.get("overrides", {})
+
+              inputs = {
+                  "target_repo": repo_url,
+                  "languages": overrides.get("languages", defaults.get("languages", "")),
+                  "queries": overrides.get("queries", defaults.get("queries", "security-extended")),
+                  "persist_logs": str(overrides.get("persist_logs", defaults.get("persist_logs", True))).lower(),
+                  "include_paths": overrides.get("include_paths", defaults.get("include_paths", "")),
+                  "exclude_paths": overrides.get("exclude_paths", defaults.get("exclude_paths", "")),
+                  "batch_size": str(overrides.get("batch_size", defaults.get("batch_size", 5))),
+                  "max_sessions": str(overrides.get("max_sessions", defaults.get("max_sessions", 5))),
+                  "severity_threshold": overrides.get("severity_threshold", defaults.get("severity_threshold", "low")),
+                  "dry_run": str(overrides.get("dry_run", defaults.get("dry_run", False))).lower(),
+                  "default_branch": overrides.get("default_branch", defaults.get("default_branch", "main")),
+              }
+
+              url = f"https://api.github.com/repos/{action_repo}/actions/workflows/codeql-fixer.yml/dispatches"
+              payload = json.dumps({"ref": "main", "inputs": inputs}).encode()
+              req = urllib.request.Request(
+                  url,
+                  data=payload,
+                  headers={
+                      "Authorization": f"token {token}",
+                      "Accept": "application/vnd.github+json",
+                      "Content-Type": "application/json",
+                  },
+                  method="POST",
+              )
+
+              try:
+                  resp = urllib.request.urlopen(req, timeout=30)
+                  if resp.status == 204:
+                      dispatched += 1
+                      print(f"  [{dispatched}] Dispatched: {repo_url}")
+                  else:
+                      failed += 1
+                      print(f"  [!] Unexpected status {resp.status} for {repo_url}")
+              except urllib.error.HTTPError as e:
+                  failed += 1
+                  print(f"  [!] HTTP {e.code} dispatching {repo_url}: {e.read().decode()[:200]}")
+              except Exception as e:
+                  failed += 1
+                  print(f"  [!] Error dispatching {repo_url}: {e}")
+
+              if i < len(eligible) - 1:
+                  active_batch = (i + 1) % max_parallel
+                  if active_batch == 0:
+                      print(f"  Concurrency limit reached ({max_parallel}), waiting {delay_seconds}s...")
+                      time.sleep(delay_seconds)
+
+          print(f"\nDone: {dispatched} dispatched, {failed} failed out of {len(eligible)} eligible")
+          if failed > 0 and failed == len(eligible):
+              sys.exit(1)

@@ -790,6 +790,23 @@ async function waitForPollWorkflow(timeoutMs) {
   return { error: 'Timed out waiting for poll workflow' };
 }
 
+async function fetchRegistry() {
+  const cfg = getConfig();
+  if (!cfg.githubToken) return null;
+  const url = GH_API + '/repos/' + cfg.actionRepo + '/contents/repo_registry.json?ref=main';
+  try {
+    const resp = await fetch(url, { headers: ghHeaders() });
+    if (!resp.ok) return null;
+    const meta = await resp.json();
+    if (!meta.download_url) return null;
+    const dataResp = await fetch(meta.download_url);
+    if (!dataResp.ok) return null;
+    return await dataResp.json();
+  } catch (e) {
+    return null;
+  }
+}
+
 async function dispatchPreflight(targetRepo, runs, prs, sessions) {
   const openPrs = prs.filter(function(p) { return p.state === 'open' && !p.merged; });
   const repoOpenPrs = [];

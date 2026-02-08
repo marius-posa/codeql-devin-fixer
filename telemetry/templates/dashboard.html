@@ -26,6 +26,14 @@
     <span id="last-updated"></span>
   </div>
 
+  <div class="period-selector" style="margin-bottom:16px;display:flex;gap:4px;align-items:center">
+    <span style="font-size:12px;color:var(--text-muted);margin-right:8px">Period:</span>
+    <button class="btn period-btn active" data-period="all" onclick="setPeriod('all')">All Time</button>
+    <button class="btn period-btn" data-period="7d" onclick="setPeriod('7d')">7 Days</button>
+    <button class="btn period-btn" data-period="30d" onclick="setPeriod('30d')">30 Days</button>
+    <button class="btn period-btn" data-period="90d" onclick="setPeriod('90d')">90 Days</button>
+  </div>
+
   <div class="metrics-grid" id="metrics-grid"></div>
 
   <div class="panel">
@@ -98,6 +106,14 @@
     <div class="panel-body" id="verification-stats-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
     <div class="panel-body table-scroll-wrapper" id="verification-table-container"></div>
   </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      Scheduled Repo Registry
+      <span id="registry-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+    </div>
+    <div class="panel-body table-scroll-wrapper" id="registry-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+  </div>
 </div>
 
 <div class="drawer-overlay" id="drawer-overlay"></div>
@@ -119,8 +135,18 @@ let allPrs = [];
 let allRepos = [];
 let allIssues = [];
 let stats = {};
+let registryData = null;
+let currentPeriod = 'all';
 let slaData = {};
 let verificationData = {};
+
+function setPeriod(period) {
+  currentPeriod = period;
+  document.querySelectorAll('.period-btn').forEach(function(btn) {
+    btn.classList.toggle('active', btn.dataset.period === period);
+  });
+  fetchAll();
+}
 
 function renderSlaPanel(sla) {
   var el = document.getElementById('sla-panel-container');
@@ -183,23 +209,25 @@ function renderSlaPanel(sla) {
   el.innerHTML = html;
 }
 
+>>>>>>> origin/main
 function renderMetrics(s) {
   const grid = document.getElementById('metrics-grid');
   const latestIssues = s.latest_issues != null ? s.latest_issues : s.total_issues;
   const issuesSub = s.total_runs > 1 && s.latest_issues != null
     ? latestIssues + ' current, ' + (s.total_issues || 0) + ' across all runs'
     : '';
+  const periodLabel = currentPeriod !== 'all' ? ' (' + currentPeriod + ')' : '';
   const fixRate = s.fix_rate || 0;
   const cards = [
     { label: 'Repos Scanned', value: s.repos_scanned || 0, cls: 'blue' },
-    { label: 'Total Runs', value: s.total_runs || 0, cls: 'cyan' },
-    { label: 'Issues Found', value: latestIssues, cls: 'orange',
+    { label: 'Total Runs' + periodLabel, value: s.total_runs || 0, cls: 'cyan' },
+    { label: 'Issues Found' + periodLabel, value: latestIssues, cls: 'orange',
       sub: issuesSub },
-    { label: 'Devin Sessions', value: s.sessions_created || 0, cls: 'purple',
+    { label: 'Devin Sessions' + periodLabel, value: s.sessions_created || 0, cls: 'purple',
       sub: (s.sessions_finished || 0) + ' finished' },
-    { label: 'PRs Created', value: s.prs_total || 0, cls: 'blue',
+    { label: 'PRs Created' + periodLabel, value: s.prs_total || 0, cls: 'blue',
       sub: (s.prs_merged || 0) + ' merged, ' + (s.prs_open || 0) + ' open' },
-    { label: 'Fix Rate', value: fixRate + '%', cls: fixRateColorClass(fixRate),
+    { label: 'Fix Rate' + periodLabel, value: fixRate + '%', cls: fixRateColorClass(fixRate),
       sub: 'merged / total PRs' },
   ];
   grid.innerHTML = cards.map(c => '<div class="metric-card ' + c.cls + '">'
@@ -473,13 +501,15 @@ function renderTrendChart(container, runs) {
 async function fetchAll() {
   showAllSkeletons();
   setStatus('Loading data...');
+  const periodParam = currentPeriod !== 'all' ? '?period=' + currentPeriod : '';
   const endpoints = [
     { key: 'runs', endpoint: '/api/runs' },
     { key: 'sessions', endpoint: '/api/sessions' },
-    { key: 'stats', endpoint: '/api/stats', single: true },
+    { key: 'stats', endpoint: '/api/stats' + periodParam, single: true },
     { key: 'prs', endpoint: '/api/prs' },
     { key: 'repos', endpoint: '/api/repos', single: true },
     { key: 'issues', endpoint: '/api/issues' },
+    { key: 'registry', endpoint: '/api/registry', single: true },
     { key: 'sla', endpoint: '/api/sla', single: true },
     { key: 'verification', endpoint: '/api/verification', single: true },
   ];
@@ -508,6 +538,7 @@ async function fetchAll() {
   if (results.prs !== undefined) allPrs = results.prs;
   if (results.repos !== undefined) allRepos = results.repos;
   if (results.issues !== undefined) allIssues = results.issues;
+  if (results.registry !== undefined) registryData = results.registry;
   if (results.sla !== undefined) slaData = results.sla;
   if (results.verification !== undefined) verificationData = results.verification;
   renderAll();
@@ -571,6 +602,7 @@ function renderAll() {
   renderIssuesTable(allIssues, 'issues-table-container', 'issues-count');
   renderSlaPanel(slaData);
   renderVerificationPanel(verificationData);
+  if (registryData) renderRegistryTable(registryData, 'registry-table-container', 'registry-count');
 }
 
 async function pollSessions() {

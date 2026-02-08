@@ -45,6 +45,7 @@ import os
 import pathlib
 import time
 import threading
+from datetime import datetime, timedelta, timezone
 
 import requests
 from flask import Flask, jsonify, render_template, request as flask_request, send_file
@@ -63,6 +64,8 @@ from verification import (
 )
 from oauth import oauth_bp, is_oauth_configured, get_current_user, filter_by_user_access
 from pdf_report import generate_pdf
+
+REGISTRY_PATH = pathlib.Path(__file__).resolve().parent.parent / "repo_registry.json"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(32).hex())
@@ -343,12 +346,33 @@ def api_prs():
     return jsonify(_paginate(prs, page, per_page))
 
 
+def _filter_by_period(runs: list[dict], period: str) -> list[dict]:
+    """Filter runs to those within the given period (7d, 30d, 90d)."""
+    if not period or period == "all":
+        return runs
+    days_map = {"7d": 7, "30d": 30, "90d": 90}
+    days = days_map.get(period)
+    if days is None:
+        return runs
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    return [r for r in runs if r.get("timestamp", "") >= cutoff]
+
+
 @app.route("/api/stats")
 def api_stats():
     runs = cache.get_runs()
-    sessions = aggregate_sessions(runs)
+    period = flask_request.args.get("period", "all")
+    filtered_runs = _filter_by_period(runs, period)
+    sessions = aggregate_sessions(filtered_runs)
     prs = cache.get_prs(runs)
-    return jsonify(aggregate_stats(runs, sessions, prs))
+    if period != "all":
+        session_ids = {s["session_id"] for s in sessions if s.get("session_id")}
+        all_issue_ids = {iid for s in sessions for iid in s.get("issue_ids", [])}
+        prs = [p for p in prs if p.get("session_id") in session_ids
+               or any(pid in all_issue_ids for pid in p.get("issue_ids", []))]
+    result = aggregate_stats(filtered_runs, sessions, prs)
+    result["period"] = period
+    return jsonify(result)
 
 
 @app.route("/api/repos")
@@ -651,6 +675,79 @@ def api_dispatch():
             return jsonify({"error": f"GitHub API error ({resp.status_code}): {error_body}"}), resp.status_code
     except requests.RequestException as e:
         return jsonify({"error": "Request failed due to a server error"}), 500
+
+
+def _load_registry() -> dict:
+    if not REGISTRY_PATH.exists():
+        return {"version": "1.0", "defaults": {}, "concurrency": {"max_parallel": 3, "delay_seconds": 30}, "repos": []}
+    with open(REGISTRY_PATH) as f:
+        return json.load(f)
+
+
+def _save_registry(data: dict) -> None:
+    with open(REGISTRY_PATH, "w") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+
+
+@app.route("/api/registry")
+def api_registry():
+    return jsonify(_load_registry())
+
+
+@app.route("/api/registry", methods=["PUT"])
+@require_api_key
+def api_registry_update():
+    body = flask_request.get_json(silent=True)
+    if not body:
+        return jsonify({"error": "Request body is required"}), 400
+    registry = _load_registry()
+    if "defaults" in body:
+        registry["defaults"] = body["defaults"]
+    if "concurrency" in body:
+        registry["concurrency"] = body["concurrency"]
+    if "repos" in body:
+        registry["repos"] = body["repos"]
+    _save_registry(registry)
+    return jsonify(registry)
+
+
+@app.route("/api/registry/repos", methods=["POST"])
+@require_api_key
+def api_registry_add_repo():
+    body = flask_request.get_json(silent=True) or {}
+    repo_url = body.get("repo", "").strip()
+    if not repo_url:
+        return jsonify({"error": "repo is required"}), 400
+    registry = _load_registry()
+    for existing in registry.get("repos", []):
+        if existing.get("repo") == repo_url:
+            return jsonify({"error": "Repo already registered"}), 409
+    entry = {
+        "repo": repo_url,
+        "enabled": body.get("enabled", True),
+        "schedule": body.get("schedule", "weekly"),
+        "overrides": body.get("overrides", {}),
+    }
+    registry.setdefault("repos", []).append(entry)
+    _save_registry(registry)
+    return jsonify(entry), 201
+
+
+@app.route("/api/registry/repos", methods=["DELETE"])
+@require_api_key
+def api_registry_remove_repo():
+    body = flask_request.get_json(silent=True) or {}
+    repo_url = body.get("repo", "").strip()
+    if not repo_url:
+        return jsonify({"error": "repo is required"}), 400
+    registry = _load_registry()
+    original_len = len(registry.get("repos", []))
+    registry["repos"] = [r for r in registry.get("repos", []) if r.get("repo") != repo_url]
+    if len(registry["repos"]) == original_len:
+        return jsonify({"error": "Repo not found in registry"}), 404
+    _save_registry(registry)
+    return jsonify({"removed": repo_url})
 
 
 if __name__ == "__main__":
