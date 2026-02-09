@@ -58,6 +58,7 @@ from issue_tracking import _parse_ts  # noqa: E402
 from verification import load_verification_records, build_fingerprint_fix_map  # noqa: E402
 from fix_learning import CWE_FIX_HINTS, FixLearning  # noqa: E402
 from github_utils import gh_headers, parse_repo_url  # noqa: E402
+from pipeline_config import Batch, ParsedIssue, SessionRecord  # noqa: E402,F401
 
 try:
     from dispatch_devin import create_devin_session  # noqa: E402

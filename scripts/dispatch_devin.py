@@ -60,7 +60,7 @@ try:
     from fix_learning import CWE_FIX_HINTS, FixLearning
     from github_utils import validate_repo_url
     from parse_sarif import BATCHES_SCHEMA_VERSION
-    from pipeline_config import PipelineConfig
+    from pipeline_config import Batch, DispatchSession, PipelineConfig
     from playbook_manager import PlaybookManager
     from repo_context import RepoContext, analyze_repo
     from retry_utils import exponential_backoff_delay
@@ -68,7 +68,7 @@ except ImportError:
     from scripts.fix_learning import CWE_FIX_HINTS, FixLearning
     from scripts.github_utils import validate_repo_url
     from scripts.parse_sarif import BATCHES_SCHEMA_VERSION
-    from scripts.pipeline_config import PipelineConfig
+    from scripts.pipeline_config import Batch, DispatchSession, PipelineConfig
     from scripts.playbook_manager import PlaybookManager
     from scripts.repo_context import RepoContext, analyze_repo
     from scripts.retry_utils import exponential_backoff_delay
@@ -229,7 +229,7 @@ def _find_related_test_files(target_dir: str, source_file: str) -> list[str]:
 
 
 def build_batch_prompt(
-    batch: dict,
+    batch: Batch,
     repo_url: str,
     default_branch: str,
     is_own_repo: bool = False,
@@ -408,7 +408,7 @@ def build_batch_prompt(
 def create_devin_session(
     api_key: str,
     prompt: str,
-    batch: dict,
+    batch: Batch,
     max_acu: int | None = None,
 ) -> dict:
     """POST to the Devin API to create a new fix session with retry logic."""
@@ -471,6 +471,172 @@ def create_devin_session(
                       f"(waiting {delay:.1f}s)")
                 time.sleep(delay)
     raise last_err  # type: ignore[misc]
+
+
+SEVERITY_ORDER = ["critical", "high", "medium", "low"]
+
+
+def group_batches_by_wave(batches: list[Batch]) -> list[list[Batch]]:
+    """Group batches into waves by severity tier.
+
+    Each wave contains all batches of one severity tier, ordered from
+    most severe (critical) to least severe (low).
+    """
+    tier_map: dict[str, list[Batch]] = {}
+    for batch in batches:
+        tier = batch.get("severity_tier", "low")
+        tier_map.setdefault(tier, []).append(batch)
+
+    waves: list[list[Batch]] = []
+    for tier in SEVERITY_ORDER:
+        if tier in tier_map:
+            waves.append(tier_map[tier])
+    leftover = [
+        b for b in batches
+        if b.get("severity_tier", "low") not in SEVERITY_ORDER
+    ]
+    if leftover:
+        waves.append(leftover)
+    return waves
+
+
+def poll_sessions_until_done(
+    api_key: str,
+    sessions: list[DispatchSession],
+    poll_interval: int = 60,
+    timeout: int = 3600,
+) -> list[DispatchSession]:
+    """Poll Devin sessions until all are finished or timeout is reached."""
+    terminal_statuses = {"finished", "stopped", "error", "failed"}
+    deadline = time.time() + timeout
+
+    while time.time() < deadline:
+        pending = [
+            s for s in sessions
+            if s["status"] not in terminal_statuses
+            and s["session_id"]
+            and s["session_id"] != "dry-run"
+        ]
+        if not pending:
+            break
+
+        for s in pending:
+            sid = s["session_id"]
+            clean_sid = sid.replace("devin-", "") if sid.startswith("devin-") else sid
+            try:
+                resp = requests.get(
+                    f"{DEVIN_API_BASE}/sessions/{clean_sid}",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    timeout=15,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    status_str = str(
+                        data.get("status_enum")
+                        or data.get("status")
+                        or "unknown"
+                    ).lower()
+                    s["status"] = status_str
+            except requests.RequestException:
+                pass
+
+        time.sleep(poll_interval)
+
+    return sessions
+
+
+def compute_wave_fix_rate(sessions: list[DispatchSession]) -> float:
+    """Compute the fix rate for a completed wave of sessions."""
+    finished = [s for s in sessions if s["session_id"] and s["session_id"] != "dry-run"]
+    if not finished:
+        return 0.0
+    succeeded = [s for s in finished if s["status"] == "finished"]
+    return len(succeeded) / len(finished)
+
+
+def dispatch_wave(
+    wave_batches: list[Batch],
+    api_key: str,
+    repo_url: str,
+    default_branch: str,
+    is_own_repo: bool,
+    target_dir: str,
+    fix_learn: "FixLearning | None",
+    playbook_mgr: "PlaybookManager | None",
+    repo_ctx: "RepoContext | None",
+    prompt_template: str,
+    output_dir: str,
+    run_id: str,
+    max_acu: int | None,
+    dry_run: bool,
+) -> list[DispatchSession]:
+    """Dispatch all batches in a single wave, returning session records."""
+    sessions: list[DispatchSession] = []
+    for batch in wave_batches:
+        family = batch["cwe_family"]
+        batch_acu = max_acu
+        if fix_learn and max_acu:
+            batch_acu = fix_learn.compute_acu_budget(family, max_acu)
+        elif fix_learn and not max_acu:
+            batch_acu = fix_learn.compute_acu_budget(family)
+
+        if prompt_template:
+            prompt = _render_template_prompt(
+                prompt_template, batch, repo_url, default_branch,
+                is_own_repo, fix_learn,
+            )
+        else:
+            prompt = build_batch_prompt(
+                batch, repo_url, default_branch, is_own_repo,
+                target_dir=target_dir, fix_learning=fix_learn,
+                playbook_mgr=playbook_mgr,
+                repo_context=repo_ctx,
+            )
+        batch_id = batch["batch_id"]
+
+        prompt_path = os.path.join(output_dir, f"prompt_batch_{batch_id}.txt")
+        with open(prompt_path, "w") as f:
+            f.write(prompt)
+
+        print(f"--- Batch {batch_id} ---")
+        print(f"  Category: {family}")
+        print(f"  Severity: {batch['severity_tier'].upper()}")
+        print(f"  Issues: {batch['issue_count']}")
+        if batch_acu and batch_acu != max_acu:
+            print(f"  ACU budget: {batch_acu} (dynamic, base={max_acu or 'default'})")
+
+        if dry_run:
+            print(f"  [DRY RUN] Prompt saved to {prompt_path}")
+            sessions.append({
+                "batch_id": batch_id,
+                "session_id": "dry-run",
+                "url": "dry-run",
+                "status": "dry-run",
+            })
+            continue
+
+        try:
+            result = create_devin_session(api_key, prompt, batch, batch_acu)
+            session_id = result["session_id"]
+            url = result["url"]
+            print(f"  Session created: {url}")
+            sessions.append({
+                "batch_id": batch_id,
+                "session_id": session_id,
+                "url": url,
+                "status": "created",
+            })
+            _send_session_webhook(session_id, url, batch_id, repo_url, run_id)
+            time.sleep(2)
+        except requests.exceptions.RequestException as e:
+            print(f"  ERROR creating session: {e}")
+            sessions.append({
+                "batch_id": batch_id,
+                "session_id": "",
+                "url": "",
+                "status": f"error: {e}",
+            })
+    return sessions
 
 
 def main() -> None:
@@ -582,80 +748,56 @@ def main() -> None:
     print()
 
     run_id = os.environ.get("RUN_ID", "")
-    sessions: list[dict] = []
+    sessions: list[DispatchSession] = []
 
-    for batch in batches:
-        family = batch["cwe_family"]
-        batch_acu = max_acu
-        if fix_learn and max_acu:
-            batch_acu = fix_learn.compute_acu_budget(family, max_acu)
-        elif fix_learn and not max_acu:
-            batch_acu = fix_learn.compute_acu_budget(family)
+    wave_common_kwargs = {
+        "api_key": api_key,
+        "repo_url": repo_url,
+        "default_branch": default_branch,
+        "is_own_repo": is_own_repo,
+        "target_dir": target_dir,
+        "fix_learn": fix_learn,
+        "playbook_mgr": playbook_mgr,
+        "repo_ctx": repo_ctx,
+        "prompt_template": prompt_template,
+        "output_dir": output_dir,
+        "run_id": run_id,
+        "max_acu": max_acu,
+        "dry_run": dry_run,
+    }
 
-        if prompt_template:
-            prompt = _render_template_prompt(
-                prompt_template, batch, repo_url, default_branch,
-                is_own_repo, fix_learn,
-            )
-        else:
-            prompt = build_batch_prompt(
-                batch, repo_url, default_branch, is_own_repo,
-                target_dir=target_dir, fix_learning=fix_learn,
-                playbook_mgr=playbook_mgr,
-                repo_context=repo_ctx,
-            )
-        batch_id = batch["batch_id"]
+    if cfg.wave_dispatch:
+        waves = group_batches_by_wave(batches)
+        print(f"Wave dispatch enabled: {len(waves)} wave(s)")
+        for wave_idx, wave_batches in enumerate(waves, 1):
+            tier = wave_batches[0].get("severity_tier", "unknown") if wave_batches else "unknown"
+            print(f"\n{'=' * 60}")
+            print(f"Wave {wave_idx}/{len(waves)} -- {tier.upper()} ({len(wave_batches)} batch(es))")
+            print("=" * 60)
 
-        prompt_path = os.path.join(output_dir, f"prompt_batch_{batch_id}.txt")
-        with open(prompt_path, "w") as f:
-            f.write(prompt)
+            wave_sessions = dispatch_wave(wave_batches, **wave_common_kwargs)
+            sessions.extend(wave_sessions)
 
-        print(f"--- Batch {batch_id} ---")
-        print(f"  Category: {batch['cwe_family']}")
-        print(f"  Severity: {batch['severity_tier'].upper()}")
-        print(f"  Issues: {batch['issue_count']}")
-        if batch_acu and batch_acu != max_acu:
-            print(f"  ACU budget: {batch_acu} (dynamic, base={max_acu or 'default'})")
+            if not dry_run and wave_idx < len(waves):
+                print(f"\nPolling wave {wave_idx} sessions (timeout={cfg.wave_timeout}s)...")
+                poll_sessions_until_done(
+                    api_key, wave_sessions,
+                    poll_interval=cfg.wave_poll_interval,
+                    timeout=cfg.wave_timeout,
+                )
+                fix_rate = compute_wave_fix_rate(wave_sessions)
+                print(f"Wave {wave_idx} fix rate: {fix_rate:.0%}")
 
-        if dry_run:
-            print(f"  [DRY RUN] Prompt saved to {prompt_path}")
-            sessions.append(
-                {
-                    "batch_id": batch_id,
-                    "session_id": "dry-run",
-                    "url": "dry-run",
-                    "status": "dry-run",
-                }
-            )
-            continue
-
-        try:
-            result = create_devin_session(api_key, prompt, batch, batch_acu)
-            session_id = result["session_id"]
-            url = result["url"]
-            print(f"  Session created: {url}")
-            sessions.append(
-                {
-                    "batch_id": batch_id,
-                    "session_id": session_id,
-                    "url": url,
-                    "status": "created",
-                }
-            )
-            _send_session_webhook(
-                session_id, url, batch_id, repo_url, run_id,
-            )
-            time.sleep(2)
-        except requests.exceptions.RequestException as e:
-            print(f"  ERROR creating session: {e}")
-            sessions.append(
-                {
-                    "batch_id": batch_id,
-                    "session_id": "",
-                    "url": "",
-                    "status": f"error: {e}",
-                }
-            )
+                if fix_rate < cfg.wave_fix_rate_threshold:
+                    print(
+                        f"Fix rate {fix_rate:.0%} below threshold "
+                        f"{cfg.wave_fix_rate_threshold:.0%} -- "
+                        f"stopping dispatch. Manual review recommended."
+                    )
+                    break
+                print(f"Fix rate meets threshold, proceeding to wave {wave_idx + 1}...")
+    else:
+        sessions = dispatch_wave(batches, **wave_common_kwargs)
 
     sessions_failed = len([s for s in sessions if s["status"].startswith("error")])
     sessions_created = len([s for s in sessions if s["status"] == "created"])
