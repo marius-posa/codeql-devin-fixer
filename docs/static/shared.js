@@ -39,6 +39,10 @@ function badgeClass(status) {
   if (s === 'recurring') return 'badge-recurring';
   if (s === 'new') return 'badge-new';
   if (s === 'fixed') return 'badge-fixed';
+  if (s === 'on-track') return 'badge-on-track';
+  if (s === 'at-risk') return 'badge-at-risk';
+  if (s === 'breached') return 'badge-breached';
+  if (s === 'met') return 'badge-met';
   return 'badge-unknown';
 }
 
@@ -64,39 +68,27 @@ function showTableLoading(containerId) {
 
 function renderBarChart(container, data) {
   if (!data || Object.keys(data).length === 0) {
-    container.innerHTML = '<div class="empty-state">No data yet</div>';
+    container.innerHTML = '<div class="empty-state"><span class="empty-state-icon">&#x1F4CA;</span><div class="empty-state-text">No data yet</div></div>';
     return;
   }
   const max = Math.max(...Object.values(data), 1);
   const order = ['critical','high','medium','low'];
-  const sorted = Object.entries(data).sort(function(a, b) {
+  const sorted = Object.entries(data).sort((a, b) => {
     const ia = order.indexOf(a[0].toLowerCase()), ib = order.indexOf(b[0].toLowerCase());
     if (ia !== -1 && ib !== -1) return ia - ib;
     if (ia !== -1) return -1;
     if (ib !== -1) return 1;
     return b[1] - a[1];
   });
-  container.innerHTML = '<div class="bar-chart">' + sorted.map(function(entry) {
-    var label = entry[0], count = entry[1];
-    return '<div class="bar-row">'
-      + '<span class="bar-label">' + escapeHtml(label) + '</span>'
-      + '<div class="bar-track">'
-      + '<div class="bar-fill ' + barClass(label) + '" style="width:' + (count/max*100).toFixed(1) + '%"></div>'
-      + '</div>'
-      + '<span class="bar-value">' + count + '</span>'
-      + '</div>';
-  }).join('') + '</div>';
-}
-
-function _verificationBadge(v) {
-  if (!v) return '<span class="badge badge-unknown">pending</span>';
-  var label = v.label || '';
-  var cls = 'badge-unknown';
-  if (label === 'verified-fix') cls = 'badge-verified';
-  else if (label === 'codeql-partial-fix') cls = 'badge-partial';
-  else if (label === 'codeql-needs-work') cls = 'badge-needs-work';
-  var text = v.fixed_count + '/' + v.total_targeted + ' fixed';
-  return '<span class="badge ' + cls + '" title="' + v.fix_rate + '% fix rate">' + escapeHtml(text) + '</span>';
+  container.innerHTML = '<div class="bar-chart">' + sorted.map(([label, count]) => `
+    <div class="bar-row">
+      <span class="bar-label">${escapeHtml(label)}</span>
+      <div class="bar-track">
+        <div class="bar-fill ${barClass(label)}" style="width:${(count/max*100).toFixed(1)}%"></div>
+      </div>
+      <span class="bar-value">${count}</span>
+    </div>
+  `).join('') + '</div>';
 }
 
 function renderSessionsTable(sessions, containerId, countId) {
@@ -104,26 +96,24 @@ function renderSessionsTable(sessions, containerId, countId) {
   const countEl = document.getElementById(countId);
   if (countEl) countEl.textContent = sessions.length;
   if (sessions.length === 0) {
-    el.innerHTML = '<div class="empty-state">No Devin sessions created yet.</div>';
+    el.innerHTML = '<div class="empty-state"><span class="empty-state-icon">&#x1F916;</span><div class="empty-state-text">No Devin sessions created yet.</div></div>';
     return;
   }
-  var rows = sessions.map(function(s) {
-    var v = s.verification || null;
-    return '<tr>'
-      + '<td>' + (s.session_url ? '<a href="'+escapeHtml(s.session_url)+'" target="_blank">'+escapeHtml((s.session_id||'').slice(0,8))+'...</a>' : escapeHtml(s.session_id) || '-') + '</td>'
-      + '<td><span class="badge '+badgeClass(s.status)+'">'+escapeHtml(s.status)+'</span></td>'
-      + '<td><a href="'+escapeHtml(s.target_repo)+'" target="_blank">'+escapeHtml(repoShort(s.target_repo))+'</a></td>'
-      + '<td>' + (s.run_url ? '<a href="'+escapeHtml(s.run_url)+'" target="_blank">#'+s.run_number+'</a>' : '#'+(s.run_number || '-')) + '</td>'
-      + '<td>' + (s.batch_id !== undefined ? s.batch_id : '-') + '</td>'
-      + '<td>' + ((s.issue_ids || []).map(function(id) { return '<span class="issue-id">'+escapeHtml(id)+'</span>'; }).join(' ') || '-') + '</td>'
-      + '<td>' + (s.pr_url ? '<a href="'+escapeHtml(s.pr_url)+'" target="_blank">'+prLabel(s.pr_url)+'</a>' : '-') + '</td>'
-      + '<td>' + _verificationBadge(v) + '</td>'
-      + '</tr>';
-  }).join('');
-  el.innerHTML = '<table><thead><tr>'
-    + '<th>Session</th><th>Status</th><th>Target</th><th>Run</th>'
-    + '<th>Batch</th><th>Issues</th><th>PR</th><th>Verification</th>'
-    + '</tr></thead><tbody>' + rows + '</tbody></table>';
+  el.innerHTML = `<table>
+    <thead><tr>
+      <th>Session</th><th>Status</th><th>Target</th><th>Run</th>
+      <th>Batch</th><th>Issues</th><th>PR</th>
+    </tr></thead>
+    <tbody>${sessions.map(s => `<tr>
+      <td>${s.session_url ? '<a href="'+escapeHtml(s.session_url)+'" target="_blank">'+escapeHtml(s.session_id.slice(0,8))+'...</a>' : escapeHtml(s.session_id) || '-'}</td>
+      <td><span class="badge ${badgeClass(s.status)}">${escapeHtml(s.status)}</span></td>
+      <td><a href="${escapeHtml(s.target_repo)}" target="_blank">${escapeHtml(repoShort(s.target_repo))}</a></td>
+      <td>${s.run_url ? '<a href="'+escapeHtml(s.run_url)+'" target="_blank">#'+s.run_number+'</a>' : '#'+(s.run_number || '-')}</td>
+      <td>${s.batch_id !== undefined ? s.batch_id : '-'}</td>
+      <td>${(s.issue_ids || []).map(id => '<span class="issue-id">'+escapeHtml(id)+'</span>').join(' ') || '-'}</td>
+      <td>${s.pr_url ? '<a href="'+escapeHtml(s.pr_url)+'" target="_blank">'+prLabel(s.pr_url)+'</a>' : '-'}</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
 }
 
 function renderPrsTable(prs, containerId, countId) {
@@ -131,90 +121,76 @@ function renderPrsTable(prs, containerId, countId) {
   const countEl = document.getElementById(countId);
   if (countEl) countEl.textContent = prs.length;
   if (prs.length === 0) {
-    el.innerHTML = '<div class="empty-state">No pull requests found yet.</div>';
+    el.innerHTML = '<div class="empty-state"><span class="empty-state-icon">&#x1F4CB;</span><div class="empty-state-text">No pull requests found yet.</div></div>';
     return;
   }
-  var sorted = [...prs].sort(function(a, b) {
-    return (b.created_at || '') < (a.created_at || '') ? -1
-      : (b.created_at || '') > (a.created_at || '') ? 1 : 0;
+  const sorted = [...prs].sort(function(a, b) {
+    var da = a.created_at ? new Date(a.created_at).getTime() : 0;
+    var db = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return db - da;
   });
-  var rows = sorted.map(function(p) {
-    var statusLabel = p.merged ? 'merged' : p.state;
-    return '<tr>'
-      + '<td><a href="'+escapeHtml(p.html_url)+'" target="_blank">#'+p.pr_number+'</a></td>'
-      + '<td><span class="badge '+badgeClass(statusLabel)+'">'+escapeHtml(statusLabel)+'</span></td>'
-      + '<td>'+escapeHtml(p.title)+'</td>'
-      + '<td>'+escapeHtml(p.repo || '-')+'</td>'
-      + '<td>'+((p.issue_ids||[]).map(function(id){return '<span class="issue-id">'+escapeHtml(id)+'</span>';}).join(' ')||'-')+'</td>'
-      + '<td>'+formatDate(p.created_at)+'</td>'
-      + '</tr>';
-  }).join('');
-  el.innerHTML = '<table><thead><tr>'
-    + '<th>PR</th><th>Status</th><th>Title</th><th>Repo</th>'
-    + '<th>Issues</th><th>Created</th>'
-    + '</tr></thead><tbody>' + rows + '</tbody></table>';
+  el.innerHTML = `<table>
+    <thead><tr>
+      <th>PR</th><th>Status</th><th>Title</th><th>Repo</th>
+      <th>Issues</th><th>Created</th>
+    </tr></thead>
+    <tbody>${sorted.map(p => {
+      const statusLabel = p.merged ? 'merged' : p.state;
+      return `<tr>
+        <td><a href="${escapeHtml(p.html_url)}" target="_blank">#${p.pr_number}</a></td>
+        <td><span class="badge ${badgeClass(statusLabel)}">${escapeHtml(statusLabel)}</span></td>
+        <td>${escapeHtml(p.title)}</td>
+        <td>${escapeHtml(p.repo) || '-'}</td>
+        <td>${(p.issue_ids || []).map(id => '<span class="issue-id">'+escapeHtml(id)+'</span>').join(' ') || '-'}</td>
+        <td>${formatDate(p.created_at)}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
 }
 
-var _issueFilterState = { status: null, severity: null, repo: null };
-var _allIssuesForFilter = [];
-var _issueContainerId = '';
-var _issueCountId = '';
+var _issuesFilterState = { status: null, severity: null, repo: null };
+var _issuesAllData = [];
+var _issuesContainerId = '';
+var _issuesCountId = '';
 
-function _applyIssueFilters() {
-  var filtered = _allIssuesForFilter;
-  if (_issueFilterState.status) {
-    filtered = filtered.filter(function(i) { return i.status === _issueFilterState.status; });
+function _applyIssuesFilter() {
+  var filtered = _issuesAllData;
+  if (_issuesFilterState.status) {
+    filtered = filtered.filter(function(i) { return i.status === _issuesFilterState.status; });
   }
-  if (_issueFilterState.severity) {
-    filtered = filtered.filter(function(i) { return (i.severity_tier || '').toLowerCase() === _issueFilterState.severity.toLowerCase(); });
+  if (_issuesFilterState.severity) {
+    filtered = filtered.filter(function(i) { return (i.severity_tier || '').toLowerCase() === _issuesFilterState.severity; });
   }
-  if (_issueFilterState.repo) {
-    filtered = filtered.filter(function(i) { return (i.target_repo || '') === _issueFilterState.repo; });
+  if (_issuesFilterState.repo) {
+    filtered = filtered.filter(function(i) { return repoShort(i.target_repo) === _issuesFilterState.repo; });
   }
-  _renderIssuesFiltered(filtered, _allIssuesForFilter, _issueContainerId, _issueCountId);
+  _renderIssuesContent(filtered, _issuesAllData, _issuesContainerId, _issuesCountId);
 }
 
 function _toggleStatusFilter(status) {
-  _issueFilterState.status = (_issueFilterState.status === status) ? null : status;
-  _applyIssueFilters();
+  _issuesFilterState.status = _issuesFilterState.status === status ? null : status;
+  _applyIssuesFilter();
 }
 
-function _onSeverityFilterChange(value) {
-  _issueFilterState.severity = value || null;
-  _applyIssueFilters();
-}
-
-function _onRepoFilterChange(value) {
-  _issueFilterState.repo = value || null;
-  _applyIssueFilters();
-}
-
-function _clearAllIssueFilters() {
-  _issueFilterState = { status: null, severity: null, repo: null };
-  var sevSel = document.getElementById('issue-severity-filter');
-  var repoSel = document.getElementById('issue-repo-filter');
-  if (sevSel) sevSel.value = '';
-  if (repoSel) repoSel.value = '';
-  _applyIssueFilters();
-}
-
-function _renderIssuesFiltered(filtered, allIssues, containerId, countId) {
+function _renderIssuesContent(filtered, allIssues, containerId, countId) {
   var el = document.getElementById(containerId);
   var countEl = document.getElementById(countId);
-  if (countEl) countEl.textContent = filtered.length + (filtered.length !== allIssues.length ? ' / ' + allIssues.length : '');
+  if (countEl) countEl.textContent = filtered.length + ' / ' + allIssues.length;
 
   var recurring = allIssues.filter(function(i) { return i.status === 'recurring'; }).length;
   var newCount = allIssues.filter(function(i) { return i.status === 'new'; }).length;
   var fixed = allIssues.filter(function(i) { return i.status === 'fixed'; }).length;
 
-  var repos = [], repoSet = {};
+  var repos = [];
+  var repoSet = {};
   allIssues.forEach(function(i) {
-    var r = i.target_repo || '';
-    if (r && !repoSet[r]) { repoSet[r] = true; repos.push(r); }
+    var r = repoShort(i.target_repo);
+    if (r && r !== '-' && !repoSet[r]) { repoSet[r] = true; repos.push(r); }
   });
   repos.sort();
 
-  var severities = [], sevSet = {};
+  var severities = [];
+  var sevSet = {};
   allIssues.forEach(function(i) {
     var s = (i.severity_tier || '').toLowerCase();
     if (s && !sevSet[s]) { sevSet[s] = true; severities.push(s); }
@@ -222,98 +198,410 @@ function _renderIssuesFiltered(filtered, allIssues, containerId, countId) {
   var sevOrder = ['critical','high','medium','low'];
   severities.sort(function(a, b) {
     var ia = sevOrder.indexOf(a), ib = sevOrder.indexOf(b);
-    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    if (ia === -1) ia = 99;
+    if (ib === -1) ib = 99;
+    return ia - ib;
   });
 
-  var hasMultipleRepos = repos.length > 1;
-  var hasAnyFilter = _issueFilterState.status || _issueFilterState.severity || _issueFilterState.repo;
-
-  var html = '<div class="issue-controls">';
-  html += '<div class="issue-summary">';
-  html += '<div class="issue-card' + (_issueFilterState.status === 'recurring' ? ' active' : '') + '" onclick="_toggleStatusFilter(\'recurring\')">' +
-    '<span class="badge badge-recurring">recurring</span> <span class="count">' + recurring + '</span></div>';
-  html += '<div class="issue-card' + (_issueFilterState.status === 'new' ? ' active' : '') + '" onclick="_toggleStatusFilter(\'new\')">' +
-    '<span class="badge badge-new">new</span> <span class="count">' + newCount + '</span></div>';
-  html += '<div class="issue-card' + (_issueFilterState.status === 'fixed' ? ' active' : '') + '" onclick="_toggleStatusFilter(\'fixed\')">' +
-    '<span class="badge badge-fixed">fixed</span> <span class="count">' + fixed + '</span></div>';
+  var activeStatus = _issuesFilterState.status;
+  var html = '<div class="issue-summary">';
+  html += '<div class="issue-card' + (activeStatus === 'recurring' ? ' active' : '') + '" onclick="_toggleStatusFilter(\'recurring\')">';
+  html += '<span class="badge badge-recurring">recurring</span> <span class="count">' + recurring + '</span></div>';
+  html += '<div class="issue-card' + (activeStatus === 'new' ? ' active' : '') + '" onclick="_toggleStatusFilter(\'new\')">';
+  html += '<span class="badge badge-new">new</span> <span class="count">' + newCount + '</span></div>';
+  html += '<div class="issue-card' + (activeStatus === 'fixed' ? ' active' : '') + '" onclick="_toggleStatusFilter(\'fixed\')">';
+  html += '<span class="badge badge-fixed">fixed</span> <span class="count">' + fixed + '</span></div>';
   html += '</div>';
 
   html += '<div class="issue-filters">';
-  html += '<select id="issue-severity-filter" class="filter-select" onchange="_onSeverityFilterChange(this.value)">';
-  html += '<option value="">All Severities</option>';
-  severities.forEach(function(s) {
-    html += '<option value="' + escapeHtml(s) + '"' + (_issueFilterState.severity === s ? ' selected' : '') + '>' + escapeHtml(s.charAt(0).toUpperCase() + s.slice(1)) + '</option>';
-  });
-  html += '</select>';
-  if (hasMultipleRepos) {
-    html += '<select id="issue-repo-filter" class="filter-select" onchange="_onRepoFilterChange(this.value)">';
-    html += '<option value="">All Repos</option>';
-    repos.forEach(function(r) {
-      html += '<option value="' + escapeHtml(r) + '"' + (_issueFilterState.repo === r ? ' selected' : '') + '>' + escapeHtml(repoShort(r)) + '</option>';
+  if (severities.length > 0) {
+    html += '<select class="filter-select" onchange="_issuesFilterState.severity = this.value || null; _applyIssuesFilter();">';
+    html += '<option value="">All Severities</option>';
+    severities.forEach(function(s) {
+      html += '<option value="' + escapeHtml(s) + '"' + (_issuesFilterState.severity === s ? ' selected' : '') + '>' + escapeHtml(s) + '</option>';
     });
     html += '</select>';
   }
-  if (hasAnyFilter) {
-    html += '<button class="btn filter-clear-btn" onclick="_clearAllIssueFilters()">Clear Filters</button>';
+  if (repos.length > 1) {
+    html += '<select class="filter-select" onchange="_issuesFilterState.repo = this.value || null; _applyIssuesFilter();">';
+    html += '<option value="">All Repos</option>';
+    repos.forEach(function(r) {
+      html += '<option value="' + escapeHtml(r) + '"' + (_issuesFilterState.repo === r ? ' selected' : '') + '>' + escapeHtml(r) + '</option>';
+    });
+    html += '</select>';
   }
-  html += '</div></div>';
-
-  if (filtered.length === 0) {
-    html += '<div class="empty-state">No issues match the current filters.</div>';
-    el.innerHTML = html;
-    return;
+  if (_issuesFilterState.status || _issuesFilterState.severity || _issuesFilterState.repo) {
+    html += '<button class="filter-clear" onclick="_issuesFilterState={status:null,severity:null,repo:null}; _applyIssuesFilter();">Clear filters</button>';
   }
+  html += '</div>';
 
-  html += '<table><thead><tr>'
-    + '<th>Status</th><th>Rule</th><th>Severity</th><th>Category</th>'
-    + (hasMultipleRepos ? '<th>Repo</th>' : '')
-    + '<th>File</th><th>Line</th><th>First Seen</th><th>Last Seen</th><th>Runs</th>'
-    + '<th>Fixed By</th>'
-    + '</tr></thead><tbody>'
-    + filtered.map(function(i) {
-      var firstSeen = i.first_seen_date ? formatDate(i.first_seen_date) : 'Run #' + i.first_seen_run;
-      var lastSeen = i.last_seen_date ? formatDate(i.last_seen_date) : 'Run #' + i.last_seen_run;
-      var fixedBy = '-';
-      if (i.fixed_by_pr) {
-        fixedBy = '<a href="'+escapeHtml(i.fixed_by_pr)+'" target="_blank">'+prLabel(i.fixed_by_pr)+'</a>';
-        if (i.fixed_by_session) {
-          var shortSid = i.fixed_by_session.slice(0, 8);
-          fixedBy += ' <span class="issue-id" title="Session: '+escapeHtml(i.fixed_by_session)+'">'+escapeHtml(shortSid)+'</span>';
-        }
-      } else if (i.fixed_by_session) {
-        fixedBy = '<span class="issue-id" title="'+escapeHtml(i.fixed_by_session)+'">'+escapeHtml(i.fixed_by_session.slice(0,8))+'...</span>';
-      }
-      return '<tr>'
-        + '<td><span class="badge '+badgeClass(i.status)+'">'+escapeHtml(i.status)+'</span></td>'
-        + '<td style="font-family:monospace;font-size:11px">'+escapeHtml(i.rule_id || i.fingerprint.slice(0,12)+'...')+'</td>'
-        + '<td><span class="badge '+badgeClass(i.severity_tier)+'">'+escapeHtml(i.severity_tier || '-')+'</span></td>'
-        + '<td>'+escapeHtml(i.cwe_family || '-')+'</td>'
-        + (hasMultipleRepos ? '<td style="font-size:11px">' + escapeHtml(repoShort(i.target_repo)) + '</td>' : '')
-        + '<td style="font-family:monospace;font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+escapeHtml(i.file)+'">'+(i.file ? escapeHtml(i.file.split('/').pop()) : '-')+'</td>'
-        + '<td>'+(i.start_line || '-')+'</td>'
-        + '<td title="Run #'+i.first_seen_run+'">'+firstSeen+'</td>'
-        + '<td title="Run #'+i.last_seen_run+'">'+lastSeen+'</td>'
-        + '<td>'+i.appearances+'x</td>'
-        + '<td>'+fixedBy+'</td>'
-        + '</tr>';
-    }).join('')
-    + '</tbody></table>';
+  html += '<div id="bulk-actions-bar" class="bulk-actions hidden"><span class="bulk-count">0 selected</span><button class="btn btn-sm" onclick="_bulkExportCsv()">Export CSV</button></div>';
+
+  var showRepo = repos.length > 1;
+  html += '<table><thead><tr>';
+  html += '<th><input type="checkbox" class="bulk-checkbox" onchange="_toggleBulkAll(this.checked)"></th>';
+  html += '<th>Status</th><th>Rule</th><th>Severity</th><th>Category</th>';
+  if (showRepo) html += '<th>Repo</th>';
+  html += '<th>File</th><th>Line</th><th>SLA</th><th>First Seen</th><th>Last Seen</th><th>Runs</th>';
+  html += '</tr></thead><tbody>';
+  filtered.forEach(function(i, idx) {
+    var firstDate = i.first_seen_date ? formatDate(i.first_seen_date) : 'Run #' + i.first_seen_run;
+    var lastDate = i.last_seen_date ? formatDate(i.last_seen_date) : 'Run #' + i.last_seen_run;
+    var rowClass = (i.sla_status === 'breached') ? ' class="sla-breached"' : '';
+    html += '<tr style="cursor:pointer"' + rowClass + ' onclick="_openDrawerByFp(\'' + escapeHtml(i.fingerprint) + '\')">';
+    html += '<td onclick="event.stopPropagation()"><input type="checkbox" class="bulk-checkbox issue-row-checkbox" data-fingerprint="' + escapeHtml(i.fingerprint) + '" onchange="_toggleBulkCheckbox(this.dataset.fingerprint)"' + (_bulkSelected.has(i.fingerprint) ? ' checked' : '') + '></td>';
+    html += '<td><span class="badge ' + badgeClass(i.status) + '">' + escapeHtml(i.status) + '</span></td>';
+    html += '<td style="font-family:monospace;font-size:11px">' + escapeHtml(i.rule_id || i.fingerprint.slice(0,12) + '...') + '</td>';
+    html += '<td><span class="badge ' + badgeClass(i.severity_tier) + '">' + (escapeHtml(i.severity_tier) || '-') + '</span></td>';
+    html += '<td>' + (escapeHtml(i.cwe_family) || '-') + '</td>';
+    if (showRepo) html += '<td>' + escapeHtml(repoShort(i.target_repo)) + '</td>';
+    html += '<td style="font-family:monospace;font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtml(i.file) + '">' + (i.file ? escapeHtml(i.file.split('/').pop()) : '-') + '</td>';
+    html += '<td>' + (i.start_line || '-') + '</td>';
+    var slaLabel = i.sla_status || 'unknown';
+    html += '<td><span class="badge ' + badgeClass(slaLabel) + '">' + escapeHtml(slaLabel) + '</span></td>';
+    html += '<td title="Run #' + i.first_seen_run + '">' + firstDate + '</td>';
+    html += '<td title="Run #' + i.last_seen_run + '">' + lastDate + '</td>';
+    html += '<td>' + i.appearances + 'x</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
   el.innerHTML = html;
 }
 
 function renderIssuesTable(issues, containerId, countId) {
-  _allIssuesForFilter = issues;
-  _issueContainerId = containerId;
-  _issueCountId = countId;
-  _issueFilterState = { status: null, severity: null, repo: null };
+  _issuesAllData = issues;
+  _issuesContainerId = containerId;
+  _issuesCountId = countId;
+  _issuesFilterState = { status: null, severity: null, repo: null };
+  _bulkSelected.clear();
   var el = document.getElementById(containerId);
-  var countEl = document.getElementById(countId);
-  if (countEl) countEl.textContent = issues.length;
   if (issues.length === 0) {
-    el.innerHTML = '<div class="empty-state">No issue fingerprints available yet.</div>';
+    var countEl = document.getElementById(countId);
+    if (countEl) countEl.textContent = 0;
+    el.innerHTML = '<div class="empty-state"><span class="empty-state-icon">&#x1F50D;</span><div class="empty-state-text">No issue fingerprints available yet.</div></div>';
     return;
   }
-  _renderIssuesFiltered(issues, issues, containerId, countId);
+  _renderIssuesContent(issues, issues, containerId, countId);
+}
+
+async function fetchAllPages(endpoint) {
+  let all = [];
+  let page = 1;
+  while (true) {
+    const res = await _authedFetch(API + endpoint + '?page=' + page + '&per_page=200');
+    if (!res.ok) throw new Error('API returned ' + res.status);
+    const data = await res.json();
+    all = all.concat(data.items || []);
+    if (page >= (data.pages || 1)) break;
+    page++;
+  }
+  return all;
+}
+
+let preflightTimer = null;
+function openDispatchModal(targetRepo) {
+  const modal = document.getElementById('dispatch-modal');
+  modal.classList.add('active');
+  document.getElementById('dispatch-result').className = 'dispatch-result';
+  document.getElementById('dispatch-result').textContent = '';
+  document.getElementById('btn-submit-dispatch').disabled = false;
+  document.getElementById('btn-submit-dispatch').textContent = 'Dispatch Workflow';
+  if (targetRepo) {
+    document.getElementById('d-target-repo').value = targetRepo;
+  }
+  checkPreflightStatic();
+  const firstInput = modal.querySelector('input, select, textarea');
+  if (firstInput) firstInput.focus();
+}
+
+function closeDispatchModal() {
+  document.getElementById('dispatch-modal').classList.remove('active');
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  const modal = document.getElementById('dispatch-modal');
+  if (modal) {
+    modal.addEventListener('click', function(e) {
+      if (e.target === this) closeDispatchModal();
+    });
+  }
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && modal && modal.classList.contains('active')) {
+      closeDispatchModal();
+    }
+  });
+});
+
+async function checkPreflightStatic() {
+  const targetRepo = document.getElementById('d-target-repo').value.trim();
+  const warning = document.getElementById('dispatch-warning');
+  warning.className = 'warning-banner';
+  warning.innerHTML = '';
+  if (!targetRepo) return;
+  clearTimeout(preflightTimer);
+  preflightTimer = setTimeout(async function() {
+    try {
+      if (!window._cachedRuns || !window._cachedPrs || !window._cachedSessions) return;
+      const data = await dispatchPreflight(targetRepo, window._cachedRuns, window._cachedPrs, window._cachedSessions);
+      if (data.open_prs > 0) {
+        var html = '<strong>' + data.open_prs + ' Devin PR' + (data.open_prs > 1 ? 's are' : ' is') +
+          ' still open</strong> for this repo. Consider merging or closing them before triggering a new run.';
+        if (data.prs && data.prs.length > 0) {
+          html += '<ul style="margin:8px 0 0 16px;padding:0;list-style:disc">';
+          data.prs.forEach(function(p) {
+            html += '<li><a href="' + escapeHtml(p.html_url) + '" target="_blank">#' + p.pr_number + '</a> ' + escapeHtml(p.title) + '</li>';
+          });
+          html += '</ul>';
+        }
+        warning.innerHTML = html;
+        warning.className = 'warning-banner visible';
+      }
+    } catch (e) {}
+  }, 500);
+}
+
+async function submitDispatchStatic() {
+  const btn = document.getElementById('btn-submit-dispatch');
+  const resultEl = document.getElementById('dispatch-result');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Dispatching...';
+  resultEl.className = 'dispatch-result';
+  resultEl.textContent = '';
+
+  const payload = {
+    target_repo: document.getElementById('d-target-repo').value.trim(),
+    languages: document.getElementById('d-languages').value.trim(),
+    queries: document.getElementById('d-queries').value,
+    severity_threshold: document.getElementById('d-severity').value,
+    batch_size: parseInt(document.getElementById('d-batch-size').value) || 5,
+    max_sessions: parseInt(document.getElementById('d-max-sessions').value) || 5,
+    default_branch: document.getElementById('d-default-branch').value.trim() || 'main',
+    include_paths: document.getElementById('d-include-paths').value.trim(),
+    exclude_paths: document.getElementById('d-exclude-paths').value.trim(),
+    persist_logs: document.getElementById('d-persist-logs').checked,
+    dry_run: document.getElementById('d-dry-run').checked,
+  };
+
+  if (!payload.target_repo) {
+    resultEl.textContent = 'Target repository URL is required.';
+    resultEl.className = 'dispatch-result error';
+    btn.disabled = false;
+    btn.textContent = 'Dispatch Workflow';
+    return;
+  }
+
+  const result = await dispatchWorkflow(payload);
+  if (result.success) {
+    resultEl.textContent = result.message + ' Check GitHub Actions for progress.';
+    resultEl.className = 'dispatch-result success';
+  } else {
+    resultEl.textContent = result.error || 'Failed to dispatch workflow.';
+    resultEl.className = 'dispatch-result error';
+  }
+  btn.disabled = false;
+  btn.textContent = 'Dispatch Workflow';
+}
+
+function initThemeToggle() {
+  var saved = localStorage.getItem('telemetry_theme');
+  if (saved === 'light') document.documentElement.setAttribute('data-theme', 'light');
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  _updateThemeIcon(btn);
+  btn.addEventListener('click', function() {
+    var isLight = document.documentElement.getAttribute('data-theme') === 'light';
+    if (isLight) {
+      document.documentElement.removeAttribute('data-theme');
+      localStorage.setItem('telemetry_theme', 'dark');
+    } else {
+      document.documentElement.setAttribute('data-theme', 'light');
+      localStorage.setItem('telemetry_theme', 'light');
+    }
+    _updateThemeIcon(btn);
+  });
+}
+function _updateThemeIcon(btn) {
+  var isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  btn.textContent = isLight ? '\u2600\ufe0f' : '\ud83c\udf19';
+  btn.title = isLight ? 'Switch to dark mode' : 'Switch to light mode';
+}
+
+function initDensityToggle() {
+  var saved = localStorage.getItem('telemetry_density');
+  if (saved === 'compact') document.body.classList.add('density-compact');
+  var btn = document.getElementById('density-toggle');
+  if (!btn) return;
+  if (saved === 'compact') btn.classList.add('active');
+  btn.addEventListener('click', function() {
+    var isCompact = document.body.classList.toggle('density-compact');
+    btn.classList.toggle('active', isCompact);
+    localStorage.setItem('telemetry_density', isCompact ? 'compact' : 'default');
+  });
+}
+
+function showSkeletonMetrics(containerId, count) {
+  var el = document.getElementById(containerId);
+  if (!el) return;
+  var html = '';
+  for (var i = 0; i < (count || 6); i++) html += '<div class="skeleton skeleton-metric"></div>';
+  el.innerHTML = html;
+}
+
+function showSkeletonChart(containerId) {
+  var el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = '<div class="skeleton skeleton-chart"></div>';
+}
+
+function showSkeletonTable(containerId, rows) {
+  var el = document.getElementById(containerId);
+  if (!el) return;
+  var html = '';
+  for (var i = 0; i < (rows || 5); i++) html += '<div class="skeleton skeleton-row"></div>';
+  el.innerHTML = html;
+}
+
+function showSkeletonBars(containerId, count) {
+  var el = document.getElementById(containerId);
+  if (!el) return;
+  var html = '';
+  for (var i = 0; i < (count || 4); i++) {
+    var w = 40 + Math.random() * 50;
+    html += '<div class="skeleton skeleton-bar" style="width:' + w.toFixed(0) + '%"></div>';
+  }
+  el.innerHTML = html;
+}
+
+function showAllSkeletons() {
+  showSkeletonMetrics('metrics-grid');
+  showSkeletonChart('trend-chart');
+  showSkeletonBars('severity-chart');
+  showSkeletonBars('category-chart');
+  var tables = ['repos-table-container','runs-table-container','sessions-table-container','prs-table-container','issues-table-container'];
+  tables.forEach(function(id) { showSkeletonTable(id); });
+}
+
+var _drawerIssue = null;
+function _openDrawerByFp(fingerprint) {
+  var issue = _issuesAllData.find(function(i) { return i.fingerprint === fingerprint; });
+  if (issue) openIssueDrawer(issue);
+}
+function openIssueDrawer(issue) {
+  _drawerIssue = issue;
+  var overlay = document.getElementById('drawer-overlay');
+  var drawer = document.getElementById('issue-drawer');
+  if (!overlay || !drawer) return;
+  overlay.classList.add('active');
+  drawer.classList.add('active');
+  var body = drawer.querySelector('.drawer-body');
+  if (!body) return;
+  var html = '<div class="drawer-section">';
+  html += '<div class="drawer-section-title">Details</div>';
+  html += _drawerField('Rule', issue.rule_id || '-');
+  html += _drawerField('Severity', '<span class="badge ' + badgeClass(issue.severity_tier) + '">' + escapeHtml(issue.severity_tier || '-') + '</span>');
+  html += _drawerField('Status', '<span class="badge ' + badgeClass(issue.status) + '">' + escapeHtml(issue.status) + '</span>');
+  html += _drawerField('Category', escapeHtml(issue.cwe_family || '-'));
+  html += _drawerField('File', '<span style="font-family:monospace;font-size:11px">' + escapeHtml(issue.file || '-') + '</span>');
+  html += _drawerField('Line', issue.start_line || '-');
+  html += _drawerField('Fingerprint', '<span style="font-family:monospace;font-size:10px">' + escapeHtml(issue.fingerprint || '-') + '</span>');
+  if (issue.description) html += _drawerField('Description', escapeHtml(issue.description));
+  if (issue.resolution) html += _drawerField('Resolution', escapeHtml(issue.resolution));
+  html += '</div>';
+  html += '<div class="drawer-section">';
+  html += '<div class="drawer-section-title">History (' + (issue.appearances || 0) + ' appearances)</div>';
+  html += _drawerField('First Seen', issue.first_seen_date ? formatDate(issue.first_seen_date) : 'Run #' + issue.first_seen_run);
+  html += _drawerField('Last Seen', issue.last_seen_date ? formatDate(issue.last_seen_date) : 'Run #' + issue.last_seen_run);
+  if (issue.target_repo) html += _drawerField('Repository', '<a href="' + escapeHtml(issue.target_repo) + '" target="_blank">' + escapeHtml(repoShort(issue.target_repo)) + '</a>');
+  if (issue.run_numbers && issue.run_numbers.length > 0) {
+    html += _drawerField('Runs', issue.run_numbers.map(function(n) { return '#' + n; }).join(', '));
+  }
+  if (issue.fix_duration_hours != null) html += _drawerField('Fix Duration', issue.fix_duration_hours + 'h');
+  html += '</div>';
+  if (issue.sla_status && issue.sla_status !== 'unknown') {
+    html += '<div class="drawer-section">';
+    html += '<div class="drawer-section-title">SLA</div>';
+    html += _drawerField('Status', '<span class="badge ' + badgeClass(issue.sla_status) + '">' + escapeHtml(issue.sla_status) + '</span>');
+    if (issue.sla_limit_hours) html += _drawerField('SLA Limit', issue.sla_limit_hours + 'h');
+    if (issue.sla_hours_elapsed != null) html += _drawerField('Time Elapsed', issue.sla_hours_elapsed + 'h');
+    if (issue.sla_hours_remaining != null) {
+      var remainColor = issue.sla_hours_remaining < 0 ? 'var(--accent-red)' : (issue.sla_status === 'at-risk' ? 'var(--accent-orange)' : 'var(--accent-green)');
+      html += _drawerField('Time Remaining', '<span style="color:' + remainColor + '">' + issue.sla_hours_remaining + 'h</span>');
+    }
+    html += '</div>';
+  }
+  body.innerHTML = html;
+}
+function _drawerField(label, value) {
+  return '<div class="drawer-field"><div class="drawer-field-label">' + label + '</div><div class="drawer-field-value">' + value + '</div></div>';
+}
+function closeIssueDrawer() {
+  var overlay = document.getElementById('drawer-overlay');
+  var drawer = document.getElementById('issue-drawer');
+  if (overlay) overlay.classList.remove('active');
+  if (drawer) drawer.classList.remove('active');
+  _drawerIssue = null;
+}
+
+var _bulkSelected = new Set();
+function _toggleBulkCheckbox(fingerprint) {
+  if (_bulkSelected.has(fingerprint)) _bulkSelected.delete(fingerprint);
+  else _bulkSelected.add(fingerprint);
+  _updateBulkActions();
+}
+function _toggleBulkAll(checked) {
+  var checkboxes = document.querySelectorAll('.issue-row-checkbox');
+  checkboxes.forEach(function(cb) {
+    cb.checked = checked;
+    var fp = cb.dataset.fingerprint;
+    if (checked) _bulkSelected.add(fp);
+    else _bulkSelected.delete(fp);
+  });
+  _updateBulkActions();
+}
+function _updateBulkActions() {
+  var bar = document.getElementById('bulk-actions-bar');
+  if (!bar) return;
+  var count = _bulkSelected.size;
+  if (count > 0) {
+    bar.classList.remove('hidden');
+    bar.querySelector('.bulk-count').textContent = count + ' selected';
+  } else {
+    bar.classList.add('hidden');
+  }
+}
+function _bulkExportCsv() {
+  if (_bulkSelected.size === 0) return;
+  var selected = _issuesAllData.filter(function(i) { return _bulkSelected.has(i.fingerprint); });
+  _downloadIssuesCsv(selected, 'issues-selected.csv');
+}
+
+function exportAllIssuesCsv() {
+  var data = _issuesAllData;
+  if (!data || data.length === 0) return;
+  var filtered = data;
+  if (_issuesFilterState.status) {
+    filtered = filtered.filter(function(i) { return i.status === _issuesFilterState.status; });
+  }
+  if (_issuesFilterState.severity) {
+    filtered = filtered.filter(function(i) { return (i.severity_tier || '').toLowerCase() === _issuesFilterState.severity; });
+  }
+  if (_issuesFilterState.repo) {
+    filtered = filtered.filter(function(i) { return repoShort(i.target_repo) === _issuesFilterState.repo; });
+  }
+  _downloadIssuesCsv(filtered, 'issues-export.csv');
+}
+
+function _downloadIssuesCsv(items, filename) {
+  var headers = ['rule_id','severity_tier','status','cwe_family','file','start_line','appearances','first_seen_date','last_seen_date','target_repo','fingerprint'];
+  var csv = headers.join(',') + '\n';
+  items.forEach(function(i) {
+    csv += headers.map(function(h) { return '"' + String(i[h] || '').replace(/"/g, '""') + '"'; }).join(',') + '\n';
+  });
+  var blob = new Blob([csv], { type: 'text/csv' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
 }
 
 var _registryCallbacks = {};
@@ -438,199 +726,18 @@ function _submitAddRepo() {
   }
 }
 
-var _trendMode = 'repo';
-var _trendSeverityHidden = {};
-var _trendContainer = null;
-var _trendRuns = null;
-var TREND_COLORS = ['#58a6ff','#3fb950','#f85149','#d29922','#bc8cff','#39d2c0','#f778ba','#a5d6ff'];
-var SEVERITY_COLORS = { critical: '#f85149', high: '#d29922', medium: '#bc8cff', low: '#58a6ff' };
-
-function _setTrendMode(mode, pageId) {
-  _trendMode = mode;
-  _renderTrendChartInternal(_trendContainer, _trendRuns, pageId);
-}
-
-function _toggleTrendSeverity(sev, pageId) {
-  _trendSeverityHidden[sev] = !_trendSeverityHidden[sev];
-  _renderTrendChartInternal(_trendContainer, _trendRuns, pageId);
-}
-
-function _buildTrendSvg(series, options) {
-  var opts = options || {};
-  var yLabel = opts.yLabel || 'Issues';
-  var legendSpacing = opts.legendSpacing || 180;
-
-  if (series.length === 0) return '<div class="empty-state">No run data available yet</div>';
-
-  var allRuns = [], allVals = [];
-  series.forEach(function(s) {
-    s.points.forEach(function(p) { allRuns.push(p.run); allVals.push(p.val); });
+function initTableScrollDetection() {
+  document.querySelectorAll('.table-scroll-wrapper').forEach(function(wrapper) {
+    var check = function() {
+      var hasOverflow = wrapper.scrollWidth > wrapper.clientWidth;
+      wrapper.classList.toggle('has-overflow', hasOverflow);
+      wrapper.classList.toggle('scrolled-right', wrapper.scrollLeft + wrapper.clientWidth >= wrapper.scrollWidth - 2);
+    };
+    check();
+    wrapper.addEventListener('scroll', check);
+    window.addEventListener('resize', check);
   });
-  var maxY = Math.max.apply(null, allVals.concat([1]));
-  var W = 800, H = 280, PL = 55, PR = 20, PT = 20, PB = 50;
-  var pW = W - PL - PR, pH = H - PT - PB;
-  var aS = Array.from(new Set(allRuns)).sort(function(a, b) { return a - b; });
-  if (aS.length === 0) return '<div class="empty-state">No run data available yet</div>';
-  var xS = aS.length > 1
-    ? function(v) { return PL + (aS.indexOf(v) / (aS.length - 1)) * pW; }
-    : function() { return PL + pW / 2; };
-  var yS = function(v) { return PT + pH - (v / maxY) * pH; };
-
-  var grid = '';
-  for (var i = 0; i <= 5; i++) {
-    var val = Math.round((maxY / 5) * i), y = yS(val);
-    grid += '<line x1="'+PL+'" y1="'+y+'" x2="'+(W-PR)+'" y2="'+y+'" stroke="#30363d" stroke-dasharray="4,4"/>';
-    grid += '<text x="'+(PL-8)+'" y="'+(y+4)+'" fill="#8b949e" font-size="11" text-anchor="end">'+val+'</text>';
-  }
-
-  var xLabels = '', maxL = Math.min(15, Math.max(5, Math.floor(W / 60)));
-  var step = Math.max(1, Math.ceil(aS.length / maxL));
-  for (var xi = 0; xi < aS.length; xi += step) {
-    xLabels += '<text x="'+xS(aS[xi])+'" y="'+(H-PB+20)+'" fill="#8b949e" font-size="11" text-anchor="middle">#'+aS[xi]+'</text>';
-  }
-
-  var lines = '', dots = '';
-  series.forEach(function(s) {
-    var c = s.color, pts = s.points;
-    if (pts.length === 1) {
-      dots += '<circle cx="'+xS(pts[0].run)+'" cy="'+yS(pts[0].val)+'" r="5" fill="'+c+'"><title>'+escapeHtml(s.label)+' Run #'+pts[0].run+': '+pts[0].val+'</title></circle>';
-    } else {
-      var d = pts.map(function(p, idx) {
-        return (idx === 0 ? 'M' : 'L') + xS(p.run).toFixed(1) + ',' + yS(p.val).toFixed(1);
-      }).join(' ');
-      lines += '<path d="'+d+'" fill="none" stroke="'+c+'" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
-      pts.forEach(function(p) {
-        dots += '<circle cx="'+xS(p.run)+'" cy="'+yS(p.val)+'" r="4" fill="'+c+'" stroke="var(--bg-secondary)" stroke-width="2"><title>'+escapeHtml(s.label)+' Run #'+p.run+': '+p.val+'</title></circle>';
-      });
-    }
-  });
-
-  var showLegend = series.length > 1;
-  var leg = '';
-  if (showLegend) {
-    series.forEach(function(s, idx) {
-      var x = PL + idx * legendSpacing;
-      var displayLabel = s.label.length > 20 ? escapeHtml(s.label.slice(0, 20)) + '...' : escapeHtml(s.label);
-      leg += '<rect x="'+x+'" y="'+(H-10)+'" width="12" height="12" rx="2" fill="'+s.color+'"/>';
-      leg += '<text x="'+(x+16)+'" y="'+H+'" fill="#8b949e" font-size="11">'+displayLabel+'</text>';
-    });
-  }
-
-  var aLY = PT + pH / 2;
-  return '<svg viewBox="0 0 '+W+' '+(H+(showLegend?20:0))+'" width="100%" style="max-height:340px" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">'
-    + grid
-    + '<line x1="'+PL+'" y1="'+PT+'" x2="'+PL+'" y2="'+(PT+pH)+'" stroke="#30363d"/>'
-    + '<line x1="'+PL+'" y1="'+(PT+pH)+'" x2="'+(W-PR)+'" y2="'+(PT+pH)+'" stroke="#30363d"/>'
-    + '<text x="'+(PL+pW/2)+'" y="'+(H-PB+38)+'" fill="#6e7681" font-size="12" text-anchor="middle">Action Runs</text>'
-    + '<text x="14" y="'+aLY+'" fill="#6e7681" font-size="12" text-anchor="middle" transform="rotate(-90,14,'+aLY+')">'+yLabel+'</text>'
-    + xLabels + lines + dots + leg + '</svg>';
 }
-
-function _buildRepoTrendSvg(runs) {
-  var byRepo = {};
-  for (var ri = 0; ri < runs.length; ri++) {
-    var r = runs[ri], repo = repoShort(r.target_repo || '');
-    if (!repo || repo === '-') continue;
-    if (!byRepo[repo]) byRepo[repo] = [];
-    byRepo[repo].push({ run: r.run_number || 0, val: r.issues_found || 0 });
-  }
-  var repos = Object.keys(byRepo);
-  if (repos.length === 0) return '<div class="empty-state">No run data available yet</div>';
-  for (var k = 0; k < repos.length; k++) byRepo[repos[k]].sort(function(a, b) { return a.run - b.run; });
-
-  var series = repos.map(function(repo, idx) {
-    return { label: repo, color: TREND_COLORS[idx % TREND_COLORS.length], points: byRepo[repo] };
-  });
-  return _buildTrendSvg(series, { yLabel: 'Issues Found', legendSpacing: 180 });
-}
-
-function _buildSeverityTrendSvg(runs) {
-  var sevs = ['critical', 'high', 'medium', 'low'];
-  var active = sevs.filter(function(s) { return !_trendSeverityHidden[s]; });
-  if (active.length === 0) return '<div class="empty-state">All severities hidden. Toggle some on.</div>';
-
-  var bySev = {};
-  active.forEach(function(s) { bySev[s] = {}; });
-  var allR = [];
-  for (var ri = 0; ri < runs.length; ri++) {
-    var run = runs[ri], rn = run.run_number || 0;
-    allR.push(rn);
-    var bd = run.severity_breakdown || {};
-    active.forEach(function(s) {
-      if (!bySev[s][rn]) bySev[s][rn] = 0;
-      bySev[s][rn] += bd[s] || 0;
-    });
-  }
-  var aS = Array.from(new Set(allR)).sort(function(a, b) { return a - b; });
-  if (aS.length === 0) return '<div class="empty-state">No run data available yet</div>';
-
-  var series = active.map(function(sev) {
-    var pts = aS.map(function(rn) { return { run: rn, val: bySev[sev][rn] || 0 }; });
-    return { label: sev.charAt(0).toUpperCase() + sev.slice(1), color: SEVERITY_COLORS[sev] || '#8b949e', points: pts };
-  });
-  return _buildTrendSvg(series, { yLabel: 'Issues', legendSpacing: 120 });
-}
-
-function _renderTrendChartInternal(container, runs, pageId) {
-  if (!runs || runs.length === 0) { container.innerHTML = '<div class="empty-state">No run data available yet</div>'; return; }
-  var h = '<div class="trend-controls"><div class="trend-toggle">'
-    + '<button class="btn trend-btn'+(_trendMode==='repo'?' active':'')+'" onclick="_setTrendMode(\'repo\',\''+pageId+'\')">By Repo</button>'
-    + '<button class="btn trend-btn'+(_trendMode==='severity'?' active':'')+'" onclick="_setTrendMode(\'severity\',\''+pageId+'\')">By Severity</button></div>';
-  if (_trendMode === 'severity') {
-    h += '<div class="trend-severity-toggles">';
-    ['critical','high','medium','low'].forEach(function(sev) {
-      var c = SEVERITY_COLORS[sev]||'#8b949e', hid = _trendSeverityHidden[sev];
-      h += '<button class="btn trend-sev-btn'+(hid?' hidden-sev':'')+'" style="border-color:'+c+';'+(hid?'opacity:0.4;':'color:'+c+';')+'" onclick="_toggleTrendSeverity(\''+sev+'\',\''+pageId+'\')">' + sev.charAt(0).toUpperCase()+sev.slice(1) + '</button>';
-    });
-    h += '</div>';
-  }
-  h += '</div>';
-  container.innerHTML = h + (_trendMode === 'severity' ? _buildSeverityTrendSvg(runs) : _buildRepoTrendSvg(runs));
-}
-
-function renderTrendChart(container, runs, pageId) {
-  _trendContainer = container;
-  _trendRuns = runs;
-  _trendMode = 'repo';
-  _trendSeverityHidden = {};
-  _renderTrendChartInternal(container, runs, pageId || 'dash');
-}
-
-let preflightTimer = null;
-function openDispatchModal(targetRepo) {
-  const modal = document.getElementById('dispatch-modal');
-  modal.classList.add('active');
-  document.getElementById('dispatch-result').className = 'dispatch-result';
-  document.getElementById('dispatch-result').textContent = '';
-  document.getElementById('btn-submit-dispatch').disabled = false;
-  document.getElementById('btn-submit-dispatch').textContent = 'Dispatch Workflow';
-  if (targetRepo) {
-    document.getElementById('d-target-repo').value = targetRepo;
-  }
-  checkPreflightStatic();
-  const firstInput = modal.querySelector('input, select, textarea');
-  if (firstInput) firstInput.focus();
-}
-
-function closeDispatchModal() {
-  document.getElementById('dispatch-modal').classList.remove('active');
-}
-
-document.addEventListener('DOMContentLoaded', function() {
-  const modal = document.getElementById('dispatch-modal');
-  if (modal) {
-    modal.addEventListener('click', function(e) {
-      if (e.target === this) closeDispatchModal();
-    });
-  }
-  document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') {
-      if (modal && modal.classList.contains('active')) closeDispatchModal();
-      var settingsModal = document.getElementById('settings-modal');
-      if (settingsModal && settingsModal.classList.contains('active')) closeSettingsModal();
-    }
-  });
-});
 
 function openSettingsModal() {
   const modal = document.getElementById('settings-modal');
@@ -656,72 +763,27 @@ function saveSettings() {
   if (typeof init === 'function') init();
 }
 
-async function checkPreflightStatic() {
-  const targetRepo = document.getElementById('d-target-repo').value.trim();
-  const warning = document.getElementById('dispatch-warning');
-  warning.className = 'warning-banner';
-  warning.innerHTML = '';
-  if (!targetRepo) return;
-  clearTimeout(preflightTimer);
-  preflightTimer = setTimeout(async function() {
-    try {
-      if (!window._cachedRuns || !window._cachedPrs || !window._cachedSessions) return;
-      const data = await dispatchPreflight(targetRepo, window._cachedRuns, window._cachedPrs, window._cachedSessions);
-      if (data.open_prs > 0) {
-        var html = '<strong>' + data.open_prs + ' Devin PR' + (data.open_prs > 1 ? 's are' : ' is') +
-          ' still open</strong> for this repo. Consider merging or closing them before triggering a new run.';
-        if (data.prs && data.prs.length > 0) {
-          html += '<ul style="margin:8px 0 0 16px;padding:0;list-style:disc">';
-          data.prs.forEach(function(p) {
-            html += '<li><a href="' + escapeHtml(p.html_url) + '" target="_blank">#' + p.pr_number + '</a> ' + escapeHtml(p.title) + '</li>';
-          });
-          html += '</ul>';
-        }
-        warning.innerHTML = html;
-        warning.className = 'warning-banner visible';
-      }
-    } catch (e) {}
-  }, 500);
-}
-
-async function submitDispatchStatic() {
-  const btn = document.getElementById('btn-submit-dispatch');
-  const resultEl = document.getElementById('dispatch-result');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Dispatching...';
-  resultEl.className = 'dispatch-result';
-  resultEl.textContent = '';
-
-  const payload = {
-    target_repo: document.getElementById('d-target-repo').value.trim(),
-    languages: document.getElementById('d-languages').value.trim(),
-    queries: document.getElementById('d-queries').value,
-    severity_threshold: document.getElementById('d-severity').value,
-    batch_size: parseInt(document.getElementById('d-batch-size').value) || 5,
-    max_sessions: parseInt(document.getElementById('d-max-sessions').value) || 5,
-    default_branch: document.getElementById('d-default-branch').value.trim() || 'main',
-    include_paths: document.getElementById('d-include-paths').value.trim(),
-    exclude_paths: document.getElementById('d-exclude-paths').value.trim(),
-    persist_logs: document.getElementById('d-persist-logs').checked,
-    dry_run: document.getElementById('d-dry-run').checked,
-  };
-
-  if (!payload.target_repo) {
-    resultEl.textContent = 'Target repository URL is required.';
-    resultEl.className = 'dispatch-result error';
-    btn.disabled = false;
-    btn.textContent = 'Dispatch Workflow';
-    return;
+document.addEventListener('DOMContentLoaded', function() {
+  initThemeToggle();
+  initDensityToggle();
+  var overlay = document.getElementById('drawer-overlay');
+  if (overlay) {
+    overlay.addEventListener('click', function() { closeIssueDrawer(); });
   }
-
-  const result = await dispatchWorkflow(payload);
-  if (result.success) {
-    resultEl.textContent = result.message + ' Check GitHub Actions for progress.';
-    resultEl.className = 'dispatch-result success';
-  } else {
-    resultEl.textContent = result.error || 'Failed to dispatch workflow.';
-    resultEl.className = 'dispatch-result error';
+  var dispatchModal = document.getElementById('dispatch-modal');
+  if (dispatchModal) {
+    dispatchModal.addEventListener('click', function(e) {
+      if (e.target === this) closeDispatchModal();
+    });
   }
-  btn.disabled = false;
-  btn.textContent = 'Dispatch Workflow';
-}
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      closeIssueDrawer();
+      closeDispatchModal();
+      _closeAddRepoModal();
+      var settingsModal = document.getElementById('settings-modal');
+      if (settingsModal && settingsModal.classList.contains('active')) closeSettingsModal();
+    }
+  });
+  setTimeout(initTableScrollDetection, 500);
+});
