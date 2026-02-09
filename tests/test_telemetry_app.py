@@ -23,7 +23,10 @@ os.environ["TELEMETRY_DB_PATH"] = _test_db_path
 import database
 database.DB_PATH = pathlib.Path(_test_db_path)
 from database import get_connection, init_db, insert_run, upsert_pr
-from app import app, _paginate, _load_registry, _save_registry, _load_orchestrator_state, _load_orchestrator_registry
+from app import app
+from helpers import _paginate
+from routes.registry import _load_registry, _save_registry, REGISTRY_PATH
+from routes.orchestrator import _load_orchestrator_state, _load_orchestrator_registry
 
 
 def _seed_db(runs=None, prs=None):
@@ -203,7 +206,7 @@ class TestApiEndpoints:
         assert data["total_runs"] == 1
 
     def test_api_registry_get(self, client):
-        with patch("app.REGISTRY_PATH", Path("/nonexistent")):
+        with patch("routes.registry.REGISTRY_PATH", Path("/nonexistent")):
             resp = client.get("/api/registry")
             assert resp.status_code == 200
             data = resp.get_json()
@@ -237,7 +240,7 @@ class TestApiEndpoints:
 
 class TestRegistryEndpoints:
     def test_load_registry_missing_file(self):
-        with patch("app.REGISTRY_PATH", Path("/nonexistent/file.json")):
+        with patch("routes.registry.REGISTRY_PATH", Path("/nonexistent/file.json")):
             data = _load_registry()
             assert data["repos"] == []
             assert data["version"] == "1.0"
@@ -246,7 +249,7 @@ class TestRegistryEndpoints:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump({"version": "1.0", "repos": [{"repo": "test"}]}, f)
             f.flush()
-            with patch("app.REGISTRY_PATH", Path(f.name)):
+            with patch("routes.registry.REGISTRY_PATH", Path(f.name)):
                 data = _load_registry()
                 assert len(data["repos"]) == 1
             os.unlink(f.name)
@@ -255,7 +258,7 @@ class TestRegistryEndpoints:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             f.write("{}")
             f.flush()
-            with patch("app.REGISTRY_PATH", Path(f.name)):
+            with patch("routes.registry.REGISTRY_PATH", Path(f.name)):
                 _save_registry({"version": "1.0", "repos": [{"repo": "a"}]})
                 data = _load_registry()
                 assert data["repos"] == [{"repo": "a"}]
@@ -385,7 +388,7 @@ class TestOrchestratorEndpoints:
         assert "entries" in data
 
     def test_orchestrator_plan_runs(self, client):
-        with patch("subprocess.run") as mock_run:
+        with patch("routes.orchestrator.subprocess.run") as mock_run:
             mock_run.return_value = type("R", (), {
                 "returncode": 0,
                 "stdout": json.dumps({"eligible_issues": 0, "batches": []}),
@@ -395,7 +398,7 @@ class TestOrchestratorEndpoints:
             assert resp.status_code == 200
 
     def test_orchestrator_plan_failure(self, client):
-        with patch("subprocess.run") as mock_run:
+        with patch("routes.orchestrator.subprocess.run") as mock_run:
             mock_run.return_value = type("R", (), {
                 "returncode": 1,
                 "stdout": "",
@@ -433,7 +436,7 @@ class TestOrchestratorEndpoints:
         monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         monkeypatch.delenv("ACTION_REPO", raising=False)
-        with patch("subprocess.run") as mock_run:
+        with patch("routes.orchestrator.subprocess.run") as mock_run:
             mock_run.return_value = type("R", (), {
                 "returncode": 0,
                 "stdout": json.dumps({"dry_run": True, "total_repos": 0, "results": []}),
@@ -447,14 +450,14 @@ class TestOrchestratorEndpoints:
             assert resp.status_code == 200
 
     def test_load_orchestrator_state_empty_db(self):
-        with patch("app._ORCHESTRATOR_STATE_PATH") as mock_path:
+        with patch("routes.orchestrator._ORCHESTRATOR_STATE_PATH") as mock_path:
             mock_path.exists.return_value = False
             state = _load_orchestrator_state()
             assert state["last_cycle"] is None
             assert state["dispatch_history"] == {}
 
     def test_load_orchestrator_registry_missing_file(self):
-        with patch("app._ORCHESTRATOR_REGISTRY_PATH") as mock_path:
+        with patch("routes.orchestrator._ORCHESTRATOR_REGISTRY_PATH") as mock_path:
             mock_path.exists.return_value = False
             reg = _load_orchestrator_registry()
             assert reg["repos"] == []
@@ -489,7 +492,7 @@ class TestOrchestratorEndpoints:
     def test_orchestrator_cycle_dry_run(self, client, monkeypatch):
         monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
-        with patch("subprocess.run") as mock_run:
+        with patch("routes.orchestrator.subprocess.run") as mock_run:
             mock_run.return_value = type("R", (), {
                 "returncode": 0,
                 "stdout": json.dumps({"scan": {"triggered": 0}, "dispatch": {"sessions_created": 0}}),
@@ -505,7 +508,7 @@ class TestOrchestratorEndpoints:
             assert "scan" in data
 
     def test_orchestrator_config_get(self, client):
-        with patch("app._load_orchestrator_registry", return_value={"orchestrator": {"global_session_limit": 10}, "repos": []}):
+        with patch("routes.orchestrator._load_orchestrator_registry", return_value={"orchestrator": {"global_session_limit": 10}, "repos": []}):
             resp = client.get("/api/orchestrator/config")
             assert resp.status_code == 200
             data = resp.get_json()
@@ -515,7 +518,7 @@ class TestOrchestratorEndpoints:
             assert "alert_on_objective_met" in data
 
     def test_orchestrator_config_get_defaults(self, client):
-        with patch("app._load_orchestrator_registry", return_value={"orchestrator": {}, "repos": []}):
+        with patch("routes.orchestrator._load_orchestrator_registry", return_value={"orchestrator": {}, "repos": []}):
             resp = client.get("/api/orchestrator/config")
             assert resp.status_code == 200
             data = resp.get_json()
@@ -549,8 +552,8 @@ class TestOrchestratorEndpoints:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump({"orchestrator": {"global_session_limit": 20}, "repos": []}, f)
             f.flush()
-            with patch("app._ORCHESTRATOR_REGISTRY_PATH", Path(f.name)), \
-                 patch("app._load_orchestrator_registry", return_value={"orchestrator": {"global_session_limit": 20}, "repos": []}):
+            with patch("routes.orchestrator._ORCHESTRATOR_REGISTRY_PATH", Path(f.name)), \
+                 patch("routes.orchestrator._load_orchestrator_registry", return_value={"orchestrator": {"global_session_limit": 20}, "repos": []}):
                 resp = client.put(
                     "/api/orchestrator/config",
                     headers={"X-API-Key": "test-key"},
@@ -568,8 +571,8 @@ class TestOrchestratorEndpoints:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump({"orchestrator": {}, "repos": []}, f)
             f.flush()
-            with patch("app._ORCHESTRATOR_REGISTRY_PATH", Path(f.name)), \
-                 patch("app._load_orchestrator_registry", return_value={"orchestrator": {}, "repos": []}):
+            with patch("routes.orchestrator._ORCHESTRATOR_REGISTRY_PATH", Path(f.name)), \
+                 patch("routes.orchestrator._load_orchestrator_registry", return_value={"orchestrator": {}, "repos": []}):
                 resp = client.put(
                     "/api/orchestrator/config",
                     headers={"X-API-Key": "test-key"},
@@ -612,7 +615,7 @@ class TestRegistryRepoEndpoints:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump({"version": "1.0", "repos": []}, f)
             f.flush()
-            with patch("app.REGISTRY_PATH", Path(f.name)):
+            with patch("routes.registry.REGISTRY_PATH", Path(f.name)):
                 resp = client.post(
                     "/api/registry/repos",
                     headers={"X-API-Key": "test-key"},
@@ -644,7 +647,7 @@ class TestRegistryRepoEndpoints:
                 "repos": [{"repo": "https://github.com/test/repo", "enabled": True, "importance": "low"}],
             }, f)
             f.flush()
-            with patch("app.REGISTRY_PATH", Path(f.name)):
+            with patch("routes.registry.REGISTRY_PATH", Path(f.name)):
                 resp = client.put(
                     "/api/registry/repos/0",
                     headers={"X-API-Key": "test-key"},
@@ -664,7 +667,7 @@ class TestRegistryRepoEndpoints:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump({"version": "1.0", "repos": []}, f)
             f.flush()
-            with patch("app.REGISTRY_PATH", Path(f.name)):
+            with patch("routes.registry.REGISTRY_PATH", Path(f.name)):
                 resp = client.put(
                     "/api/registry/repos/5",
                     headers={"X-API-Key": "test-key"},
@@ -687,7 +690,7 @@ class TestRegistryRepoEndpoints:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump({"version": "1.0", "repos": [{"repo": "test"}]}, f)
             f.flush()
-            with patch("app.REGISTRY_PATH", Path(f.name)):
+            with patch("routes.registry.REGISTRY_PATH", Path(f.name)):
                 resp = client.put(
                     "/api/registry/repos/0",
                     headers={"X-API-Key": "test-key"},
@@ -701,7 +704,7 @@ class TestRegistryRepoEndpoints:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump({"version": "1.0", "repos": []}, f)
             f.flush()
-            with patch("app.REGISTRY_PATH", Path(f.name)):
+            with patch("routes.registry.REGISTRY_PATH", Path(f.name)):
                 resp = client.post(
                     "/api/registry/repos",
                     headers={"X-API-Key": "test-key"},
@@ -717,7 +720,7 @@ class TestRegistryRepoEndpoints:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump({"version": "1.0", "repos": []}, f)
             f.flush()
-            with patch("app.REGISTRY_PATH", Path(f.name)):
+            with patch("routes.registry.REGISTRY_PATH", Path(f.name)):
                 resp = client.post(
                     "/api/registry/repos",
                     headers={"X-API-Key": "test-key"},
@@ -733,7 +736,7 @@ class TestRegistryRepoEndpoints:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump({"version": "1.0", "repos": [{"repo": "test"}]}, f)
             f.flush()
-            with patch("app.REGISTRY_PATH", Path(f.name)):
+            with patch("routes.registry.REGISTRY_PATH", Path(f.name)):
                 resp = client.put(
                     "/api/registry/repos/0",
                     headers={"X-API-Key": "test-key"},
@@ -854,8 +857,8 @@ class TestOrchestratorObjectives:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump({"orchestrator": {}, "repos": []}, f)
             f.flush()
-            with patch("app._ORCHESTRATOR_REGISTRY_PATH", Path(f.name)), \
-                 patch("app._load_orchestrator_registry", return_value={"orchestrator": {}, "repos": []}):
+            with patch("routes.orchestrator._ORCHESTRATOR_REGISTRY_PATH", Path(f.name)), \
+                 patch("routes.orchestrator._load_orchestrator_registry", return_value={"orchestrator": {}, "repos": []}):
                 resp = client.put(
                     "/api/orchestrator/config",
                     headers={"X-API-Key": "test-key"},
@@ -916,3 +919,57 @@ class TestAuditLogEndpoints:
         data = resp.get_json()
         assert "entries" in data
         assert "file" in data
+
+
+class TestServerSideSessions:
+    def test_session_type_is_cachelib(self):
+        assert app.config["SESSION_TYPE"] == "cachelib"
+
+    def test_session_cookie_httponly(self):
+        assert app.config["SESSION_COOKIE_HTTPONLY"] is True
+
+    def test_session_cookie_samesite(self):
+        assert app.config["SESSION_COOKIE_SAMESITE"] == "Lax"
+
+    def test_session_not_permanent(self):
+        assert app.config["SESSION_PERMANENT"] is False
+
+    def test_session_data_persists_server_side(self, client):
+        with client.session_transaction() as sess:
+            sess["gh_user"] = {"login": "testuser"}
+        resp = client.get("/api/me")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["logged_in"] is True
+        assert data["user"]["login"] == "testuser"
+
+    def test_logout_clears_server_session(self, client):
+        with client.session_transaction() as sess:
+            sess["gh_user"] = {"login": "testuser"}
+            sess["gh_token"] = "ghp_fake_token"
+        resp = client.get("/logout")
+        assert resp.status_code == 302
+        with client.session_transaction() as sess:
+            assert "gh_user" not in sess
+            assert "gh_token" not in sess
+
+
+class TestCorsConfiguration:
+    def test_cors_default_restricts_origins(self):
+        from app import _cors_origins
+        assert isinstance(_cors_origins, list)
+        for origin in _cors_origins:
+            assert "localhost" in origin or "127.0.0.1" in origin
+
+    def test_cors_env_override(self, monkeypatch):
+        monkeypatch.setenv("CORS_ORIGINS", "https://example.com,https://other.com")
+        raw = os.environ.get("CORS_ORIGINS", "")
+        origins = [o.strip() for o in raw.split(",") if o.strip()]
+        assert origins == ["https://example.com", "https://other.com"]
+
+    def test_cors_headers_present_on_response(self, client):
+        resp = client.get("/api/config")
+        assert resp.status_code == 200
+        assert "X-Content-Type-Options" in resp.headers
+        assert resp.headers["X-Content-Type-Options"] == "nosniff"
+        assert resp.headers["X-Frame-Options"] == "DENY"
