@@ -1,0 +1,28 @@
+{
+  "verified_at": "2026-02-09T10:15:59.788694+00:00",
+  "pr_number": "96",
+  "pr_url": "https://github.com/marius-posa/codeql-devin-fixer/pull/96",
+  "pr_title": "fix(CQLF-R34-0001): resolve injection security issues",
+  "session_id": "2324fa5c543d4e7ab725243d3ee6291e",
+  "source_run_number": "34",
+  "cwe_family": "injection",
+  "summary": {
+    "total_original": 19,
+    "total_targeted": 1,
+    "fixed_count": 1,
+    "remaining_count": 0,
+    "fix_rate": 100.0,
+    "new_issues_in_scan": 0
+  },
+  "verified_fixed": [
+    {
+      "id": "CQLF-R34-0001",
+      "fingerprint": "73559aa8b9e1fc687fa1",
+      "rule_id": "py/command-line-injection",
+      "severity_tier": "critical",
+      "cwe_family": "injection",
+      "file": "github_app/scan_trigger.py"
+    }
+  ],
+  "still_present": []
+}
