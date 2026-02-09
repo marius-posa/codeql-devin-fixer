@@ -233,15 +233,15 @@ class TestSyncFork:
         sync_fork("token", "my-user", "repo", "main")
 
     @patch("scripts.fork_repo.request_with_retry")
-    def test_sync_warning_on_error(self, mock_req, capsys):
+    def test_sync_warning_on_error(self, mock_req, capfd):
         mock_resp = MagicMock()
         mock_resp.status_code = 422
         mock_resp.text = "unprocessable"
         mock_req.return_value = mock_resp
 
         sync_fork("token", "my-user", "repo", "main")
-        captured = capsys.readouterr()
-        assert "WARNING" in captured.out
+        captured = capfd.readouterr()
+        assert "WARNING" in captured.err
 
 
 class TestWriteOutputs:
@@ -255,10 +255,10 @@ class TestWriteOutputs:
         assert "fork_owner=user" in content
         assert "fork_repo=repo" in content
 
-    def test_prints_fork_url_without_github_output(self, capsys):
+    def test_prints_fork_url_without_github_output(self, capfd):
         with patch.dict(os.environ, {}, clear=False):
             if "GITHUB_OUTPUT" in os.environ:
                 del os.environ["GITHUB_OUTPUT"]
             _write_outputs("https://github.com/user/repo", "user", "repo")
-        captured = capsys.readouterr()
-        assert "FORK_URL=https://github.com/user/repo" in captured.out
+        captured = capfd.readouterr()
+        assert "FORK_URL=https://github.com/user/repo" in captured.err

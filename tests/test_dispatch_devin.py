@@ -319,11 +319,11 @@ class TestContextRichPrompt:
 
 
 class TestValidateRepoUrlExtended:
-    def test_non_github_url_passes_with_warning(self, capsys):
+    def test_non_github_url_passes_with_warning(self, capfd):
         result = validate_repo_url("https://gitlab.com/owner/repo")
         assert result == "https://gitlab.com/owner/repo"
-        captured = capsys.readouterr()
-        assert "WARNING" in captured.out
+        captured = capfd.readouterr()
+        assert "WARNING" in captured.err
 
     def test_http_url_preserved(self):
         result = validate_repo_url("http://github.com/owner/repo")
@@ -333,10 +333,10 @@ class TestValidateRepoUrlExtended:
         result = validate_repo_url("my-org.io/my-repo.js")
         assert result == "https://github.com/my-org.io/my-repo.js"
 
-    def test_empty_string_warns(self, capsys):
+    def test_empty_string_warns(self, capfd):
         result = validate_repo_url("")
-        captured = capsys.readouterr()
-        assert "WARNING" in captured.out
+        captured = capfd.readouterr()
+        assert "WARNING" in captured.err
 
 
 class TestCreateDevinSession:
@@ -600,9 +600,9 @@ class TestLoadPromptTemplate:
     def test_empty_path_returns_none(self):
         assert _load_prompt_template("") is None
 
-    def test_nonexistent_file_returns_none(self, capsys):
+    def test_nonexistent_file_returns_none(self, capfd):
         assert _load_prompt_template("/nonexistent/template.j2") is None
-        assert "WARNING" in capsys.readouterr().out
+        assert "WARNING" in capfd.readouterr().err
 
     def test_loads_valid_template(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".j2", delete=False) as f:

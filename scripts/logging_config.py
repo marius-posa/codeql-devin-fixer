@@ -42,6 +42,25 @@ class JSONFormatter(logging.Formatter):
         return json.dumps(log_entry, default=str)
 
 
+class _StderrHandler(logging.Handler):
+    """Handler that resolves ``sys.stderr`` at emit time.
+
+    Unlike ``StreamHandler(sys.stderr)`` which captures the reference once,
+    this handler always uses the *current* ``sys.stderr`` so that pytest's
+    ``capsys`` / ``capfd`` fixtures can intercept log output.
+    """
+
+    terminator = "\n"
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            msg = self.format(record)
+            sys.stderr.write(msg + self.terminator)
+            sys.stderr.flush()
+        except Exception:
+            self.handleError(record)
+
+
 def setup_logging(
     name: str = "",
     level: str | None = None,
@@ -64,7 +83,7 @@ def setup_logging(
 
     logger.setLevel(getattr(logging, resolved_level, logging.INFO))
 
-    handler = logging.StreamHandler(sys.stderr)
+    handler = _StderrHandler()
     handler.setFormatter(JSONFormatter())
     logger.addHandler(handler)
     logger.propagate = False

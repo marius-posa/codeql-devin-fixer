@@ -13,7 +13,10 @@ import time
 
 import requests
 
-from logging_config import setup_logging
+try:
+    from logging_config import setup_logging
+except ImportError:
+    from scripts.logging_config import setup_logging
 
 logger = setup_logging(__name__)
 

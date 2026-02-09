@@ -26,7 +26,10 @@ import sys
 from dataclasses import dataclass
 from typing import TypedDict
 
-from logging_config import setup_logging
+try:
+    from logging_config import setup_logging
+except ImportError:
+    from scripts.logging_config import setup_logging
 
 logger = setup_logging(__name__)
 

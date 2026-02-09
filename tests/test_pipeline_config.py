@@ -72,10 +72,10 @@ class TestPipelineConfigValidate:
         with pytest.raises(SystemExit):
             cfg.validate(["github_token", "target_repo"])
 
-    def test_validate_reports_all_missing(self, capsys):
+    def test_validate_reports_all_missing(self, capfd):
         cfg = PipelineConfig()
         with pytest.raises(SystemExit):
             cfg.validate(["github_token", "devin_api_key"])
-        output = capsys.readouterr().out
+        output = capfd.readouterr().err
         assert "GITHUB_TOKEN" in output
         assert "DEVIN_API_KEY" in output

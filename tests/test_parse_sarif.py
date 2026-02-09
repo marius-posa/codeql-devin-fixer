@@ -758,14 +758,14 @@ class TestLoadCustomCweFamilies:
         _CWE_FAMILY_INDEX.pop("cwe-8888", None)
 
     @patch.dict(os.environ, {"CUSTOM_CWE_FAMILIES": "not-json"})
-    def test_invalid_json_ignored(self, capsys):
+    def test_invalid_json_ignored(self, capfd):
         _load_custom_cwe_families()
-        assert "WARNING" in capsys.readouterr().out
+        assert "WARNING" in capfd.readouterr().err
 
     @patch.dict(os.environ, {"CUSTOM_CWE_FAMILIES": '["not", "a", "dict"]'})
-    def test_non_dict_json_ignored(self, capsys):
+    def test_non_dict_json_ignored(self, capfd):
         _load_custom_cwe_families()
-        assert "WARNING" in capsys.readouterr().out
+        assert "WARNING" in capfd.readouterr().err
 
     @patch.dict(os.environ, {"CUSTOM_CWE_FAMILIES": '{"bad": "not-a-list"}'})
     def test_non_list_members_skipped(self):

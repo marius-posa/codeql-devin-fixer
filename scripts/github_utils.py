@@ -10,7 +10,10 @@ makes it easier to apply changes (e.g. adding retry logic) in one place.
 
 import re
 
-from logging_config import setup_logging
+try:
+    from logging_config import setup_logging
+except ImportError:
+    from scripts.logging_config import setup_logging
 
 logger = setup_logging(__name__)
 

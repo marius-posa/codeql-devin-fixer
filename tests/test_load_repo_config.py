@@ -81,46 +81,46 @@ class TestLoadConfig:
         assert config["batch_size"] == 10
         assert config["max_sessions"] == 5
 
-    def test_invalid_severity_removed(self, capsys):
+    def test_invalid_severity_removed(self, capfd):
         path = self._write_config("severity_threshold: extreme\n")
         config = load_config(path)
         os.unlink(path)
         assert "severity_threshold" not in config
-        assert "WARNING" in capsys.readouterr().out
+        assert "WARNING" in capfd.readouterr().err
 
-    def test_batch_size_out_of_range_removed(self, capsys):
+    def test_batch_size_out_of_range_removed(self, capfd):
         path = self._write_config("batch_size: 999\n")
         config = load_config(path)
         os.unlink(path)
         assert "batch_size" not in config
-        assert "WARNING" in capsys.readouterr().out
+        assert "WARNING" in capfd.readouterr().err
 
-    def test_batch_size_zero_removed(self, capsys):
+    def test_batch_size_zero_removed(self, capfd):
         path = self._write_config("batch_size: 0\n")
         config = load_config(path)
         os.unlink(path)
         assert "batch_size" not in config
 
-    def test_max_sessions_out_of_range_removed(self, capsys):
+    def test_max_sessions_out_of_range_removed(self, capfd):
         path = self._write_config("max_sessions: 200\n")
         config = load_config(path)
         os.unlink(path)
         assert "max_sessions" not in config
-        assert "WARNING" in capsys.readouterr().out
+        assert "WARNING" in capfd.readouterr().err
 
-    def test_exclude_paths_non_list_removed(self, capsys):
+    def test_exclude_paths_non_list_removed(self, capfd):
         path = self._write_config("exclude_paths: not-a-list\n")
         config = load_config(path)
         os.unlink(path)
         assert "exclude_paths" not in config
-        assert "WARNING" in capsys.readouterr().out
+        assert "WARNING" in capfd.readouterr().err
 
-    def test_cwe_families_non_dict_removed(self, capsys):
+    def test_cwe_families_non_dict_removed(self, capfd):
         path = self._write_config('cwe_families: ["not", "a", "dict"]\n')
         config = load_config(path)
         os.unlink(path)
         assert "cwe_families" not in config
-        assert "WARNING" in capsys.readouterr().out
+        assert "WARNING" in capfd.readouterr().err
 
     def test_valid_exclude_paths_preserved(self):
         path = self._write_config('exclude_paths: ["vendor", "test"]\n')

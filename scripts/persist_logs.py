@@ -41,8 +41,12 @@ import shutil
 import subprocess
 import sys
 
-from logging_config import setup_logging
-from retry_utils import run_git_with_retry
+try:
+    from logging_config import setup_logging
+    from retry_utils import run_git_with_retry
+except ImportError:
+    from scripts.logging_config import setup_logging
+    from scripts.retry_utils import run_git_with_retry
 
 logger = setup_logging(__name__)
 
