@@ -21,6 +21,8 @@ import logging
 import pathlib
 from typing import Callable
 
+from github_app.log_utils import sanitize_log
+
 log = logging.getLogger(__name__)
 
 _ROOT_DIR = pathlib.Path(__file__).resolve().parent.parent
@@ -39,7 +41,7 @@ def verify_signature(payload_body: bytes, signature: str, secret: str) -> bool:
 def route_event(event_type: str, payload: dict) -> dict:
     handler = _EVENT_HANDLERS.get(event_type)
     if handler is None:
-        log.debug("Ignoring unhandled event: %s", event_type)
+        log.debug("Ignoring unhandled event: %s", sanitize_log(event_type))
         return {"status": "ignored", "event": event_type}
     return handler(payload)
 
