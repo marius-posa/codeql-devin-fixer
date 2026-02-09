@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CodeQL Devin Fixer - Telemetry Dashboard</title>
+<link rel="stylesheet" href="static/shared.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1><span>CodeQL Devin Fixer</span> Telemetry</h1>
+    <div class="header-actions">
+      <span id="live-status"></span>
+      <button class="btn" onclick="refreshData()" id="btn-refresh">Refresh Data</button>
+      <button class="btn btn-primary" onclick="pollSessions()" id="btn-poll">Poll Sessions</button>
+      <button class="btn btn-primary" onclick="openDispatchModal()" id="btn-dispatch" style="background:#1f6feb;border-color:#388bfd">Trigger Action</button>
+      <button class="btn" id="btn-demo-toggle" onclick="toggleDemoData()" title="Toggle demo data" style="font-size:12px">Demo Data</button>
+      <button class="density-toggle" id="density-toggle" title="Toggle compact mode">Compact</button>
+      <button class="theme-toggle" id="theme-toggle"></button>
+      <button class="btn" onclick="openSettingsModal()" id="btn-settings" style="font-size:16px" title="Settings">&#9881;</button>
+    </div>
+  </header>
+
+  <div class="status-bar">
+    <span id="status-text">Loading...</span>
+    <span id="last-updated"></span>
+  </div>
+
+  <nav class="tab-nav" id="tab-nav">
+    <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview')">
+      <span class="tab-icon">&#x1F4CA;</span>Overview
+    </button>
+    <button class="tab-btn" data-tab="repos" onclick="switchTab('repos')">
+      <span class="tab-icon">&#x1F4E6;</span>Repositories
+    </button>
+    <button class="tab-btn" data-tab="issues" onclick="switchTab('issues')">
+      <span class="tab-icon">&#x1F50D;</span>Issues
+    </button>
+    <button class="tab-btn" data-tab="activity" onclick="switchTab('activity')">
+      <span class="tab-icon">&#x1F680;</span>Activity
+    </button>
+    <button class="tab-btn" data-tab="settings" onclick="switchTab('settings')">
+      <span class="tab-icon">&#x2692;</span>Settings
+    </button>
+  </nav>
+
+  <div class="tab-content active" id="tab-overview">
+    <div class="period-selector" style="margin-bottom:16px;display:flex;gap:4px;align-items:center">
+      <span style="font-size:12px;color:var(--text-muted);margin-right:8px">Period:</span>
+      <button class="btn period-btn active" data-period="all" onclick="setPeriod('all')">All Time</button>
+      <button class="btn period-btn" data-period="7d" onclick="setPeriod('7d')">7 Days</button>
+      <button class="btn period-btn" data-period="30d" onclick="setPeriod('30d')">30 Days</button>
+      <button class="btn period-btn" data-period="90d" onclick="setPeriod('90d')">90 Days</button>
+    </div>
+    <div class="metrics-grid" id="metrics-grid"></div>
+    <div class="panel">
+      <div class="panel-header">Security Health Trend</div>
+      <div class="panel-body" id="trend-chart"><div class="skeleton skeleton-chart"></div></div>
+    </div>
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel-header">Severity Breakdown</div>
+        <div class="panel-body chart-canvas-wrap" id="severity-chart"><div class="skeleton skeleton-chart" style="height:200px"></div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">Category Breakdown</div>
+        <div class="panel-body chart-canvas-wrap" id="category-chart"><div class="skeleton skeleton-chart" style="height:200px"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-content" id="tab-repos">
+    <div class="panel">
+      <div class="panel-header">
+        Repositories Scanned
+        <span id="repo-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      </div>
+      <div class="panel-body" style="overflow-x:auto;" id="repos-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
+    </div>
+  </div>
+
+  <div class="tab-content" id="tab-issues">
+    <div class="panel">
+      <div class="panel-header">SLA Compliance</div>
+      <div class="panel-body" id="sla-panel-container"><div class="skeleton skeleton-chart" style="height:80px"></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        Issue Tracking
+        <span id="issues-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      </div>
+      <div class="panel-body" style="overflow-x:auto;" id="issues-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        Fix Verification
+        <span id="verification-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      </div>
+      <div class="panel-body" id="verification-stats-container"><div class="skeleton skeleton-chart" style="height:100px"></div></div>
+      <div class="panel-body" style="overflow-x:auto;" id="verification-table-container"></div>
+    </div>
+  </div>
+
+  <div class="tab-content" id="tab-activity">
+    <div class="panel">
+      <div class="panel-header">
+        Run History
+        <span id="runs-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      </div>
+      <div class="panel-body" style="overflow-x:auto;" id="runs-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        Devin Sessions
+        <span id="sessions-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      </div>
+      <div class="panel-body" style="overflow-x:auto;" id="sessions-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        Pull Requests
+        <span id="prs-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      </div>
+      <div class="panel-body" style="overflow-x:auto;" id="prs-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
+    </div>
+
+  </div>
+
+  <div class="tab-content" id="tab-settings">
+    <div class="panel">
+      <div class="panel-header">Demo Data</div>
+      <div class="panel-body" id="demo-data-panel">
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+          <span id="demo-status-text" style="font-size:13px;color:var(--text-muted)">Checking...</span>
+          <button class="btn btn-sm" id="btn-demo-load" onclick="loadDemoData()">Load Demo Data</button>
+          <button class="btn btn-sm" id="btn-demo-clear" onclick="clearDemoData()" style="background:var(--accent-red);border-color:var(--accent-red);color:#fff">Clear Demo Data</button>
+          <button class="btn btn-sm" id="btn-demo-edit" onclick="openDemoEditor()">Edit JSON</button>
+        </div>
+        <div id="demo-summary" style="margin-top:8px;font-size:12px;color:var(--text-muted)"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">Export &amp; Reports</div>
+      <div class="panel-body">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+          <button class="btn" onclick="exportAllIssuesCsv()">Export Issues CSV</button>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        Scheduled Repo Registry
+        <span id="registry-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      </div>
+      <div class="panel-body" style="overflow-x:auto;" id="registry-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        Audit Log
+        <span id="audit-log-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+        <button class="btn btn-sm" onclick="exportAuditLog()" style="margin-left:auto">Export JSON</button>
+      </div>
+      <div class="panel-body">
+        <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
+          <select class="form-input" id="audit-action-filter" onchange="fetchAuditLog()" style="width:auto;padding:4px 8px;font-size:12px">
+            <option value="">All actions</option>
+            <option value="poll_sessions">poll_sessions</option>
+            <option value="poll_prs">poll_prs</option>
+            <option value="refresh_runs">refresh_runs</option>
+            <option value="backfill">backfill</option>
+            <option value="dispatch_workflow">dispatch_workflow</option>
+            <option value="orchestrator_dispatch">orchestrator_dispatch</option>
+            <option value="orchestrator_scan">orchestrator_scan</option>
+            <option value="orchestrator_cycle">orchestrator_cycle</option>
+            <option value="update_orchestrator_config">update_orchestrator_config</option>
+            <option value="update_registry">update_registry</option>
+            <option value="add_registry_repo">add_registry_repo</option>
+            <option value="update_registry_repo">update_registry_repo</option>
+            <option value="remove_registry_repo">remove_registry_repo</option>
+            <option value="export_audit_log">export_audit_log</option>
+          </select>
+          <input class="form-input" id="audit-user-filter" placeholder="Filter by user" onchange="fetchAuditLog()" style="width:auto;padding:4px 8px;font-size:12px">
+        </div>
+      </div>
+      <div class="panel-body" style="overflow-x:auto;" id="audit-log-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="drawer-overlay" id="drawer-overlay"></div>
+<div class="drawer" id="issue-drawer">
+  <div class="drawer-header">
+    <h3>Issue Details</h3>
+    <button class="btn btn-icon" onclick="closeIssueDrawer()">&times;</button>
+  </div>
+  <div class="drawer-body"></div>
+</div>
+
+<div class="modal-overlay" id="dispatch-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Trigger CodeQL Fixer Action</h2>
+      <button class="modal-close" onclick="closeDispatchModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="warning-banner" id="dispatch-warning"></div>
+      <div class="form-group">
+        <label for="d-target-repo">Target Repository URL *</label>
+        <input class="form-input" id="d-target-repo" type="text" value="" onchange="checkPreflightStatic()">
+        <div class="hint">GitHub repository URL to analyze</div>
+      </div>
+      <div class="form-group">
+        <label for="d-languages">Languages</label>
+        <input class="form-input" id="d-languages" type="text" value="" placeholder="e.g. javascript,python">
+        <div class="hint">Comma-separated CodeQL languages (leave empty for auto-detect)</div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="d-queries">Query Suite</label>
+          <select class="form-input" id="d-queries">
+            <option value="security-extended" selected>security-extended</option>
+            <option value="security-and-quality">security-and-quality</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="d-severity">Severity Threshold</label>
+          <select class="form-input" id="d-severity">
+            <option value="critical">critical</option>
+            <option value="high">high</option>
+            <option value="medium">medium</option>
+            <option value="low" selected>low</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="d-batch-size">Batch Size</label>
+          <input class="form-input" id="d-batch-size" type="number" value="5" min="1">
+          <div class="hint">Max issues per Devin session</div>
+        </div>
+        <div class="form-group">
+          <label for="d-max-sessions">Max Sessions</label>
+          <input class="form-input" id="d-max-sessions" type="number" value="5" min="1">
+          <div class="hint">Max Devin sessions to create</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="d-default-branch">Default Branch</label>
+        <input class="form-input" id="d-default-branch" type="text" value="main">
+        <div class="hint">Default branch of the target repo</div>
+      </div>
+      <div class="form-group">
+        <label for="d-include-paths">Include Paths</label>
+        <input class="form-input" id="d-include-paths" type="text" value="" placeholder="e.g. src/**,lib/**">
+        <div class="hint">Optional comma-separated globs to include</div>
+      </div>
+      <div class="form-group">
+        <label for="d-exclude-paths">Exclude Paths</label>
+        <input class="form-input" id="d-exclude-paths" type="text" value="" placeholder="e.g. test/**,vendor/**">
+        <div class="hint">Optional comma-separated globs to exclude</div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-check">
+            <input type="checkbox" id="d-persist-logs" checked>
+            <span>Persist Logs</span>
+          </label>
+          <div class="hint">Keep logs in GitHub</div>
+        </div>
+        <div class="form-group">
+          <label class="form-check">
+            <input type="checkbox" id="d-dry-run">
+            <span>Dry Run</span>
+          </label>
+          <div class="hint">Generate prompts only (no Devin sessions)</div>
+        </div>
+      </div>
+      <div class="dispatch-result" id="dispatch-result"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeDispatchModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitDispatchStatic()" id="btn-submit-dispatch">Dispatch Workflow</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="settings-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Settings</h2>
+      <button class="modal-close" onclick="closeSettingsModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label for="s-gh-token">GitHub Token</label>
+        <input class="form-input" id="s-gh-token" type="password" placeholder="ghp_...">
+        <div class="hint">PAT with <code>repo</code> scope. Needed for PR discovery, refresh, and workflow dispatch. Stored in your browser only.</div>
+      </div>
+      <div class="form-group">
+        <label for="s-devin-key">Devin API Key</label>
+        <input class="form-input" id="s-devin-key" type="password" placeholder="Bearer token">
+        <div class="hint">Devin API bearer token for polling session statuses. Stored in your browser only.</div>
+      </div>
+      <div class="form-group">
+        <label for="s-action-repo">Action Repository</label>
+        <input class="form-input" id="s-action-repo" type="text" placeholder="owner/repo">
+        <div class="hint">The repo containing the telemetry data, e.g. <code>marius-posa/codeql-devin-fixer</code></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeSettingsModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveSettings()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="add-repo-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Add Repository to Scheduler</h2>
+      <button class="modal-close" onclick="_closeAddRepoModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label for="add-repo-url">Repository URL *</label>
+        <input class="form-input" id="add-repo-url" type="text" placeholder="https://github.com/owner/repo">
+        <div class="hint">Full GitHub repository URL to add to the scheduler</div>
+      </div>
+      <div class="form-group">
+        <label for="add-repo-schedule">Schedule</label>
+        <select class="form-input" id="add-repo-schedule">
+          <option value="daily">daily</option>
+          <option value="weekly" selected>weekly</option>
+          <option value="monthly">monthly</option>
+        </select>
+        <div class="hint">How often to scan this repository</div>
+      </div>
+      <div class="dispatch-result" id="add-repo-result"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="_closeAddRepoModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="_submitAddRepo()">Add Repository</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="edit-repo-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Edit Repository: <span id="edit-repo-name"></span></h2>
+      <button class="modal-close" onclick="_closeRepoEditModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label for="edit-repo-importance">Importance</label>
+          <select class="form-input" id="edit-repo-importance">
+            <option value="low">low</option>
+            <option value="medium">medium</option>
+            <option value="high">high</option>
+            <option value="critical">critical</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="edit-repo-score">Importance Score (0-100)</label>
+          <input class="form-input" id="edit-repo-score" type="number" min="0" max="100" value="50">
+        </div>
+        <div class="form-group">
+          <label for="edit-repo-max-sessions">Max Sessions per Cycle</label>
+          <input class="form-input" id="edit-repo-max-sessions" type="number" min="1" value="5">
+        </div>
+        <div class="form-group">
+          <label for="edit-repo-tags">Tags (comma-separated)</label>
+          <input class="form-input" id="edit-repo-tags" type="text" placeholder="web-app, internal">
+        </div>
+        <div class="form-group">
+          <label class="form-check"><input type="checkbox" id="edit-repo-auto-scan"><span>Auto Scan</span></label>
+        </div>
+        <div class="form-group">
+          <label class="form-check"><input type="checkbox" id="edit-repo-auto-dispatch"><span>Auto Dispatch</span></label>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="edit-repo-overrides">Overrides (JSON)</label>
+        <textarea class="form-input" id="edit-repo-overrides" rows="4" style="font-family:monospace;font-size:12px">{}</textarea>
+        <div class="hint">Override default settings for this repo (e.g. languages, severity_threshold)</div>
+      </div>
+      <div class="dispatch-result" id="edit-repo-result"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="_closeRepoEditModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="_submitRepoEditStatic()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="demo-editor-modal">
+  <div class="modal" style="max-width:900px">
+    <div class="modal-header">
+      <h2>Edit Demo Data</h2>
+      <button class="modal-close" onclick="closeDemoEditor()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="hint" style="margin-bottom:8px">Edit the raw JSON demo data below. Changes are stored in your browser's localStorage.</div>
+      <textarea class="form-input" id="demo-editor-textarea" rows="24" style="font-family:monospace;font-size:11px;white-space:pre;overflow:auto"></textarea>
+      <div class="dispatch-result" id="demo-editor-result"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeDemoEditor()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveDemoEditorData()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="static/demo_data.js"></script>
+<script src="static/api.js"></script>
+<script src="static/shared.js"></script>
+<script>
+let allRuns = [];
+let allSessions = [];
+let allPrs = [];
+let allRepos = [];
+let allIssues = [];
+let stats = {};
+let registryData = null;
+let currentPeriod = 'all';
+let verificationRecords = [];
+let _chartInstances = {};
+let _livePoller = null;
+let slaData = {};
+let auditLogData = null;
+
+function switchTab(tabId) {
+  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.toggle('active', b.dataset.tab === tabId); });
+  document.querySelectorAll('.tab-content').forEach(function(c) { c.classList.toggle('active', c.id === 'tab-' + tabId); });
+}
+
+function updateLiveStatus() {
+  var el = document.getElementById('live-status');
+  if (!el) return;
+  var running = (allSessions || []).filter(function(s) { return s.status === 'running' || s.status === 'pending'; });
+  if (running.length > 0) {
+    el.innerHTML = '<span class="live-badge live-running">' + running.length + ' active</span>';
+  } else {
+    el.innerHTML = '<span class="live-badge live-idle">idle</span>';
+  }
+}
+
+function startLivePolling(intervalMs) {
+  if (_livePoller) clearInterval(_livePoller);
+  _livePoller = setInterval(function() {
+    updateLiveStatus();
+  }, intervalMs || 30000);
+}
+
+function destroyChart(key) {
+  if (_chartInstances[key]) { _chartInstances[key].destroy(); delete _chartInstances[key]; }
+}
+
+function renderSeverityChartJs(container, data) {
+  if (!data || typeof Chart === 'undefined') return;
+  container.innerHTML = '<canvas></canvas>';
+  var canvas = container.querySelector('canvas');
+  var labels = Object.keys(data);
+  var values = labels.map(function(k) { return data[k]; });
+  var colors = { critical: '#f85149', high: '#f0883e', medium: '#d29922', low: '#58a6ff', note: '#8b949e' };
+  var bgColors = labels.map(function(l) { return colors[l.toLowerCase()] || '#8b949e'; });
+  destroyChart('severity');
+  _chartInstances['severity'] = new Chart(canvas, {
+    type: 'doughnut',
+    data: { labels: labels, datasets: [{ data: values, backgroundColor: bgColors, borderWidth: 0 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: getComputedStyle(document.body).getPropertyValue('--text-primary').trim() || '#e6edf3', font: { size: 11 } } } } }
+  });
+}
+
+function renderCategoryChartJs(container, data) {
+  if (!data || typeof Chart === 'undefined') return;
+  container.innerHTML = '<canvas></canvas>';
+  var canvas = container.querySelector('canvas');
+  var labels = Object.keys(data).slice(0, 10);
+  var values = labels.map(function(k) { return data[k]; });
+  destroyChart('category');
+  _chartInstances['category'] = new Chart(canvas, {
+    type: 'bar',
+    data: { labels: labels, datasets: [{ data: values, backgroundColor: '#388bfd', borderRadius: 4 }] },
+    options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#8b949e' }, grid: { color: 'rgba(139,148,158,0.1)' } }, y: { ticks: { color: '#8b949e', font: { size: 10 } }, grid: { display: false } } } }
+  });
+}
+
+function renderTrendChartJs(container, runs) {
+  if (!runs || !runs.length || typeof Chart === 'undefined') return;
+  container.innerHTML = '<div class="chart-canvas-wrap"><canvas></canvas></div>';
+  var canvas = container.querySelector('canvas');
+  var sorted = runs.slice().sort(function(a, b) { return (a.timestamp || '').localeCompare(b.timestamp || ''); });
+  var labels = sorted.map(function(r) { return r.timestamp ? new Date(r.timestamp).toLocaleDateString() : '#' + (r.run_number || '?'); });
+  var issuesData = sorted.map(function(r) { return r.issues_found || 0; });
+  var sessionsData = sorted.map(function(r) { return (r.sessions || []).length; });
+  destroyChart('trend');
+  _chartInstances['trend'] = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        { label: 'Issues Found', data: issuesData, borderColor: '#f0883e', backgroundColor: 'rgba(240,136,62,0.1)', fill: true, tension: 0.3, pointRadius: 3 },
+        { label: 'Sessions', data: sessionsData, borderColor: '#a371f7', backgroundColor: 'rgba(163,113,247,0.1)', fill: true, tension: 0.3, pointRadius: 3 }
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#8b949e' } } }, scales: { x: { ticks: { color: '#8b949e', maxRotation: 45 }, grid: { color: 'rgba(139,148,158,0.1)' } }, y: { ticks: { color: '#8b949e' }, grid: { color: 'rgba(139,148,158,0.1)' } } } }
+  });
+}
+
+window._cachedRuns = [];
+window._cachedPrs = [];
+window._cachedSessions = [];
+
+function setPeriod(period) {
+  currentPeriod = period;
+  document.querySelectorAll('.period-btn').forEach(function(btn) {
+    btn.classList.toggle('active', btn.dataset.period === period);
+  });
+  fetchAll();
+}
+
+function filterRunsByPeriod(runs, period) {
+  if (!period || period === 'all') return runs;
+  var daysMap = { '7d': 7, '30d': 30, '90d': 90 };
+  var days = daysMap[period];
+  if (!days) return runs;
+  var cutoff = new Date(Date.now() - days * 86400000).toISOString();
+  return runs.filter(function(r) { return (r.timestamp || '') >= cutoff; });
+}
+
+function renderMetrics(s) {
+  const grid = document.getElementById('metrics-grid');
+  const latestIssues = s.latest_issues != null ? s.latest_issues : s.total_issues;
+  const issuesSub = s.total_runs > 1 && s.latest_issues != null
+    ? latestIssues + ' current, ' + (s.total_issues || 0) + ' across all runs'
+    : '';
+  const periodLabel = currentPeriod !== 'all' ? ' (' + currentPeriod + ')' : '';
+  const fixRate = s.fix_rate || 0;
+  const cards = [
+    { label: 'Repos Scanned', value: s.repos_scanned || 0, cls: 'blue' },
+    { label: 'Total Runs' + periodLabel, value: s.total_runs || 0, cls: 'cyan' },
+    { label: 'Issues Found' + periodLabel, value: latestIssues, cls: 'orange',
+      sub: issuesSub },
+    { label: 'Devin Sessions' + periodLabel, value: s.sessions_created || 0, cls: 'purple',
+      sub: (s.sessions_finished || 0) + ' finished' },
+    { label: 'PRs Created' + periodLabel, value: s.prs_total || 0, cls: 'blue',
+      sub: (s.prs_merged || 0) + ' merged, ' + (s.prs_open || 0) + ' open' },
+    { label: 'Fix Rate' + periodLabel, value: fixRate + '%', cls: fixRateColorClass(fixRate),
+      sub: 'merged / total PRs' },
+  ];
+  grid.innerHTML = cards.map(function(c) {
+    return '<div class="metric-card ' + c.cls + '">'
+      + '<div class="label">' + c.label + '</div>'
+      + '<div class="value">' + c.value + '</div>'
+      + (c.sub ? '<div class="sub">' + c.sub + '</div>' : '')
+      + '</div>';
+  }).join('');
+}
+
+function renderReposTable(repos) {
+  const el = document.getElementById('repos-table-container');
+  document.getElementById('repo-count').textContent = repos.length;
+  if (repos.length === 0) {
+    el.innerHTML = '<div class="empty-state">No repos scanned yet</div>';
+    return;
+  }
+  let rows = '';
+  repos.forEach(function(r) {
+    const short = escapeHtml(repoShort(r.repo));
+    rows += '<tr>'
+      + '<td><a href="repo.html?repo=' + encodeURIComponent(short) + '">' + short + '</a></td>'
+      + '<td>' + r.runs + '</td>'
+      + '<td>' + r.issues_found + '</td>'
+      + '<td>' + r.sessions_created + (r.sessions_finished ? ' <span style="color:var(--accent-green);font-size:11px">(' + r.sessions_finished + ' done)</span>' : '') + '</td>'
+      + '<td>' + r.prs_total + '</td>'
+      + '<td>' + r.prs_merged + '</td>'
+      + '<td>' + r.prs_open + '</td>'
+      + '<td>' + formatDate(r.last_run) + '</td>'
+      + '<td style="white-space:nowrap"><a class="btn" style="padding:2px 10px;font-size:11px" href="repo.html?repo=' + encodeURIComponent(short) + '">View</a> '
+      + '<button class="btn" style="padding:2px 10px;font-size:11px;background:#1f6feb;border-color:#388bfd;color:#fff" onclick="openDispatchModal(this.dataset.repo)" data-repo="' + escapeHtml(r.repo) + '">Run</button></td>'
+      + '</tr>';
+  });
+  el.innerHTML = '<table><thead><tr>'
+    + '<th>Repository</th><th>Runs</th><th>Issues</th><th>Sessions</th>'
+    + '<th>PRs</th><th>Merged</th><th>Open</th><th>Last Run</th><th></th>'
+    + '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+function renderRunsTable(runs) {
+  const el = document.getElementById('runs-table-container');
+  document.getElementById('runs-count').textContent = runs.length;
+  if (runs.length === 0) {
+    el.innerHTML = '<div class="empty-state">No runs recorded yet. Trigger the action to see data here.</div>';
+    return;
+  }
+  const sorted = [...runs].sort(function(a, b) { return (b.run_number || 0) - (a.run_number || 0); });
+  let rows = '';
+  sorted.forEach(function(r) {
+    rows += '<tr>'
+      + '<td><strong>#' + (r.run_number || '-') + '</strong></td>'
+      + '<td><a href="' + escapeHtml(r.target_repo) + '" target="_blank">' + escapeHtml(repoShort(r.target_repo)) + '</a></td>'
+      + '<td>' + (r.issues_found || 0) + '</td>'
+      + '<td>' + (r.batches_created || 0) + '</td>'
+      + '<td>' + (r.sessions || []).length + '</td>'
+      + '<td>' + formatDate(r.timestamp) + '</td>'
+      + '</tr>';
+  });
+  el.innerHTML = '<table><thead><tr>'
+    + '<th>Run</th><th>Target Repo</th><th>Issues</th><th>Batches</th>'
+    + '<th>Sessions</th><th>Timestamp</th>'
+    + '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+function renderSlaPanel(sla) {
+  var el = document.getElementById('sla-panel-container');
+  if (!sla || (!sla.total_on_track && !sla.total_at_risk && !sla.total_breached && !sla.total_met)) {
+    el.innerHTML = '<div class="empty-state"><span class="empty-state-icon">&#x23F1;</span><div class="empty-state-text">No SLA data available yet. Run scans to see SLA compliance.</div></div>';
+    return;
+  }
+  var html = '<div class="sla-summary">';
+  html += '<div class="sla-card sla-on-track"><div class="sla-card-count">' + (sla.total_on_track || 0) + '</div><div class="sla-card-label">On Track</div></div>';
+  html += '<div class="sla-card sla-at-risk"><div class="sla-card-count">' + (sla.total_at_risk || 0) + '</div><div class="sla-card-label">At Risk</div></div>';
+  html += '<div class="sla-card sla-breached"><div class="sla-card-count">' + (sla.total_breached || 0) + '</div><div class="sla-card-label">Breached</div></div>';
+  html += '<div class="sla-card sla-met"><div class="sla-card-count">' + (sla.total_met || 0) + '</div><div class="sla-card-label">Met (Fixed)</div></div>';
+  html += '</div>';
+  var ttf = sla.time_to_fix_by_severity || {};
+  var sevs = Object.keys(ttf);
+  var sevOrder = ['critical','high','medium','low'];
+  sevs.sort(function(a, b) {
+    var ia = sevOrder.indexOf(a), ib = sevOrder.indexOf(b);
+    if (ia === -1) ia = 99;
+    if (ib === -1) ib = 99;
+    return ia - ib;
+  });
+  if (sevs.length > 0) {
+    html += '<div style="margin-top:12px"><div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Time to Fix by Severity</div>';
+    html += '<table class="ttf-table"><thead><tr><th>Severity</th><th>Fixed</th><th>Min</th><th>Avg</th><th>Median</th><th>Max</th></tr></thead><tbody>';
+    sevs.forEach(function(sev) {
+      var t = ttf[sev];
+      html += '<tr><td><span class="badge ' + badgeClass(sev) + '">' + escapeHtml(sev) + '</span></td>';
+      html += '<td>' + t.count + '</td>';
+      html += '<td>' + t.min + 'h</td>';
+      html += '<td>' + t.avg + 'h</td>';
+      html += '<td>' + t.median + 'h</td>';
+      html += '<td>' + t.max + 'h</td></tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+  var bySev = sla.by_severity || {};
+  var bsKeys = Object.keys(bySev);
+  bsKeys.sort(function(a, b) {
+    var ia = sevOrder.indexOf(a), ib = sevOrder.indexOf(b);
+    if (ia === -1) ia = 99;
+    if (ib === -1) ib = 99;
+    return ia - ib;
+  });
+  if (bsKeys.length > 0) {
+    html += '<div style="margin-top:16px"><div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">SLA Status by Severity</div>';
+    html += '<table class="ttf-table"><thead><tr><th>Severity</th><th>On Track</th><th>At Risk</th><th>Breached</th><th>Met</th></tr></thead><tbody>';
+    bsKeys.forEach(function(sev) {
+      var s = bySev[sev];
+      html += '<tr><td><span class="badge ' + badgeClass(sev) + '">' + escapeHtml(sev) + '</span></td>';
+      html += '<td>' + (s['on-track'] || 0) + '</td>';
+      html += '<td>' + (s['at-risk'] || 0) + '</td>';
+      html += '<td style="' + ((s['breached'] || 0) > 0 ? 'color:var(--accent-red);font-weight:600' : '') + '">' + (s['breached'] || 0) + '</td>';
+      html += '<td>' + (s['met'] || 0) + '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+  el.innerHTML = html;
+}
+
+function renderVerificationPanel(records) {
+  var statsEl = document.getElementById('verification-stats-container');
+  var tableEl = document.getElementById('verification-table-container');
+  var countEl = document.getElementById('verification-count');
+  var vStats = aggregateVerificationStats(records);
+  if (countEl) countEl.textContent = vStats.total_verifications || 0;
+  if (vStats.total_verifications === 0) {
+    statsEl.innerHTML = '<div class="empty-state">No verification data yet. Verifications run automatically when Devin creates PRs.</div>';
+    tableEl.innerHTML = '';
+    return;
+  }
+  var fixRate = vStats.overall_fix_rate || 0;
+  statsEl.innerHTML = '<div class="metrics-grid" style="margin-bottom:0">'
+    + '<div class="metric-card green"><div class="label">Issues Fixed</div><div class="value">' + (vStats.total_issues_fixed || 0) + '</div>'
+    + '<div class="sub">of ' + (vStats.total_issues_targeted || 0) + ' targeted</div></div>'
+    + '<div class="metric-card ' + fixRateColorClass(fixRate) + '"><div class="label">Verification Fix Rate</div><div class="value">' + fixRate + '%</div></div>'
+    + '<div class="metric-card blue"><div class="label">Fully Verified PRs</div><div class="value">' + (vStats.fully_verified_prs || 0) + '</div></div>'
+    + '<div class="metric-card orange"><div class="label">Partial Fix PRs</div><div class="value">' + (vStats.partial_fix_prs || 0) + '</div></div>'
+    + '</div>';
+  var rows = records.map(function(r) {
+    var summary = r.summary || {};
+    var fixedCount = summary.fixed_count || 0;
+    var totalTargeted = summary.total_targeted || 0;
+    var label = 'codeql-needs-work';
+    if (totalTargeted > 0) {
+      if (fixedCount === totalTargeted) label = 'verified-fix';
+      else if (fixedCount > 0) label = 'codeql-partial-fix';
+    }
+    var badgeCls = label === 'verified-fix' ? 'badge-verified' : label === 'codeql-partial-fix' ? 'badge-partial' : 'badge-needs-work';
+    return '<tr>'
+      + '<td>' + (r.pr_url ? '<a href="'+escapeHtml(r.pr_url)+'" target="_blank">PR #'+(r.pr_number || '-')+'</a>' : '-') + '</td>'
+      + '<td>' + (r.session_id ? '<span class="issue-id">' + escapeHtml((r.session_id || '').slice(0,8)) + '</span>' : '-') + '</td>'
+      + '<td><span class="badge '+badgeCls+'">'+fixedCount+'/'+totalTargeted+' fixed</span></td>'
+      + '<td>' + (summary.fix_rate || 0) + '%</td>'
+      + '<td>' + formatDate(r.verified_at) + '</td>'
+      + '</tr>';
+  }).join('');
+  tableEl.innerHTML = '<table><thead><tr>'
+    + '<th>PR</th><th>Session</th><th>Result</th><th>Fix Rate</th><th>Verified At</th>'
+    + '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+function showAllSkeletons() {
+  document.querySelectorAll('.skeleton').forEach(function(el) { el.style.display = ''; });
+}
+
+function renderAll() {
+  renderMetrics(stats);
+  renderTrendChartJs(document.getElementById('trend-chart'), allRuns);
+  renderSeverityChartJs(document.getElementById('severity-chart'), stats.latest_severity || stats.severity_breakdown);
+  renderCategoryChartJs(document.getElementById('category-chart'), stats.latest_category || stats.category_breakdown);
+  renderReposTable(allRepos);
+  renderRunsTable(allRuns);
+  renderSessionsTable(allSessions, 'sessions-table-container', 'sessions-count');
+  renderPrsTable(allPrs, 'prs-table-container', 'prs-count');
+  renderSlaPanel(slaData);
+  renderIssuesTable(allIssues, 'issues-table-container', 'issues-count');
+  renderVerificationPanel(verificationRecords);
+  renderRegistryPanel();
+  renderAuditLogPanel();
+  updateLiveStatus();
+}
+
+function renderRegistryPanel() {
+  var cfg = getConfig();
+  var hasToken = !!cfg.githubToken;
+  var callbacks = hasToken ? {
+    onToggle: function(idx) { _staticRegistryToggle(idx); },
+    onScheduleChange: function(idx, val) { _staticRegistrySchedule(idx, val); },
+    onRemove: function(idx) { _staticRegistryRemove(idx); },
+    onAdd: function(url, schedule) { _staticRegistryAdd(url, schedule); },
+    onEditRepo: function(idx) { _openRepoEditModalStatic(idx); },
+  } : {};
+  if (registryData) renderRegistryTable(registryData, 'registry-table-container', 'registry-count', callbacks);
+}
+
+async function _saveRegistryStatic() {
+  setStatus('Saving registry to GitHub...');
+  var result = await updateRegistryOnGitHub(registryData);
+  if (result.error) {
+    setStatus('Registry save failed: ' + result.error);
+    return false;
+  }
+  setStatus('Registry saved');
+  setUpdated();
+  return true;
+}
+
+async function _staticRegistryToggle(idx) {
+  var repo = registryData.repos[idx];
+  var prev = repo.enabled;
+  repo.enabled = repo.enabled === false ? true : false;
+  renderRegistryPanel();
+  var ok = await _saveRegistryStatic();
+  if (!ok) { repo.enabled = prev; renderRegistryPanel(); }
+}
+
+async function _staticRegistrySchedule(idx, val) {
+  var prev = registryData.repos[idx].schedule;
+  registryData.repos[idx].schedule = val;
+  var ok = await _saveRegistryStatic();
+  if (!ok) { registryData.repos[idx].schedule = prev; renderRegistryPanel(); }
+}
+
+async function _staticRegistryRemove(idx) {
+  var removed = registryData.repos.splice(idx, 1)[0];
+  renderRegistryPanel();
+  var ok = await _saveRegistryStatic();
+  if (!ok) { registryData.repos.splice(idx, 0, removed); renderRegistryPanel(); }
+}
+
+var _editingRepoIdx = -1;
+function _openRepoEditModalStatic(idx) {
+  _editingRepoIdx = idx;
+  var r = registryData.repos[idx];
+  var modal = document.getElementById('edit-repo-modal');
+  if (!modal) return;
+  modal.classList.add('active');
+  document.getElementById('edit-repo-name').textContent = repoShort(r.repo);
+  document.getElementById('edit-repo-importance').value = r.importance || 'medium';
+  document.getElementById('edit-repo-score').value = r.importance_score != null ? r.importance_score : 50;
+  document.getElementById('edit-repo-max-sessions').value = r.max_sessions_per_cycle != null ? r.max_sessions_per_cycle : 5;
+  document.getElementById('edit-repo-auto-scan').checked = r.auto_scan !== false;
+  document.getElementById('edit-repo-auto-dispatch').checked = r.auto_dispatch !== false;
+  document.getElementById('edit-repo-tags').value = (r.tags || []).join(', ');
+  document.getElementById('edit-repo-overrides').value = JSON.stringify(r.overrides || {}, null, 2);
+  var resultEl = document.getElementById('edit-repo-result');
+  if (resultEl) { resultEl.className = 'dispatch-result'; resultEl.textContent = ''; }
+}
+
+function _closeRepoEditModal() {
+  var modal = document.getElementById('edit-repo-modal');
+  if (modal) modal.classList.remove('active');
+  _editingRepoIdx = -1;
+}
+
+async function _submitRepoEditStatic() {
+  if (_editingRepoIdx < 0) return;
+  var idx = _editingRepoIdx;
+  var resultEl = document.getElementById('edit-repo-result');
+  var r = registryData.repos[idx];
+  var prev = Object.assign({}, r);
+  r.importance = document.getElementById('edit-repo-importance').value;
+  r.importance_score = parseInt(document.getElementById('edit-repo-score').value, 10) || 50;
+  r.max_sessions_per_cycle = parseInt(document.getElementById('edit-repo-max-sessions').value, 10) || 5;
+  r.auto_scan = document.getElementById('edit-repo-auto-scan').checked;
+  r.auto_dispatch = document.getElementById('edit-repo-auto-dispatch').checked;
+  r.tags = document.getElementById('edit-repo-tags').value.split(',').map(function(t) { return t.trim(); }).filter(Boolean);
+  try {
+    var overridesStr = document.getElementById('edit-repo-overrides').value.trim();
+    if (overridesStr) r.overrides = JSON.parse(overridesStr);
+  } catch (e) {
+    resultEl.textContent = 'Invalid overrides JSON';
+    resultEl.className = 'dispatch-result error';
+    Object.assign(r, prev);
+    return;
+  }
+  var ok = await _saveRegistryStatic();
+  if (ok) {
+    _closeRepoEditModal();
+    renderRegistryPanel();
+  } else {
+    Object.assign(r, prev);
+    resultEl.textContent = 'Failed to save. Check your GitHub token.';
+    resultEl.className = 'dispatch-result error';
+  }
+}
+
+async function _staticRegistryAdd(url, schedule) {
+  var resultEl = document.getElementById('add-repo-result');
+  for (var i = 0; i < (registryData.repos || []).length; i++) {
+    if (registryData.repos[i].repo === url) {
+      resultEl.textContent = 'Repo already registered.';
+      resultEl.className = 'dispatch-result error';
+      return;
+    }
+  }
+  registryData.repos.push({ repo: url, enabled: true, schedule: schedule, overrides: {} });
+  var ok = await _saveRegistryStatic();
+  if (ok) {
+    _closeAddRepoModal();
+    renderRegistryPanel();
+  } else {
+    registryData.repos.pop();
+    resultEl.textContent = 'Failed to save. Check your GitHub token.';
+    resultEl.className = 'dispatch-result error';
+  }
+}
+
+async function fetchAll() {
+  showAllSkeletons();
+  setStatus('Loading data from GitHub...');
+  try {
+    const runs = await loadRuns(false);
+    const filteredRuns = filterRunsByPeriod(runs, currentPeriod);
+    allRuns = filteredRuns;
+    window._cachedRuns = runs;
+
+    const sessions = aggregateSessions(filteredRuns);
+    allSessions = sessions;
+    window._cachedSessions = sessions;
+
+    const prs = await fetchPrsFromGitHub(runs);
+    allPrs = prs;
+    window._cachedPrs = prs;
+
+    linkPrsToSessions(sessions, prs);
+
+    stats = aggregateStats(filteredRuns, sessions, prs);
+    allRepos = buildReposDict(filteredRuns, sessions, prs);
+    allIssues = trackIssuesAcrossRuns(filteredRuns);
+
+    registryData = await fetchRegistry();
+    verificationRecords = await loadVerificationRecords();
+
+    renderAll();
+    setStatus('Ready');
+    setUpdated();
+  } catch (e) {
+    setStatus('Error: ' + e.message);
+    console.error(e);
+  }
+}
+
+async function pollSessions() {
+  const btn = document.getElementById('btn-poll');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Polling...';
+  setStatus('Triggering server-side session poll...');
+  try {
+    const result = await triggerPollWorkflow();
+    if (result.error) {
+      setStatus('Poll error: ' + result.error);
+      btn.disabled = false;
+      btn.textContent = 'Poll Sessions';
+      return;
+    }
+    setStatus('Poll workflow dispatched, waiting for completion...');
+    const waitResult = await waitForPollWorkflow(120000);
+    if (waitResult.error) {
+      setStatus('Poll warning: ' + waitResult.error);
+    } else {
+      setStatus('Poll workflow completed (' + (waitResult.conclusion || 'done') + '). Refreshing data...');
+    }
+
+    _runsCache = null;
+    const runs = await loadRuns(true);
+    allRuns = runs;
+    window._cachedRuns = runs;
+
+    const sessions = aggregateSessions(runs);
+    allSessions = sessions;
+    window._cachedSessions = sessions;
+
+    const prs = await fetchPrsFromGitHub(runs);
+    allPrs = prs;
+    window._cachedPrs = prs;
+    linkPrsToSessions(sessions, prs);
+
+    stats = aggregateStats(runs, sessions, prs);
+    allRepos = buildReposDict(runs, sessions, prs);
+    allIssues = trackIssuesAcrossRuns(runs);
+    renderAll();
+    setStatus('Polled ' + sessions.length + ' sessions, found ' + prs.length + ' PRs');
+    setUpdated();
+  } catch (e) {
+    setStatus('Poll error: ' + e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = 'Poll Sessions';
+}
+
+async function refreshData() {
+  const btn = document.getElementById('btn-refresh');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Refreshing...';
+  setStatus('Pulling latest telemetry data...');
+  try {
+    _runsCache = null;
+    const runs = await loadRuns(true);
+    allRuns = runs;
+    window._cachedRuns = runs;
+
+    const sessions = aggregateSessions(runs);
+    allSessions = sessions;
+    window._cachedSessions = sessions;
+
+    const prs = await fetchPrsFromGitHub(runs);
+    allPrs = prs;
+    window._cachedPrs = prs;
+    linkPrsToSessions(sessions, prs);
+
+    stats = aggregateStats(runs, sessions, prs);
+    allRepos = buildReposDict(runs, sessions, prs);
+    allIssues = trackIssuesAcrossRuns(runs);
+
+    renderAll();
+    setStatus('Refreshed - ' + runs.length + ' run files, ' + prs.length + ' PRs');
+    setUpdated();
+  } catch (e) {
+    setStatus('Refresh error: ' + e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = 'Refresh Data';
+}
+
+let _demoLoaded = false;
+
+function _isDemoActive() {
+  return localStorage.getItem('demo_data_active') === '1';
+}
+
+function updateDemoUI() {
+  var btn = document.getElementById('btn-demo-toggle');
+  var statusEl = document.getElementById('demo-status-text');
+  var loadBtn = document.getElementById('btn-demo-load');
+  var clearBtn = document.getElementById('btn-demo-clear');
+  var active = _isDemoActive();
+  _demoLoaded = active;
+  if (btn) {
+    btn.style.background = active ? 'var(--accent-orange)' : '';
+    btn.style.borderColor = active ? 'var(--accent-orange)' : '';
+    btn.style.color = active ? '#fff' : '';
+    btn.title = active ? 'Demo data active - click to clear' : 'Click to load demo data';
+  }
+  if (loadBtn) loadBtn.style.display = active ? 'none' : '';
+  if (clearBtn) clearBtn.style.display = active ? '' : 'none';
+  if (statusEl) {
+    statusEl.textContent = active ? 'Demo data is loaded' : 'No demo data loaded';
+    statusEl.style.color = active ? 'var(--accent-green)' : 'var(--text-muted)';
+  }
+  var summaryEl = document.getElementById('demo-summary');
+  if (summaryEl && active && typeof DEMO_DATA !== 'undefined') {
+    var d = _getLocalDemoData();
+    var repos = new Set();
+    var totalIssues = 0;
+    var totalSessions = 0;
+    for (var r of d.runs) {
+      repos.add(r.target_repo || '');
+      totalIssues += r.issues_found || 0;
+      totalSessions += (r.sessions || []).length;
+    }
+    summaryEl.textContent = repos.size + ' repos, ' + d.runs.length + ' runs, ' + (d.prs || []).length + ' PRs, ' + totalSessions + ' sessions';
+  } else if (summaryEl) {
+    summaryEl.textContent = '';
+  }
+}
+
+function _getLocalDemoData() {
+  var custom = localStorage.getItem('demo_data_custom');
+  if (custom) {
+    try { return JSON.parse(custom); } catch (e) {}
+  }
+  return typeof DEMO_DATA !== 'undefined' ? DEMO_DATA : { runs: [], prs: [] };
+}
+
+function toggleDemoData() {
+  if (_isDemoActive()) { clearDemoData(); } else { loadDemoData(); }
+}
+
+function loadDemoData() {
+  localStorage.setItem('demo_data_active', '1');
+  setStatus('Demo data loaded');
+  updateDemoUI();
+  fetchAll();
+}
+
+function clearDemoData() {
+  localStorage.removeItem('demo_data_active');
+  setStatus('Demo data cleared');
+  updateDemoUI();
+  fetchAll();
+}
+
+function openDemoEditor() {
+  var data = _getLocalDemoData();
+  var modal = document.getElementById('demo-editor-modal');
+  if (modal) {
+    document.getElementById('demo-editor-textarea').value = JSON.stringify(data, null, 2);
+    modal.classList.add('active');
+  }
+}
+
+function closeDemoEditor() {
+  var modal = document.getElementById('demo-editor-modal');
+  if (modal) modal.classList.remove('active');
+}
+
+function saveDemoEditorData() {
+  var textarea = document.getElementById('demo-editor-textarea');
+  var resultEl = document.getElementById('demo-editor-result');
+  try {
+    var parsed = JSON.parse(textarea.value);
+    localStorage.setItem('demo_data_custom', JSON.stringify(parsed));
+    if (resultEl) { resultEl.className = 'dispatch-result success'; resultEl.textContent = 'Saved to browser storage'; }
+    if (_isDemoActive()) { fetchAll(); updateDemoUI(); }
+  } catch (e) {
+    if (resultEl) { resultEl.className = 'dispatch-result error'; resultEl.textContent = 'Invalid JSON: ' + e.message; }
+  }
+}
+
+var _origLoadRuns = loadRuns;
+loadRuns = async function(forceRefresh) {
+  if (_isDemoActive()) {
+    var d = _getLocalDemoData();
+    return d.runs || [];
+  }
+  return _origLoadRuns(forceRefresh);
+};
+
+var _origFetchPrs = fetchPrsFromGitHub;
+fetchPrsFromGitHub = async function(runs) {
+  if (_isDemoActive()) {
+    var d = _getLocalDemoData();
+    return d.prs || [];
+  }
+  return _origFetchPrs(runs);
+};
+
+function fetchAuditLog(){
+  var el = document.getElementById('audit-log-container');
+  if (el) el.innerHTML = '<div class="empty-state">Audit log is available when running the Flask telemetry server.</div>';
+}
+
+function renderAuditLogPanel() {
+  var el = document.getElementById('audit-log-container');
+  if (!el) return;
+  if (!auditLogData) {
+    el.innerHTML = '<div class="empty-state">Audit log is available when running the Flask telemetry server.</div>';
+    return;
+  }
+}
+
+function exportAuditLog() {
+  setStatus('Audit log export is available when running the Flask telemetry server.');
+}
+
+async function init(){
+  var cfg = getConfig();
+  var warnings = [];
+  if (!cfg.githubToken) warnings.push('GitHub token not set - PR discovery and refresh limited');
+  updateDemoUI();
+  await fetchAll();
+  if (warnings.length > 0 && !_isDemoActive()) setStatus(warnings.join(' | ') + ' (click Settings to configure)');
+  startLivePolling(30000);
+}
+init();
+</script>
+</body>
+</html>

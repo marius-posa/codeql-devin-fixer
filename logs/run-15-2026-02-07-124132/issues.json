@@ -1,0 +1,99 @@
+[
+  {
+    "id": "CQLF-R15-0001",
+    "rule_id": "py/incomplete-url-substring-sanitization",
+    "rule_name": "py/incomplete-url-substring-sanitization",
+    "rule_description": "Incomplete URL substring sanitization",
+    "rule_help": "# Incomplete URL substring sanitization\nSanitizing untrusted URLs is a common technique for preventing attacks such as request forgeries and malicious redirections. Usually, this is done by checking that the host of a URL is in a set of allowed hosts.\n\nHowever, treating the URL as a string and checking if one of the allowed hosts is a substring of the URL is very prone to errors. Malicious URLs can bypass such security checks by embedding one of the allowed hosts in an unexpected location.\n\nEven if the substring check is not used in a security-critical context, the incomplete check may still cause undesirable behaviors when the check succeeds accidentally.\n\n\n## Recommendation\nParse a URL before performing a check on its host value, and ensure that the check handles arbitrary subdomain sequences correctly.\n\n\n## Example\nThe following example code checks that a URL redirection will reach the `example.com` domain.\n\n\n```python\nfrom flask import Flask, request, redirect\nfrom urllib.parse imp",
+    "message": "The string [github.com/](1) may be at an arbitrary position in the sanitized URL.",
+    "severity_score": 7.8,
+    "severity_tier": "high",
+    "cwes": [
+      "cwe-20"
+    ],
+    "cwe_family": "other",
+    "locations": [
+      {
+        "file": "telemetry/app.py",
+        "start_line": 284,
+        "end_line": 284,
+        "start_column": 12
+      }
+    ],
+    "level": "warning",
+    "fingerprint": "1fa0efabcb82ac72"
+  },
+  {
+    "id": "CQLF-R15-0002",
+    "rule_id": "py/incomplete-url-substring-sanitization",
+    "rule_name": "py/incomplete-url-substring-sanitization",
+    "rule_description": "Incomplete URL substring sanitization",
+    "rule_help": "# Incomplete URL substring sanitization\nSanitizing untrusted URLs is a common technique for preventing attacks such as request forgeries and malicious redirections. Usually, this is done by checking that the host of a URL is in a set of allowed hosts.\n\nHowever, treating the URL as a string and checking if one of the allowed hosts is a substring of the URL is very prone to errors. Malicious URLs can bypass such security checks by embedding one of the allowed hosts in an unexpected location.\n\nEven if the substring check is not used in a security-critical context, the incomplete check may still cause undesirable behaviors when the check succeeds accidentally.\n\n\n## Recommendation\nParse a URL before performing a check on its host value, and ensure that the check handles arbitrary subdomain sequences correctly.\n\n\n## Example\nThe following example code checks that a URL redirection will reach the `example.com` domain.\n\n\n```python\nfrom flask import Flask, request, redirect\nfrom urllib.parse imp",
+    "message": "The string [github.com/](1) may be at an arbitrary position in the sanitized URL.",
+    "severity_score": 7.8,
+    "severity_tier": "high",
+    "cwes": [
+      "cwe-20"
+    ],
+    "cwe_family": "other",
+    "locations": [
+      {
+        "file": "scripts/persist_telemetry.py",
+        "start_line": 47,
+        "end_line": 47,
+        "start_column": 8
+      }
+    ],
+    "level": "warning",
+    "fingerprint": "9f991bf55d542ae1"
+  },
+  {
+    "id": "CQLF-R15-0003",
+    "rule_id": "py/incomplete-url-substring-sanitization",
+    "rule_name": "py/incomplete-url-substring-sanitization",
+    "rule_description": "Incomplete URL substring sanitization",
+    "rule_help": "# Incomplete URL substring sanitization\nSanitizing untrusted URLs is a common technique for preventing attacks such as request forgeries and malicious redirections. Usually, this is done by checking that the host of a URL is in a set of allowed hosts.\n\nHowever, treating the URL as a string and checking if one of the allowed hosts is a substring of the URL is very prone to errors. Malicious URLs can bypass such security checks by embedding one of the allowed hosts in an unexpected location.\n\nEven if the substring check is not used in a security-critical context, the incomplete check may still cause undesirable behaviors when the check succeeds accidentally.\n\n\n## Recommendation\nParse a URL before performing a check on its host value, and ensure that the check handles arbitrary subdomain sequences correctly.\n\n\n## Example\nThe following example code checks that a URL redirection will reach the `example.com` domain.\n\n\n```python\nfrom flask import Flask, request, redirect\nfrom urllib.parse imp",
+    "message": "The string [github.com](1) may be at an arbitrary position in the sanitized URL.",
+    "severity_score": 7.8,
+    "severity_tier": "high",
+    "cwes": [
+      "cwe-20"
+    ],
+    "cwe_family": "other",
+    "locations": [
+      {
+        "file": "scripts/persist_logs.py",
+        "start_line": 123,
+        "end_line": 123,
+        "start_column": 8
+      }
+    ],
+    "level": "warning",
+    "fingerprint": "35c1a79231a968b7"
+  },
+  {
+    "id": "CQLF-R15-0004",
+    "rule_id": "py/flask-debug",
+    "rule_name": "py/flask-debug",
+    "rule_description": "Flask app is run in debug mode",
+    "rule_help": "# Flask app is run in debug mode\nRunning a Flask application with debug mode enabled may allow an attacker to gain access through the Werkzeug debugger.\n\n\n## Recommendation\nEnsure that Flask applications that are run in a production environment have debugging disabled.\n\n\n## Example\nRunning the following code starts a Flask webserver that has debugging enabled. By visiting `/crash`, it is possible to gain access to the debugger, and run arbitrary code through the interactive debugger.\n\n\n```python\nfrom flask import Flask\n\napp = Flask(__name__)\n\n@app.route('/crash')\ndef main():\n    raise Exception()\n\napp.run(debug=True)\n\n```\n\n## References\n* Flask Quickstart Documentation: [Debug Mode](http://flask.pocoo.org/docs/1.0/quickstart/#debug-mode).\n* Werkzeug Documentation: [Debugging Applications](http://werkzeug.pocoo.org/docs/0.14/debug/).\n* Common Weakness Enumeration: [CWE-215](https://cwe.mitre.org/data/definitions/215.html).\n* Common Weakness Enumeration: [CWE-489](https://cwe.mitre.org/d",
+    "message": "A Flask app appears to be run in debug mode. This may allow an attacker to run arbitrary code through the debugger.",
+    "severity_score": 7.5,
+    "severity_tier": "high",
+    "cwes": [
+      "cwe-215",
+      "cwe-489"
+    ],
+    "cwe_family": "info-disclosure",
+    "locations": [
+      {
+        "file": "telemetry/app.py",
+        "start_line": 752,
+        "end_line": 752,
+        "start_column": 5
+      }
+    ],
+    "level": "warning",
+    "fingerprint": "8359eb775a4bdcbf"
+  }
+]

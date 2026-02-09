@@ -1,0 +1,54 @@
+{
+  "version": "2.0",
+  "defaults": {
+    "languages": "",
+    "queries": "security-extended",
+    "batch_size": 5,
+    "max_sessions": 5,
+    "severity_threshold": "low",
+    "default_branch": "main",
+    "persist_logs": true,
+    "dry_run": false,
+    "include_paths": "",
+    "exclude_paths": ""
+  },
+  "concurrency": {
+    "max_parallel": 3,
+    "delay_seconds": 30
+  },
+  "orchestrator": {
+    "global_session_limit": 20,
+    "global_session_limit_period_hours": 24,
+    "objectives": [],
+    "alert_on_verified_fix": true,
+    "alert_severities": [
+      "critical",
+      "high"
+    ]
+  },
+  "repos": [
+    {
+      "repo": "https://github.com/juice-shop/juice-shop",
+      "enabled": true,
+      "importance": "high",
+      "importance_score": 80,
+      "schedule": "weekly",
+      "max_sessions_per_cycle": 2,
+      "auto_scan": true,
+      "auto_dispatch": true,
+      "tags": [
+        "web-app"
+      ],
+      "overrides": {
+        "languages": "javascript",
+        "severity_threshold": "medium"
+      }
+    },
+    {
+      "repo": "https://github.com/marius-posa/codeql-devin-fixer",
+      "enabled": true,
+      "schedule": "daily",
+      "overrides": {}
+    }
+  ]
+}

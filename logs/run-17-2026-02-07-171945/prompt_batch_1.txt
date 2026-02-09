@@ -1,0 +1,49 @@
+Fix 2 CodeQL security issue(s) in https://github.com/marius-posa/codeql-devin-fixer (branch: main).
+
+Issue IDs: CQLF-R17-0001, CQLF-R17-0002
+Category: info-disclosure | Severity: HIGH (max CVSS: 7.5)
+
+Issues to fix:
+
+### CQLF-R17-0001: py/flask-debug (py/flask-debug)
+- Severity: HIGH (7.5)
+- CWE: cwe-215, cwe-489
+- Location(s): telemetry/app.py:509
+- Description: A Flask app appears to be run in debug mode. This may allow an attacker to run arbitrary code through the debugger.
+- Rule: Flask app is run in debug mode
+- Guidance: # Flask app is run in debug mode
+Running a Flask application with debug mode enabled may allow an attacker to gain access through the Werkzeug debugger.
+
+
+## Recommendation
+Ensure that Flask applications that are run in a production environment have debugging disabled.
+
+
+## Example
+Running the following code starts a Flask webserver that has debugging enabled. By visiting `/crash`, it is possible to gain access to the debugger, and run arbitrary code through the interactive debugger.
+
+
+```python
+
+### CQLF-R17-0002: py/stack-trace-exposure (py/stack-trace-exposure)
+- Severity: MEDIUM (5.4)
+- CWE: cwe-209, cwe-497
+- Location(s): telemetry/app.py:501
+- Description: [Stack trace information](1) flows to this location and may be exposed to an external user.
+- Rule: Information exposure through an exception
+- Guidance: # Information exposure through an exception
+Software developers often add stack traces to error messages, as a debugging aid. Whenever that error message occurs for an end user, the developer can use the stack trace to help identify how to fix the problem. In particular, stack traces can tell the developer more about the sequence of events that led to a failure, as opposed to merely the final state of the software when the error occurred.
+
+Unfortunately, the same information can be useful to an 
+
+Instructions:
+1. Clone https://github.com/marius-posa/codeql-devin-fixer and create a new branch from main.
+2. Fix ALL the issues listed above. Track which issue IDs you are fixing.
+3. Ensure fixes don't break existing functionality.
+4. Run existing tests if available to verify.
+5. Create a PR on https://github.com/marius-posa/codeql-devin-fixer with a clear description listing each issue ID fixed.
+6. Title the PR exactly: 'fix(CQLF-R17-0001,CQLF-R17-0002): resolve info-disclosure security issues'
+7. In the PR body, list each issue ID (CQLF-R17-0001, CQLF-R17-0002) and describe the fix applied.
+
+Files to focus on:
+- telemetry/app.py

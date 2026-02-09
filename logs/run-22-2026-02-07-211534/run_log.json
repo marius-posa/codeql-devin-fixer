@@ -1,0 +1,12 @@
+{
+  "run_label": "run-22-2026-02-07-211534",
+  "run_number": "22",
+  "timestamp": "2026-02-07-211534",
+  "total_raw": 3,
+  "dedup_removed": 0,
+  "total_filtered": 3,
+  "total_batches": 1,
+  "severity_threshold": "medium",
+  "batch_size": 5,
+  "max_batches": 1
+}

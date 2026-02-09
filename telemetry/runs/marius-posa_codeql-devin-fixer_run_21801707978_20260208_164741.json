@@ -1,0 +1,80 @@
+{
+  "target_repo": "https://github.com/marius-posa/codeql-devin-fixer",
+  "fork_url": "https://github.com/marius-posa/codeql-devin-fixer",
+  "run_number": 27,
+  "run_id": "21801707978",
+  "run_url": "https://github.com/marius-posa/codeql-devin-fixer/actions/runs/21801707978",
+  "run_label": "run-27-2026-02-08-164735",
+  "timestamp": "2026-02-08T16:47:41.442777+00:00",
+  "issues_found": 5,
+  "severity_breakdown": {
+    "medium": 5
+  },
+  "category_breakdown": {
+    "xss": 5
+  },
+  "batches_created": 1,
+  "sessions": [
+    {
+      "session_id": "devin-db5442396af642a9a4912d231bc875ad",
+      "session_url": "https://app.devin.ai/sessions/db5442396af642a9a4912d231bc875ad",
+      "batch_id": 1,
+      "status": "working",
+      "issue_ids": [
+        "CQLF-R27-0001",
+        "CQLF-R27-0002",
+        "CQLF-R27-0003",
+        "CQLF-R27-0004",
+        "CQLF-R27-0005"
+      ]
+    }
+  ],
+  "issue_fingerprints": [
+    {
+      "id": "CQLF-R27-0001",
+      "fingerprint": "a46de6d546eb91d1",
+      "rule_id": "py/jinja2/autoescape-false",
+      "severity_tier": "medium",
+      "cwe_family": "xss",
+      "file": "scripts/dispatch_devin.py",
+      "start_line": 95
+    },
+    {
+      "id": "CQLF-R27-0002",
+      "fingerprint": "18586a9f4c8f3e1c",
+      "rule_id": "py/jinja2/autoescape-false",
+      "severity_tier": "medium",
+      "cwe_family": "xss",
+      "file": "tests/test_dispatch_devin.py",
+      "start_line": 648
+    },
+    {
+      "id": "CQLF-R27-0003",
+      "fingerprint": "d9d9d928a36f1b4e",
+      "rule_id": "py/jinja2/autoescape-false",
+      "severity_tier": "medium",
+      "cwe_family": "xss",
+      "file": "tests/test_dispatch_devin.py",
+      "start_line": 656
+    },
+    {
+      "id": "CQLF-R27-0004",
+      "fingerprint": "3aaecccacce2e668",
+      "rule_id": "py/jinja2/autoescape-false",
+      "severity_tier": "medium",
+      "cwe_family": "xss",
+      "file": "tests/test_dispatch_devin.py",
+      "start_line": 662
+    },
+    {
+      "id": "CQLF-R27-0005",
+      "fingerprint": "2023331a690baa31",
+      "rule_id": "py/jinja2/autoescape-false",
+      "severity_tier": "medium",
+      "cwe_family": "xss",
+      "file": "tests/test_dispatch_devin.py",
+      "start_line": 669
+    }
+  ],
+  "zero_issue_run": false
+}

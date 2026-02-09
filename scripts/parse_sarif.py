@@ -1,12 +1,73 @@
 #!/usr/bin/env python3
-"""Parse CodeQL SARIF output, prioritize by severity, and group into batches."""
+"""Parse CodeQL SARIF output, prioritize by severity, and group into batches.
 
+This script is the analytical core of the pipeline.  It transforms raw SARIF
+(Static Analysis Results Interchange Format) output from CodeQL into
+actionable, prioritised batches that can be dispatched to Devin sessions.
+
+The processing pipeline is:
+
+1. **Parse** -- extract issues from one or more ``.sarif`` files.
+2. **Deduplicate** -- remove findings that share the same rule + location.
+3. **Prioritize** -- filter by severity threshold and sort by CVSS score.
+4. **Assign IDs** -- give each issue a stable identifier
+   (``CQLF-R{run}-{seq}``) so it can be tracked across sessions and PRs.
+5. **Batch** -- group related issues by CWE family and chunk them to fit
+   within the configured ``batch_size``.  Families are ordered by maximum
+   severity so the most critical batches are dispatched first.
+
+Design decisions
+----------------
+* **CVSS-based severity tiers** -- we map the ``security-severity`` property
+  (a CVSS v3 score) to four tiers.  This mirrors how vulnerability scanners
+  report risk and aligns with industry norms (NVD, GitHub Advisory).
+* **CWE family grouping** -- issues are batched by CWE family rather than
+  individual CWE because related weaknesses often share the same remediation
+  pattern (e.g. all injection CWEs benefit from parameterised queries).
+  Batching by family lets Devin apply a consistent fix strategy.
+* **Issue IDs** -- the ``CQLF-R{run}-{seq}`` format encodes the run number
+  so IDs are unique across runs.  This makes it easy to trace a PR back to
+  the exact action run that identified the issues.
+
+Environment variables
+---------------------
+BATCH_SIZE : int
+    Maximum issues per batch / Devin session (default 5).
+MAX_SESSIONS : int
+    Maximum number of batches to create (default 10).
+SEVERITY_THRESHOLD : str
+    Minimum severity tier to include: critical | high | medium | low.
+RUN_NUMBER : str
+    GitHub Actions run number, used in issue IDs.
+"""
+
+import hashlib
 import json
+import os
 import re
 import sys
-import os
 from collections import defaultdict
+from datetime import datetime, timezone
+from pathlib import PurePosixPath
 from typing import Any
+
+try:
+    from logging_config import setup_logging
+    from pipeline_config import Batch, ParsedIssue, PipelineConfig
+except ImportError:
+    from scripts.logging_config import setup_logging
+    from scripts.pipeline_config import Batch, ParsedIssue, PipelineConfig
+
+logger = setup_logging(__name__)
+
+BATCHES_SCHEMA_VERSION = "1.0"
+ISSUES_SCHEMA_VERSION = "1.0"
+
+# Severity tiers map CVSS v3 score ranges to human-readable labels.
+# These thresholds follow the NVD / GitHub Advisory severity scale so that
+# results are consistent with what developers see on github.com.
+SARIF_MAX_SIZE_MB = 500
+SARIF_MAX_SIZE_BYTES = SARIF_MAX_SIZE_MB * 1024 * 1024
 
 SEVERITY_TIERS = {
     "critical": (9.0, 10.0),
@@ -18,6 +79,10 @@ SEVERITY_TIERS = {
 
 SEVERITY_ORDER = ["critical", "high", "medium", "low", "none"]
 
+# CWE families group related weakness IDs so that issues sharing a common
+# remediation strategy end up in the same batch.  For example, SQL injection
+# (CWE-89) and OS command injection (CWE-78) both require input validation /
+# parameterised APIs, so they belong to the "injection" family.
 CWE_FAMILIES: dict[str, list[str]] = {
     "injection": [
         "cwe-77",
@@ -28,33 +93,99 @@ CWE_FAMILIES: dict[str, list[str]] = {
         "cwe-95",
         "cwe-96",
         "cwe-116",
+        "cwe-564",
         "cwe-917",
         "cwe-943",
-        "cwe-1321",
     ],
-    "xss": ["cwe-79", "cwe-80"],
-    "path-traversal": ["cwe-22", "cwe-23", "cwe-36"],
+    "xss": ["cwe-79", "cwe-80", "cwe-83", "cwe-87"],
+    "path-traversal": ["cwe-22", "cwe-23", "cwe-36", "cwe-73", "cwe-99"],
     "ssrf": ["cwe-918"],
     "deserialization": ["cwe-502"],
-    "auth": ["cwe-287", "cwe-306", "cwe-862", "cwe-863"],
-    "crypto": ["cwe-327", "cwe-328", "cwe-330", "cwe-338"],
-    "info-disclosure": ["cwe-200", "cwe-209", "cwe-532", "cwe-497"],
+    "auth": [
+        "cwe-287", "cwe-306", "cwe-862", "cwe-863",
+        "cwe-284", "cwe-285", "cwe-269", "cwe-732",
+    ],
+    "crypto": [
+        "cwe-327", "cwe-328", "cwe-330", "cwe-338",
+        "cwe-326", "cwe-261", "cwe-310", "cwe-295",
+        "cwe-347", "cwe-916",
+    ],
+    "info-disclosure": [
+        "cwe-200", "cwe-209", "cwe-532", "cwe-497",
+        "cwe-215", "cwe-538", "cwe-359", "cwe-312",
+        "cwe-319",
+    ],
     "redirect": ["cwe-601"],
-    "xxe": ["cwe-611"],
+    "xxe": ["cwe-611", "cwe-776"],
     "csrf": ["cwe-352"],
     "prototype-pollution": ["cwe-1321"],
-    "regex-dos": ["cwe-1333", "cwe-730"],
-    "type-confusion": ["cwe-843"],
-    "template-injection": ["cwe-73", "cwe-1336"],
+    "regex-dos": ["cwe-1333", "cwe-730", "cwe-400", "cwe-185"],
+    "type-confusion": ["cwe-843", "cwe-704"],
+    "template-injection": ["cwe-1336"],
+    "hardcoded-credentials": [
+        "cwe-798", "cwe-259", "cwe-321", "cwe-547",
+    ],
+    "missing-rate-limiting": ["cwe-770", "cwe-799", "cwe-307"],
+    "logging": ["cwe-117", "cwe-778", "cwe-223"],
+    "zip-slip": ["cwe-59"],
+    "xml-injection": ["cwe-91", "cwe-643"],
+    "nosql-injection": ["cwe-1286"],
+    "session-management": [
+        "cwe-384", "cwe-613", "cwe-614", "cwe-1004",
+    ],
+    "file-upload": ["cwe-434"],
+    "race-condition": ["cwe-362", "cwe-367"],
+    "memory-safety": [
+        "cwe-119", "cwe-120", "cwe-125", "cwe-787",
+        "cwe-416", "cwe-476", "cwe-190",
+    ],
 }
 
+# Reverse index: CWE-ID -> family name for O(1) lookup during parsing.
 _CWE_FAMILY_INDEX: dict[str, str] = {}
 for _family, _members in CWE_FAMILIES.items():
     for _cwe in _members:
         _CWE_FAMILY_INDEX[_cwe] = _family
 
 
+def _load_custom_cwe_families() -> None:
+    """Extend the CWE family index with custom mappings from env var.
+
+    The ``CUSTOM_CWE_FAMILIES`` environment variable should contain a
+    JSON-encoded dict mapping family names to lists of CWE IDs.  These
+    extend (not replace) the built-in ``CWE_FAMILIES`` definitions.
+    """
+    raw = os.environ.get("CUSTOM_CWE_FAMILIES", "").strip()
+    if not raw:
+        return
+    try:
+        custom: dict[str, list[str]] = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        logger.warning("CUSTOM_CWE_FAMILIES is not valid JSON; ignoring")
+        return
+    if not isinstance(custom, dict):
+        logger.warning("CUSTOM_CWE_FAMILIES must be a JSON object; ignoring")
+        return
+    for family, members in custom.items():
+        if not isinstance(members, list):
+            continue
+        for cwe_id in members:
+            normalized = normalize_cwe(str(cwe_id))
+            _CWE_FAMILY_INDEX[normalized] = family
+        if family not in CWE_FAMILIES:
+            CWE_FAMILIES[family] = []
+        CWE_FAMILIES[family].extend(
+            normalize_cwe(str(c)) for c in members
+            if normalize_cwe(str(c)) not in CWE_FAMILIES[family]
+        )
+
+
 def normalize_cwe(cwe: str) -> str:
+    """Normalise a CWE identifier to lowercase ``cwe-{number}`` form.
+
+    SARIF tags may include leading zeros (``CWE-079``); this strips them so
+    lookups into ``_CWE_FAMILY_INDEX`` are consistent.
+    """
     m = re.match(r"cwe-0*(\d+)", cwe.lower())
     if m:
         return f"cwe-{m.group(1)}"
@@ -62,6 +193,7 @@ def normalize_cwe(cwe: str) -> str:
 
 
 def classify_severity(score: float) -> str:
+    """Map a numeric CVSS score to a severity tier string."""
     for tier, (low, high) in SEVERITY_TIERS.items():
         if low <= score <= high:
             return tier
@@ -69,6 +201,10 @@ def classify_severity(score: float) -> str:
 
 
 def extract_cwes(tags: list[str]) -> list[str]:
+    """Extract and normalise CWE IDs from SARIF rule tags.
+
+    CodeQL encodes CWEs as ``external/cwe/cwe-79`` in the tags array.
+    """
     cwes = []
     for tag in tags:
         if tag.startswith("external/cwe/"):
@@ -78,6 +214,7 @@ def extract_cwes(tags: list[str]) -> list[str]:
 
 
 def get_cwe_family(cwes: list[str]) -> str:
+    """Return the family name for the first recognised CWE, or ``'other'``."""
     for cwe in cwes:
         family = _CWE_FAMILY_INDEX.get(cwe)
         if family:
@@ -85,15 +222,66 @@ def get_cwe_family(cwes: list[str]) -> str:
     return "other"
 
 
-def parse_sarif(sarif_path: str) -> list[dict[str, Any]]:
+def validate_sarif(sarif: dict[str, Any], path: str) -> None:
+    """Lightweight validation of a SARIF document's required top-level keys.
+
+    Checks that the document has the expected ``version`` and ``$schema``
+    fields, and that at least one ``runs`` entry exists.  This catches
+    malformed files early instead of silently producing an empty issues
+    list.
+
+    Raises
+    ------
+    ValueError
+        If a required key is missing or has an unexpected value.
+    """
+    if not isinstance(sarif, dict):
+        raise ValueError(f"{path}: SARIF root must be a JSON object, got {type(sarif).__name__}")
+
+    version = sarif.get("version")
+    if version is None:
+        raise ValueError(f"{path}: missing required 'version' field")
+    if not version.startswith("2.1"):
+        logger.warning("%s: unexpected SARIF version '%s' (expected 2.1.x)", path, version)
+
+    schema = sarif.get("$schema", "")
+    if schema and "sarif" not in schema.lower():
+        logger.warning("%s: '$schema' does not reference a SARIF schema: %s", path, schema)
+
+    runs = sarif.get("runs")
+    if runs is None:
+        raise ValueError(f"{path}: missing required 'runs' array")
+    if not isinstance(runs, list):
+        raise ValueError(f"{path}: 'runs' must be a JSON array, got {type(runs).__name__}")
+
+
+def parse_sarif(sarif_path: str) -> list[ParsedIssue]:
+    """Extract security issues from a single SARIF file.
+
+    Iterates over every ``run`` / ``result`` in the SARIF and enriches each
+    finding with severity score, tier, CWE IDs, and source locations.
+
+    If the ``security-severity`` property is absent (some built-in rules
+    don't set it), the function falls back to the result ``level`` field:
+    ``error`` -> 7.0 (high), ``warning`` -> 4.0 (medium).
+    """
     file_size = os.path.getsize(sarif_path)
-    if file_size > 500 * 1024 * 1024:
-        print(f"WARNING: SARIF file is very large ({file_size / 1024 / 1024:.0f} MB)")
+    if file_size > SARIF_MAX_SIZE_BYTES:
+        raise ValueError(
+            f"SARIF file too large ({file_size / 1024 / 1024:.0f} MB, "
+            f"limit is {SARIF_MAX_SIZE_MB} MB): {sarif_path}"
+        )
 
     with open(sarif_path) as f:
         sarif = json.load(f)
 
-    issues: list[dict[str, Any]] = []
+    try:
+        validate_sarif(sarif, sarif_path)
+    except ValueError as exc:
+        logger.warning("%s", exc)
+        return []
+
+    issues: list[ParsedIssue] = []
 
     for run in sarif.get("runs", []):
         rules_by_id: dict[str, dict[str, Any]] = {}
@@ -143,6 +331,8 @@ def parse_sarif(sarif_path: str) -> list[dict[str, Any]]:
                     }
                 )
 
+            partial_fps = result.get("partialFingerprints", {})
+
             message = result.get("message", {}).get("text", "")
             rule_desc = rule.get("shortDescription", {}).get("text", "")
             rule_help = rule.get("help", {}).get("text", "")
@@ -150,6 +340,7 @@ def parse_sarif(sarif_path: str) -> list[dict[str, Any]]:
 
             issues.append(
                 {
+                    "id": "",
                     "rule_id": rule_id,
                     "rule_name": rule_name,
                     "rule_description": rule_desc,
@@ -161,15 +352,22 @@ def parse_sarif(sarif_path: str) -> list[dict[str, Any]]:
                     "cwe_family": cwe_family,
                     "locations": locations,
                     "level": result.get("level", "warning"),
+                    "partial_fingerprints": partial_fps,
                 }
             )
 
     return issues
 
 
-def deduplicate_issues(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def deduplicate_issues(issues: list[ParsedIssue]) -> list[ParsedIssue]:
+    """Remove duplicate findings that share the same rule ID and location(s).
+
+    CodeQL can report the same issue in multiple SARIF runs (e.g. when
+    analysing different languages).  Deduplication prevents Devin from
+    receiving the same fix request twice.
+    """
     seen: set[str] = set()
-    unique: list[dict[str, Any]] = []
+    unique: list[ParsedIssue] = []
     for issue in issues:
         locs = tuple(
             (loc["file"], loc["start_line"]) for loc in issue.get("locations", [])
@@ -183,8 +381,13 @@ def deduplicate_issues(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def prioritize_issues(
-    issues: list[dict[str, Any]], threshold: str = "low"
-) -> list[dict[str, Any]]:
+    issues: list[ParsedIssue], threshold: str = "low"
+) -> list[ParsedIssue]:
+    """Filter issues below *threshold* and sort by descending severity.
+
+    Secondary sort key is ``cwe_family`` so that issues in the same family
+    are adjacent, which improves batching efficiency.
+    """
     threshold_idx = SEVERITY_ORDER.index(threshold)
     allowed_tiers = set(SEVERITY_ORDER[: threshold_idx + 1])
     filtered = [i for i in issues if i["severity_tier"] in allowed_tiers]
@@ -192,12 +395,95 @@ def prioritize_issues(
     return filtered
 
 
+def _get_issue_dirs(issue: ParsedIssue) -> set[str]:
+    """Return the set of parent directory paths for an issue's locations."""
+    dirs: set[str] = set()
+    for loc in issue.get("locations", []):
+        f = loc.get("file", "")
+        if f:
+            dirs.add(str(PurePosixPath(f).parent))
+    return dirs
+
+
+def _get_issue_files(issue: ParsedIssue) -> set[str]:
+    """Return the set of file paths for an issue's locations."""
+    return {
+        loc["file"]
+        for loc in issue.get("locations", [])
+        if loc.get("file")
+    }
+
+
+def _file_proximity_score(issue_a: ParsedIssue, issue_b: ParsedIssue) -> float:
+    """Score how closely two issues are related by file locality.
+
+    Returns a value between 0.0 and 1.0:
+    * 1.0 -- both issues share at least one file
+    * 0.5 -- both issues share at least one directory
+    * 0.0 -- no file or directory overlap
+    """
+    files_a = _get_issue_files(issue_a)
+    files_b = _get_issue_files(issue_b)
+    if files_a & files_b:
+        return 1.0
+    dirs_a = _get_issue_dirs(issue_a)
+    dirs_b = _get_issue_dirs(issue_b)
+    if dirs_a & dirs_b:
+        return 0.5
+    return 0.0
+
+
+def _sort_by_file_proximity(issues: list[ParsedIssue]) -> list[ParsedIssue]:
+    """Re-order issues within a family group so file-proximate issues are adjacent.
+
+    Uses a greedy nearest-neighbour approach: start with the first issue,
+    then always pick the remaining issue with the highest file-proximity
+    score to the last-placed issue.  Ties are broken by severity (desc).
+    """
+    if len(issues) <= 1:
+        return list(issues)
+    remaining = list(issues)
+    ordered: list[ParsedIssue] = [remaining.pop(0)]
+    while remaining:
+        last = ordered[-1]
+        best_idx = 0
+        best_score = (-1.0, 0.0)
+        for idx, candidate in enumerate(remaining):
+            prox = _file_proximity_score(last, candidate)
+            sev = candidate["severity_score"]
+            score = (prox, sev)
+            if score > best_score:
+                best_score = score
+                best_idx = idx
+        ordered.append(remaining.pop(best_idx))
+    return ordered
+
+
 def batch_issues(
-    issues: list[dict[str, Any]], batch_size: int = 5, max_batches: int = 10
-) -> list[dict[str, Any]]:
-    family_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    issues: list[ParsedIssue], batch_size: int = 5, max_batches: int = 10
+) -> list[Batch]:
+    """Group issues into batches by CWE family with file-proximity awareness.
+
+    Within each CWE family, issues are re-ordered so that file-proximate
+    issues (same file or same directory) are adjacent.  This means each
+    batch is more likely to contain issues that share context, giving
+    Devin better locality per session.
+
+    Families with the highest max-severity score are processed first so
+    that the most critical batches get dispatched before hitting the
+    *max_batches* cap.
+
+    When the single-family pass would drop issues due to *max_batches*,
+    remaining issues are combined into cross-family batches so that no
+    issue above the severity threshold is left unaddressed.  Cross-family
+    batches carry multiple playbooks.
+    """
+    family_groups: dict[str, list[ParsedIssue]] = defaultdict(list)
     for issue in issues:
         family_groups[issue["cwe_family"]].append(issue)
+
+    for family in family_groups:
+        family_groups[family] = _sort_by_file_proximity(family_groups[family])
 
     family_severity: dict[str, float] = {}
     for family, group in family_groups.items():
@@ -205,24 +491,27 @@ def batch_issues(
 
     sorted_families = sorted(family_groups.keys(), key=lambda f: -family_severity[f])
 
-    batches: list[dict[str, Any]] = []
+    batches: list[Batch] = []
+    batched_issue_ids: set[int] = set()
+
     for family in sorted_families:
         group = family_groups[family]
         for i in range(0, len(group), batch_size):
             if len(batches) >= max_batches:
                 break
             chunk = group[i : i + batch_size]
-            files_in_batch = set()
+            files_in_batch: set[str] = set()
             for issue in chunk:
-                for loc in issue.get("locations", []):
-                    if loc.get("file"):
-                        files_in_batch.add(loc["file"])
+                files_in_batch.update(_get_issue_files(issue))
+                batched_issue_ids.add(id(issue))
             top_severity = max(c["severity_score"] for c in chunk)
             top_tier = classify_severity(top_severity)
             batches.append(
                 {
                     "batch_id": len(batches) + 1,
                     "cwe_family": family,
+                    "cwe_families": [family],
+                    "cross_family": False,
                     "severity_tier": top_tier,
                     "max_severity_score": top_severity,
                     "issue_count": len(chunk),
@@ -233,6 +522,41 @@ def batch_issues(
         if len(batches) >= max_batches:
             break
 
+    remaining = [
+        issue for issue in issues if id(issue) not in batched_issue_ids
+    ]
+    if remaining and len(batches) < max_batches:
+        remaining.sort(key=lambda x: (-x["severity_score"], x["cwe_family"]))
+        for i in range(0, len(remaining), batch_size):
+            if len(batches) >= max_batches:
+                break
+            chunk = remaining[i : i + batch_size]
+            files_in_batch = set()
+            families_in_chunk: list[str] = []
+            seen_families: set[str] = set()
+            for issue in chunk:
+                files_in_batch.update(_get_issue_files(issue))
+                fam = issue["cwe_family"]
+                if fam not in seen_families:
+                    families_in_chunk.append(fam)
+                    seen_families.add(fam)
+            top_severity = max(c["severity_score"] for c in chunk)
+            top_tier = classify_severity(top_severity)
+            primary_family = families_in_chunk[0]
+            batches.append(
+                {
+                    "batch_id": len(batches) + 1,
+                    "cwe_family": primary_family,
+                    "cwe_families": families_in_chunk,
+                    "cross_family": len(families_in_chunk) > 1,
+                    "severity_tier": top_tier,
+                    "max_severity_score": top_severity,
+                    "issue_count": len(chunk),
+                    "file_count": len(files_in_batch),
+                    "issues": chunk,
+                }
+            )
+
     batches.sort(key=lambda b: -b["max_severity_score"])
     for idx, batch in enumerate(batches):
         batch["batch_id"] = idx + 1
@@ -240,11 +564,12 @@ def batch_issues(
 
 
 def generate_summary(
-    issues: list[dict[str, Any]],
-    batches: list[dict[str, Any]],
+    issues: list[ParsedIssue],
+    batches: list[Batch],
     total_raw: int = 0,
     dedup_removed: int = 0,
 ) -> str:
+    """Generate a Markdown summary for the GitHub Step Summary."""
     lines = ["# CodeQL Analysis Summary\n"]
 
     if total_raw > 0:
@@ -283,8 +608,12 @@ def generate_summary(
     lines.append("| Batch | Category | Severity | Issues | Files |")
     lines.append("|-------|----------|----------|--------|-------|")
     for batch in batches:
+        if batch.get("cross_family", False):
+            category_label = "+".join(batch.get("cwe_families", [batch["cwe_family"]]))
+        else:
+            category_label = batch["cwe_family"]
         lines.append(
-            f"| {batch['batch_id']} | {batch['cwe_family']} "
+            f"| {batch['batch_id']} | {category_label} "
             f"| {batch['severity_tier'].upper()} | {batch['issue_count']} "
             f"| {batch.get('file_count', '?')} |"
         )
@@ -292,16 +621,117 @@ def generate_summary(
     return "\n".join(lines)
 
 
+FINGERPRINT_LENGTH = 20
+
+
+def _read_source_line(target_dir: str, file_path: str, line_number: int) -> str:
+    """Read a single source line from the target repo for fingerprinting.
+
+    Returns the line content stripped of leading/trailing whitespace, or an
+    empty string if the file cannot be read.
+    """
+    full_path = os.path.join(target_dir, file_path)
+    if not os.path.isfile(full_path):
+        return ""
+    try:
+        with open(full_path, errors="replace") as fh:
+            for i, line in enumerate(fh, 1):
+                if i == line_number:
+                    return line.strip()
+    except OSError:
+        pass
+    return ""
+
+
+def compute_fingerprint(
+    issue: ParsedIssue, target_dir: str = ""
+) -> str:
+    """Compute a stable fingerprint for an issue across runs.
+
+    Stability hierarchy (most stable first):
+
+    1. **SARIF ``partialFingerprints``** -- CodeQL emits a content-based hash
+       that survives line-number shifts.  When available this is the most
+       reliable cross-run identifier.
+    2. **rule_id + file + message** -- the diagnostic message usually encodes
+       enough context (e.g. tainted variable name) to distinguish distinct
+       occurrences of the same rule in the same file without relying on line
+       numbers.
+    3. **rule_id + file + normalized source line** -- when *target_dir* is
+       provided and neither of the above is available, the actual source
+       content at the reported location is used.  Whitespace is normalised
+       so the fingerprint survives indentation changes.
+    4. **rule_id + file + start_line** -- legacy fallback when none of the
+       above is available.  Fragile across refactors that shift lines.
+    """
+    partial_fps = issue.get("partial_fingerprints", {})
+    primary_fp = (
+        partial_fps.get("primaryLocationLineHash")
+        or partial_fps.get("primaryLocationStartColumnFingerprint")
+    )
+    if primary_fp:
+        raw = f"{issue.get('rule_id', '')}|{primary_fp}"
+        return hashlib.sha256(raw.encode()).hexdigest()[:FINGERPRINT_LENGTH]
+
+    rule_id = issue.get("rule_id", "")
+    locs = issue.get("locations", [])
+    file_path = locs[0].get("file", "") if locs else ""
+    message = issue.get("message", "")
+    if message:
+        raw = f"{rule_id}|{file_path}|{message}"
+        return hashlib.sha256(raw.encode()).hexdigest()[:FINGERPRINT_LENGTH]
+
+    if target_dir and locs:
+        start_line = locs[0].get("start_line", 0)
+        if file_path and start_line > 0:
+            snippet = _read_source_line(target_dir, file_path, start_line)
+            if snippet:
+                normalized = re.sub(r"\s+", " ", snippet).strip()
+                raw = f"{rule_id}|{file_path}|{normalized}"
+                return hashlib.sha256(raw.encode()).hexdigest()[:FINGERPRINT_LENGTH]
+
+    start_line = str(locs[0].get("start_line", 0)) if locs else "0"
+    raw = f"{rule_id}|{file_path}|{start_line}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:FINGERPRINT_LENGTH]
+
+
+def assign_issue_ids(
+    issues: list[ParsedIssue],
+    run_number: str = "",
+    id_prefix: str = "",
+) -> list[ParsedIssue]:
+    """Assign a unique ID and stable fingerprint to each issue.
+
+    The run-specific ID uses the format ``CQLF-R{run}-{seq}`` so IDs are
+    unique across workflow runs.  The fingerprint is stable across runs
+    so the same vulnerability can be tracked over time.
+
+    When *id_prefix* is provided it is inserted after ``CQLF-`` to
+    distinguish different issue sets (e.g. ``ALL`` for unfiltered issues).
+    """
+    run_part = f"R{run_number}-" if run_number else ""
+    prefix = f"{id_prefix}-{run_part}" if id_prefix else run_part
+    for idx, issue in enumerate(issues, 1):
+        issue["id"] = f"CQLF-{prefix}{idx:04d}"
+        issue["fingerprint"] = compute_fingerprint(issue)
+    return issues
+
+
 def main() -> None:
     if len(sys.argv) < 2:
-        print("Usage: parse_sarif.py <sarif_path_or_dir> <output_dir>")
+        logger.error("Usage: parse_sarif.py <sarif_path_or_dir> <output_dir>")
         sys.exit(1)
 
     sarif_input = sys.argv[1]
     output_dir = sys.argv[2] if len(sys.argv) > 2 else "output"
-    batch_size = int(os.environ.get("BATCH_SIZE", "5"))
-    max_batches = int(os.environ.get("MAX_SESSIONS", "10"))
-    threshold = os.environ.get("SEVERITY_THRESHOLD", "low")
+
+    cfg = PipelineConfig.from_env()
+    batch_size = cfg.batch_size
+    max_batches = cfg.max_sessions
+    threshold = cfg.severity_threshold
+    run_number = cfg.run_number
+
+    _load_custom_cwe_families()
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -313,44 +743,64 @@ def main() -> None:
     elif os.path.isfile(sarif_input):
         sarif_files.append(sarif_input)
     else:
-        print(f"ERROR: SARIF path not found: {sarif_input}")
+        logger.error("SARIF path not found: %s", sarif_input)
         sys.exit(1)
 
     if not sarif_files:
-        print(f"ERROR: No SARIF files found in {sarif_input}")
+        logger.error("No SARIF files found in %s", sarif_input)
         sys.exit(1)
 
-    all_issues: list[dict[str, Any]] = []
+    all_issues: list[ParsedIssue] = []
     for sf in sorted(sarif_files):
-        print(f"Parsing SARIF file: {sf}")
+        logger.info("Parsing SARIF file: %s", sf)
         all_issues.extend(parse_sarif(sf))
 
     total_raw = len(all_issues)
-    print(f"Found {total_raw} total issues across {len(sarif_files)} SARIF file(s)")
+    logger.info("Found %d total issues across %d SARIF file(s)", total_raw, len(sarif_files))
 
     all_issues = deduplicate_issues(all_issues)
     dedup_removed = total_raw - len(all_issues)
     if dedup_removed > 0:
-        print(f"Removed {dedup_removed} duplicate issues")
-    print(f"Unique issues: {len(all_issues)}")
+        logger.info("Removed %d duplicate issues", dedup_removed)
+    logger.info("Unique issues: %d", len(all_issues))
 
     prioritized = prioritize_issues(all_issues, threshold)
-    print(f"After filtering (threshold={threshold}): {len(prioritized)} issues")
+    logger.info("After filtering (threshold=%s): %d issues", threshold, len(prioritized))
+
+    prioritized = assign_issue_ids(prioritized, run_number)
 
     batches = batch_issues(prioritized, batch_size, max_batches)
-    print(f"Created {len(batches)} batches")
+    logger.info("Created %d batches", len(batches))
 
+    all_issues_with_ids = assign_issue_ids(
+        [dict(i) for i in all_issues], run_number, id_prefix="ALL"
+    )
+    all_issues_envelope = {
+        "schema_version": ISSUES_SCHEMA_VERSION,
+        "issues": all_issues_with_ids,
+    }
+    with open(os.path.join(output_dir, "all_issues.json"), "w") as f:
+        json.dump(all_issues_envelope, f, indent=2)
+
+    issues_envelope = {
+        "schema_version": ISSUES_SCHEMA_VERSION,
+        "issues": prioritized,
+    }
     with open(os.path.join(output_dir, "issues.json"), "w") as f:
-        json.dump(prioritized, f, indent=2)
+        json.dump(issues_envelope, f, indent=2)
 
+    batches_envelope = {
+        "schema_version": BATCHES_SCHEMA_VERSION,
+        "batches": batches,
+    }
     with open(os.path.join(output_dir, "batches.json"), "w") as f:
-        json.dump(batches, f, indent=2)
+        json.dump(batches_envelope, f, indent=2)
 
     summary = generate_summary(prioritized, batches, total_raw, dedup_removed)
     with open(os.path.join(output_dir, "summary.md"), "w") as f:
         f.write(summary)
 
-    print(summary)
+    logger.info("Summary:\n%s", summary)
 
     github_output = os.environ.get("GITHUB_OUTPUT")
     if github_output:
@@ -362,6 +812,27 @@ def main() -> None:
     if github_summary:
         with open(github_summary, "a") as f:
             f.write(summary + "\n")
+
+    run_ts = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H%M%S")
+    run_label = f"run-{run_number}-{run_ts}" if run_number else f"run-{run_ts}"
+    run_log = {
+        "run_label": run_label,
+        "run_number": run_number,
+        "timestamp": run_ts,
+        "total_raw": total_raw,
+        "dedup_removed": dedup_removed,
+        "total_filtered": len(prioritized),
+        "total_batches": len(batches),
+        "severity_threshold": threshold,
+        "batch_size": batch_size,
+        "max_batches": max_batches,
+    }
+    with open(os.path.join(output_dir, "run_log.json"), "w") as f:
+        json.dump(run_log, f, indent=2)
+
+    if github_output:
+        with open(github_output, "a") as f:
+            f.write(f"run_label={run_label}\n")
 
 
 if __name__ == "__main__":

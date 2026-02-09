@@ -1,0 +1,40 @@
+{
+  "target_repo": "https://github.com/example-org/webapp",
+  "fork_url": "https://github.com/example-org/webapp",
+  "run_number": 1,
+  "run_label": "run-1-2026-01-01-120000",
+  "timestamp": "2026-01-01T12:00:00.000000+00:00",
+  "issues_found": 12,
+  "severity_breakdown": {
+    "critical": 2,
+    "high": 7,
+    "medium": 3
+  },
+  "category_breakdown": {
+    "injection": 3,
+    "xss": 2,
+    "path-traversal": 2,
+    "crypto": 1,
+    "info-disclosure": 2,
+    "other": 2
+  },
+  "batches_created": 2,
+  "sessions": [
+    {
+      "session_id": "devin-sample-aaaa1111bbbb2222cccc3333dddd4444",
+      "session_url": "https://app.devin.ai/sessions/aaaa1111bbbb2222cccc3333dddd4444",
+      "batch_id": 1,
+      "status": "finished",
+      "issue_ids": ["SAMPLE-001", "SAMPLE-002", "SAMPLE-003"],
+      "pr_url": "https://github.com/example-org/webapp/pull/10"
+    },
+    {
+      "session_id": "devin-sample-eeee5555ffff6666aaaa7777bbbb8888",
+      "session_url": "https://app.devin.ai/sessions/eeee5555ffff6666aaaa7777bbbb8888",
+      "batch_id": 2,
+      "status": "finished",
+      "issue_ids": ["SAMPLE-004", "SAMPLE-005"],
+      "pr_url": "https://github.com/example-org/webapp/pull/11"
+    }
+  ]
+}

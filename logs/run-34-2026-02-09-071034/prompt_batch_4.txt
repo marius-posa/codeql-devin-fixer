@@ -1,0 +1,74 @@
+Fix 2 CodeQL security issue(s) in https://github.com/marius-posa/codeql-devin-fixer (branch: main).
+
+Issue IDs: CQLF-R34-0008, CQLF-R34-0009
+Category: other | Severity: HIGH (max CVSS: 7.8)
+
+Historical fix rate for other: 100% (5/5 sessions completed)
+
+Issues to fix:
+
+### CQLF-R34-0008: py/incomplete-url-substring-sanitization (py/incomplete-url-substring-sanitization)
+- Severity: HIGH (7.8)
+- CWE: cwe-20
+- Location(s): scripts/orchestrator/cli.py:334
+- Description: The string [github.com/](1) may be at an arbitrary position in the sanitized URL.
+- Rule: Incomplete URL substring sanitization
+- Guidance: # Incomplete URL substring sanitization
+Sanitizing untrusted URLs is a common technique for preventing attacks such as request forgeries and malicious redirections. Usually, this is done by checking that the host of a URL is in a set of allowed hosts.
+
+However, treating the URL as a string and checking if one of the allowed hosts is a substring of the URL is very prone to errors. Malicious URLs can bypass such security checks by embedding one of the allowed hosts in an unexpected location.
+
+Even
+- Code context:
+```
+     329 |         print("--- Planned Dispatches ---")
+     330 |         print(f"{'#':<4} {'Score':<8} {'Severity':<10} {'Family':<20} {'Repo':<40} {'File'}")
+     331 |         print("-" * 120)
+     332 |         for i, d in enumerate(plan["planned_dispatches"], 1):
+     333 |             repo_short = d.get("target_repo", "")
+>>>  334 |             if "github.com/" in repo_short:
+     335 |                 repo_short = repo_short.split("github.com/")[-1]
+     336 |             print(
+     337 |                 f"{i:<4} {d.get('priority_score', 0):<8.4f} "
+     338 |                 f"{d.get('severity_tier', ''):<10} "
+     339 |                 f"{d.get('cwe_family', ''):<20} "
+```
+
+### CQLF-R34-0009: py/incomplete-url-substring-sanitization (py/incomplete-url-substring-sanitization)
+- Severity: HIGH (7.8)
+- CWE: cwe-20
+- Location(s): scripts/orchestrator/cli.py:405
+- Description: The string [github.com/](1) may be at an arbitrary position in the sanitized URL.
+- Rule: Incomplete URL substring sanitization
+- Guidance: # Incomplete URL substring sanitization
+Sanitizing untrusted URLs is a common technique for preventing attacks such as request forgeries and malicious redirections. Usually, this is done by checking that the host of a URL is in a set of allowed hosts.
+
+However, treating the URL as a string and checking if one of the allowed hosts is a substring of the URL is very prone to errors. Malicious URLs can bypass such security checks by embedding one of the allowed hosts in an unexpected location.
+
+Even
+- Code context:
+```
+     400 |         print("--- Per-Repo Summary ---")
+     401 |         print(f"{'Repo':<50} {'Total':<7} {'New':<7} {'Recurring':<10} {'Fixed':<7} {'Verified'}")
+     402 |         print("-" * 100)
+     403 |         for repo_url, counts in sorted(data["repos"].items()):
+     404 |             repo_short = repo_url
+>>>  405 |             if "github.com/" in repo_short:
+     406 |                 repo_short = repo_short.split("github.com/")[-1]
+     407 |             print(
+     408 |                 f"{repo_short:<50} "
+     409 |                 f"{counts.get('total', 0):<7} "
+     410 |                 f"{counts.get('new', 0):<7} "
+```
+
+Instructions:
+1. Clone https://github.com/marius-posa/codeql-devin-fixer and create a new branch from main.
+2. Fix ALL the issues listed above. Track which issue IDs you are fixing.
+3. Ensure fixes don't break existing functionality.
+4. Run existing tests if available to verify.
+5. Create a PR on https://github.com/marius-posa/codeql-devin-fixer with a clear description listing each issue ID fixed.
+6. Title the PR exactly: 'fix(CQLF-R34-0008,CQLF-R34-0009): resolve other security issues'
+7. In the PR body, list each issue ID (CQLF-R34-0008, CQLF-R34-0009) and describe the fix applied.
+
+Files to focus on:
+- scripts/orchestrator/cli.py
