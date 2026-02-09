@@ -19,6 +19,8 @@ from flask import Flask, jsonify, render_template, request as flask_request, sen
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from cachelib import FileSystemCache
+from flask_session import Session
 
 from config import RUNS_DIR, gh_headers
 from database import (
@@ -66,7 +68,24 @@ SAMPLE_DATA_DIR = pathlib.Path(__file__).parent / "sample_data"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(32).hex())
-CORS(app)
+
+_SESSION_DIR = pathlib.Path(__file__).parent / "flask_session"
+_SESSION_DIR.mkdir(parents=True, exist_ok=True)
+app.config["SESSION_TYPE"] = "cachelib"
+app.config["SESSION_CACHELIB"] = FileSystemCache(str(_SESSION_DIR), threshold=500)
+app.config["SESSION_PERMANENT"] = False
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SECURE"] = os.environ.get("SESSION_COOKIE_SECURE", "true").lower() == "true"
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+Session(app)
+
+_cors_raw = os.environ.get("CORS_ORIGINS", "")
+_cors_origins: list[str] | str = (
+    [o.strip() for o in _cors_raw.split(",") if o.strip()]
+    if _cors_raw
+    else ["http://localhost:5000", "http://127.0.0.1:5000"]
+)
+CORS(app, origins=_cors_origins, supports_credentials=True)
 app.register_blueprint(oauth_bp)
 
 limiter = Limiter(

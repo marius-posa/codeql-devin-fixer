@@ -26,6 +26,7 @@ from scripts.dispatch_devin import (
     _render_template_prompt,
 )
 from scripts.fix_learning import FixLearning
+from scripts.pipeline_config import STRUCTURED_OUTPUT_SCHEMA
 from scripts.repo_context import RepoContext
 
 
@@ -806,3 +807,213 @@ class TestPollSessionsUntilDone:
         result = poll_sessions_until_done("key", sessions, poll_interval=1, timeout=5)
         assert result[0]["status"] == "dry-run"
         mock_get.assert_not_called()
+
+    @patch("scripts.dispatch_devin.requests.get")
+    @patch("scripts.dispatch_devin.time.sleep")
+    def test_extracts_structured_output(self, mock_sleep, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "status_enum": "finished",
+            "structured_output": {
+                "status": "done",
+                "issues_attempted": ["CQLF-R1-0001"],
+                "issues_fixed": ["CQLF-R1-0001"],
+                "issues_blocked": [],
+                "pull_request_url": "https://github.com/o/r/pull/1",
+                "files_changed": 2,
+                "tests_passing": True,
+            },
+        }
+        mock_get.return_value = mock_resp
+
+        sessions = [
+            {"batch_id": 1, "session_id": "s1", "url": "u1", "status": "created"},
+        ]
+        result = poll_sessions_until_done("key", sessions, poll_interval=1, timeout=10)
+        assert result[0]["status"] == "finished"
+        assert result[0]["pr_url"] == "https://github.com/o/r/pull/1"
+        assert result[0]["structured_output"]["status"] == "done"
+        assert result[0]["structured_output"]["issues_fixed"] == ["CQLF-R1-0001"]
+        assert result[0]["structured_output"]["files_changed"] == 2
+
+    @patch("scripts.dispatch_devin.requests.get")
+    @patch("scripts.dispatch_devin.time.sleep")
+    def test_no_structured_output_no_key(self, mock_sleep, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"status_enum": "finished"}
+        mock_get.return_value = mock_resp
+
+        sessions = [
+            {"batch_id": 1, "session_id": "s1", "url": "u1", "status": "created"},
+        ]
+        result = poll_sessions_until_done("key", sessions, poll_interval=1, timeout=10)
+        assert result[0]["status"] == "finished"
+        assert "structured_output" not in result[0]
+
+
+class TestStructuredOutputInPrompt:
+    def _batch(self, issues=None):
+        if issues is None:
+            issues = [{
+                "id": "CQLF-R1-0001",
+                "rule_id": "js/sql-injection",
+                "rule_name": "SqlInjection",
+                "rule_description": "SQL injection vulnerability",
+                "rule_help": "Use parameterized queries.",
+                "message": "User input flows to SQL query.",
+                "severity_score": 9.8,
+                "severity_tier": "critical",
+                "cwes": ["cwe-89"],
+                "cwe_family": "injection",
+                "locations": [{"file": "src/db.js", "start_line": 42}],
+            }]
+        return {
+            "batch_id": 1,
+            "cwe_family": "injection",
+            "severity_tier": "critical",
+            "max_severity_score": 9.8,
+            "issue_count": len(issues),
+            "file_count": 1,
+            "issues": issues,
+        }
+
+    def test_prompt_contains_structured_output_section(self):
+        prompt = build_batch_prompt(self._batch(), "https://github.com/o/r", "main")
+        assert "## Structured Output" in prompt
+        assert "structured output object" in prompt
+
+    def test_prompt_contains_schema_json(self):
+        prompt = build_batch_prompt(self._batch(), "https://github.com/o/r", "main")
+        assert '"issues_attempted"' in prompt
+        assert '"issues_fixed"' in prompt
+        assert '"issues_blocked"' in prompt
+        assert '"pull_request_url"' in prompt
+        assert '"files_changed"' in prompt
+        assert '"tests_passing"' in prompt
+
+    def test_prompt_contains_status_enum_values(self):
+        prompt = build_batch_prompt(self._batch(), "https://github.com/o/r", "main")
+        assert '"analyzing"' in prompt
+        assert '"fixing"' in prompt
+        assert '"creating_pr"' in prompt
+        assert '"done"' in prompt
+
+    def test_prompt_contains_update_instructions(self):
+        prompt = build_batch_prompt(self._batch(), "https://github.com/o/r", "main")
+        assert "Update the structured output at these key moments:" in prompt
+        assert "When starting analysis" in prompt
+        assert "When finished" in prompt
+        assert "If blocked" in prompt
+
+    def test_prompt_contains_example_with_issue_ids(self):
+        prompt = build_batch_prompt(self._batch(), "https://github.com/o/r", "main")
+        assert "CQLF-R1-0001" in prompt
+        assert "Example initial value:" in prompt
+
+    def test_prompt_contains_schema_for_multiple_issues(self):
+        issues = [
+            {
+                "id": f"CQLF-R1-{i:04d}",
+                "rule_id": "js/sql-injection",
+                "rule_name": "SqlInjection",
+                "rule_description": "",
+                "rule_help": "",
+                "message": f"Issue {i}",
+                "severity_score": 9.0,
+                "severity_tier": "critical",
+                "cwes": ["cwe-89"],
+                "cwe_family": "injection",
+                "locations": [{"file": f"src/file{i}.js", "start_line": i * 10}],
+            }
+            for i in range(1, 4)
+        ]
+        prompt = build_batch_prompt(
+            self._batch(issues=issues), "https://github.com/o/r", "main"
+        )
+        assert "CQLF-R1-0001" in prompt
+        assert "CQLF-R1-0002" in prompt
+        assert "CQLF-R1-0003" in prompt
+
+
+class TestStructuredOutputSchemaInPayload:
+    @patch("scripts.dispatch_devin.requests.post")
+    def test_payload_includes_structured_output_schema(self, mock_post):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"session_id": "s1", "url": "u1"}
+        mock_resp.raise_for_status.return_value = None
+        mock_post.return_value = mock_resp
+
+        batch = {
+            "batch_id": 1,
+            "cwe_family": "injection",
+            "severity_tier": "critical",
+            "issues": [{"id": "CQLF-R1-0001"}],
+        }
+        create_devin_session("key", "prompt", batch)
+        payload = mock_post.call_args.kwargs.get("json") or mock_post.call_args[1].get("json")
+        assert "structured_output_schema" in payload
+        schema = payload["structured_output_schema"]
+        assert schema["type"] == "object"
+        assert "status" in schema["properties"]
+        assert "issues_attempted" in schema["properties"]
+        assert "issues_fixed" in schema["properties"]
+        assert "issues_blocked" in schema["properties"]
+        assert "pull_request_url" in schema["properties"]
+        assert "files_changed" in schema["properties"]
+        assert "tests_passing" in schema["properties"]
+
+    @patch("scripts.dispatch_devin.requests.post")
+    def test_schema_matches_constant(self, mock_post):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"session_id": "s1", "url": "u1"}
+        mock_resp.raise_for_status.return_value = None
+        mock_post.return_value = mock_resp
+
+        batch = {
+            "batch_id": 1,
+            "cwe_family": "injection",
+            "severity_tier": "critical",
+            "issues": [],
+        }
+        create_devin_session("key", "prompt", batch)
+        payload = mock_post.call_args.kwargs.get("json") or mock_post.call_args[1].get("json")
+        assert payload["structured_output_schema"] == STRUCTURED_OUTPUT_SCHEMA
+
+
+class TestStructuredOutputSchemaDefinition:
+    def test_schema_has_required_fields(self):
+        assert STRUCTURED_OUTPUT_SCHEMA["type"] == "object"
+        props = STRUCTURED_OUTPUT_SCHEMA["properties"]
+        assert "status" in props
+        assert "issues_attempted" in props
+        assert "issues_fixed" in props
+        assert "issues_blocked" in props
+        assert "pull_request_url" in props
+        assert "files_changed" in props
+        assert "tests_passing" in props
+
+    def test_schema_required_list(self):
+        required = STRUCTURED_OUTPUT_SCHEMA["required"]
+        assert "status" in required
+        assert "issues_attempted" in required
+        assert "issues_fixed" in required
+        assert "issues_blocked" in required
+        assert "pull_request_url" in required
+        assert "files_changed" in required
+        assert "tests_passing" in required
+
+    def test_status_enum_values(self):
+        status_prop = STRUCTURED_OUTPUT_SCHEMA["properties"]["status"]
+        assert status_prop["type"] == "string"
+        expected = ["analyzing", "fixing", "testing", "creating_pr", "done", "blocked"]
+        assert status_prop["enum"] == expected
+
+    def test_issues_blocked_schema(self):
+        blocked = STRUCTURED_OUTPUT_SCHEMA["properties"]["issues_blocked"]
+        assert blocked["type"] == "array"
+        item_schema = blocked["items"]
+        assert "id" in item_schema["properties"]
+        assert "reason" in item_schema["properties"]
+        assert item_schema["required"] == ["id", "reason"]

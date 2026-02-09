@@ -1,9 +1,32 @@
+import json
 import os
 import sqlite3
 
 import requests
 
 from config import DEVIN_API_BASE, devin_headers
+
+
+def _extract_structured_output(data: dict) -> dict:
+    so = data.get("structured_output")
+    if isinstance(so, dict):
+        return so
+    return {}
+
+
+def _extract_pr_url(data: dict, so: dict) -> str:
+    pr_url = so.get("pull_request_url", "")
+    if not pr_url:
+        res = data.get("result")
+        if isinstance(res, dict):
+            pr_url = res.get("pull_request_url", "")
+    if not pr_url:
+        pr_info = data.get("pull_request")
+        if isinstance(pr_info, dict):
+            pr_url = pr_info.get("url", "") or pr_info.get("html_url", "")
+        elif isinstance(pr_info, str):
+            pr_url = pr_info
+    return pr_url
 
 
 def poll_devin_sessions_db(
@@ -38,23 +61,21 @@ def poll_devin_sessions_db(
                 if isinstance(status_str, dict):
                     status_str = status_str.get("status", "unknown")
                 s["status"] = status_str
-                pr_url = ""
-                so = data.get("structured_output")
-                if isinstance(so, dict):
-                    pr_url = so.get("pull_request_url", "")
-                if not pr_url:
-                    res = data.get("result")
-                    if isinstance(res, dict):
-                        pr_url = res.get("pull_request_url", "")
-                if not pr_url:
-                    pr_info = data.get("pull_request")
-                    if isinstance(pr_info, dict):
-                        pr_url = pr_info.get("url", "") or pr_info.get("html_url", "")
-                    elif isinstance(pr_info, str):
-                        pr_url = pr_info
+
+                so = _extract_structured_output(data)
+                pr_url = _extract_pr_url(data, so)
                 if pr_url:
                     s["pr_url"] = pr_url
-                update_session(conn, sid, status=status_str, pr_url=pr_url)
+                if so:
+                    s["structured_output"] = so
+
+                so_json = json.dumps(so) if so else ""
+                update_session(
+                    conn, sid,
+                    status=status_str,
+                    pr_url=pr_url,
+                    structured_output=so_json,
+                )
         except requests.RequestException:
             pass
         updated.append(s)

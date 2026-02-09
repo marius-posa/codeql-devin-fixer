@@ -42,13 +42,14 @@ CREATE INDEX IF NOT EXISTS idx_runs_run_number             ON runs(run_number);
 CREATE INDEX IF NOT EXISTS idx_runs_target_repo_timestamp  ON runs(target_repo, timestamp);
 
 CREATE TABLE IF NOT EXISTS sessions (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_id       INTEGER NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-    session_id   TEXT    NOT NULL DEFAULT '',
-    session_url  TEXT    NOT NULL DEFAULT '',
-    batch_id     INTEGER,
-    status       TEXT    NOT NULL DEFAULT 'unknown',
-    pr_url       TEXT    NOT NULL DEFAULT ''
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id            INTEGER NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+    session_id        TEXT    NOT NULL DEFAULT '',
+    session_url       TEXT    NOT NULL DEFAULT '',
+    batch_id          INTEGER,
+    status            TEXT    NOT NULL DEFAULT 'unknown',
+    pr_url            TEXT    NOT NULL DEFAULT '',
+    structured_output TEXT    NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_run_id  ON sessions(run_id);
@@ -232,9 +233,11 @@ def insert_run(conn: sqlite3.Connection, data: dict, source_file: str = "") -> i
     run_db_id = cur.lastrowid
 
     for s in data.get("sessions", []):
+        so = s.get("structured_output")
+        so_str = json.dumps(so) if isinstance(so, dict) else str(so or "")
         sess_cur = conn.execute(
-            """INSERT INTO sessions (run_id, session_id, session_url, batch_id, status, pr_url)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO sessions (run_id, session_id, session_url, batch_id, status, pr_url, structured_output)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (
                 run_db_id,
                 s.get("session_id", ""),
@@ -242,6 +245,7 @@ def insert_run(conn: sqlite3.Connection, data: dict, source_file: str = "") -> i
                 s.get("batch_id"),
                 s.get("status", "unknown"),
                 s.get("pr_url", ""),
+                so_str,
             ),
         )
         sess_db_id = sess_cur.lastrowid
@@ -360,14 +364,19 @@ def _build_run_item(conn: sqlite3.Connection, row: sqlite3.Row) -> dict:
             "SELECT issue_id FROM session_issue_ids WHERE session_id = ?",
             (sr["id"],),
         ).fetchall()
-        sessions_list.append({
+        so_raw = sr["structured_output"] if "structured_output" in sr.keys() else ""
+        so_parsed = json.loads(so_raw) if so_raw else {}
+        sess_item: dict = {
             "session_id": sr["session_id"],
             "session_url": sr["session_url"],
             "batch_id": sr["batch_id"],
             "status": sr["status"],
             "issue_ids": [r["issue_id"] for r in iid_rows],
             "pr_url": sr["pr_url"],
-        })
+        }
+        if so_parsed:
+            sess_item["structured_output"] = so_parsed
+        sessions_list.append(sess_item)
     d["sessions"] = sessions_list
 
     fps_rows = conn.execute(
@@ -445,7 +454,9 @@ def _build_session_item(conn: sqlite3.Connection, row: sqlite3.Row) -> dict:
         "SELECT issue_id FROM session_issue_ids WHERE session_id = ?",
         (row["id"],),
     ).fetchall()
-    return {
+    so_raw = row["structured_output"] if "structured_output" in row.keys() else ""
+    so_parsed = json.loads(so_raw) if so_raw else {}
+    item: dict = {
         "session_id": row["session_id"],
         "session_url": row["session_url"],
         "batch_id": row["batch_id"],
@@ -460,6 +471,9 @@ def _build_session_item(conn: sqlite3.Connection, row: sqlite3.Row) -> dict:
         "timestamp": row["timestamp"],
         "pr_url": row["pr_url"],
     }
+    if so_parsed:
+        item["structured_output"] = so_parsed
+    return item
 
 
 def query_sessions(
@@ -961,7 +975,13 @@ def search_issues(conn: sqlite3.Connection, query: str, target_repo: str = "") -
 # Write helpers — session / PR updates
 # ---------------------------------------------------------------------------
 
-def update_session(conn: sqlite3.Connection, session_id: str, status: str = "", pr_url: str = "") -> bool:
+def update_session(
+    conn: sqlite3.Connection,
+    session_id: str,
+    status: str = "",
+    pr_url: str = "",
+    structured_output: str = "",
+) -> bool:
     parts = []
     params: list = []
     if status:
@@ -970,6 +990,9 @@ def update_session(conn: sqlite3.Connection, session_id: str, status: str = "", 
     if pr_url:
         parts.append("pr_url = ?")
         params.append(pr_url)
+    if structured_output:
+        parts.append("structured_output = ?")
+        params.append(structured_output)
     if not parts:
         return False
     params.append(session_id)
