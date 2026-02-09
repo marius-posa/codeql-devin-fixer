@@ -233,7 +233,7 @@ def api_orchestrator_history():
         entries = dispatch_history.get(fingerprint, [])
         if not isinstance(entries, list):
             entries = [entries] if entries else []
-        entries = [_normalize_dispatch_entry(e) for e in entries]
+        entries = [_normalize_dispatch_entry({**e, "fingerprint": fingerprint}) for e in entries]
         return jsonify({"fingerprint": fingerprint, "entries": entries})
 
     page, per_page = _get_pagination()

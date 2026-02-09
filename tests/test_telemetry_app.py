@@ -432,6 +432,7 @@ class TestOrchestratorEndpoints:
         data = resp.get_json()
         assert len(data["entries"]) == 1
         entry = data["entries"][0]
+        assert entry["fingerprint"] == "fp2"
         assert entry["dispatched_at"] == "2026-01-20T12:00:00+00:00"
         assert entry["session_id"] == "devin-11223344"
         assert entry["session_url"] == "https://app.devin.ai/sessions/11223344"
