@@ -35,6 +35,7 @@ from urllib.parse import urlparse
 
 try:
     from github_utils import gh_headers
+    from logging_config import setup_logging
     from parse_sarif import BATCHES_SCHEMA_VERSION, ISSUES_SCHEMA_VERSION
     from pipeline_config import (
         IssueFingerprint,
@@ -44,6 +45,7 @@ try:
     from retry_utils import request_with_retry
 except ImportError:
     from scripts.github_utils import gh_headers
+    from scripts.logging_config import setup_logging
     from scripts.parse_sarif import BATCHES_SCHEMA_VERSION, ISSUES_SCHEMA_VERSION
     from scripts.pipeline_config import (
         IssueFingerprint,
@@ -51,6 +53,8 @@ except ImportError:
         TelemetryRecord,
     )
     from scripts.retry_utils import request_with_retry
+
+logger = setup_logging(__name__)
 
 
 def _repo_short_name(url: str) -> str:
@@ -160,9 +164,9 @@ def build_telemetry_record(output_dir: str) -> TelemetryRecord:
     if isinstance(raw_issues, dict) and "schema_version" in raw_issues:
         v = raw_issues["schema_version"]
         if v != ISSUES_SCHEMA_VERSION:
-            print(
-                f"ERROR: issues.json schema version '{v}' "
-                f"does not match expected '{ISSUES_SCHEMA_VERSION}'"
+            logger.error(
+                "issues.json schema version '%s' does not match expected '%s'",
+                v, ISSUES_SCHEMA_VERSION,
             )
             sys.exit(1)
         issues = raw_issues.get("issues", [])
@@ -175,9 +179,9 @@ def build_telemetry_record(output_dir: str) -> TelemetryRecord:
     if isinstance(raw_batches, dict) and "schema_version" in raw_batches:
         v = raw_batches["schema_version"]
         if v != BATCHES_SCHEMA_VERSION:
-            print(
-                f"ERROR: batches.json schema version '{v}' "
-                f"does not match expected '{BATCHES_SCHEMA_VERSION}'"
+            logger.error(
+                "batches.json schema version '%s' does not match expected '%s'",
+                v, BATCHES_SCHEMA_VERSION,
             )
             sys.exit(1)
         batches = raw_batches.get("batches", [])
@@ -223,8 +227,8 @@ def build_telemetry_record(output_dir: str) -> TelemetryRecord:
     fix_examples = _collect_fix_examples(output_dir, sessions, batches)
 
     if issues and not issue_fingerprints:
-        print(
-            "WARNING: issues.json has entries but none contain a fingerprint. "
+        logger.warning(
+            "issues.json has entries but none contain a fingerprint. "
             "Cross-run issue tracking will be degraded for this run."
         )
     redact_urls = os.environ.get("REDACT_TELEMETRY_URLS", "false").lower() == "true"
@@ -276,10 +280,10 @@ def push_telemetry(token: str, action_repo: str, record: TelemetryRecord) -> boo
         "PUT", url, headers=gh_headers(token), json=payload, timeout=30,
     )
     if resp.status_code in (200, 201):
-        print(f"Telemetry pushed: {path}")
+        logger.info("Telemetry pushed: %s", path)
         return True
 
-    print(f"WARNING: Failed to push telemetry ({resp.status_code}): {resp.text[:200]}")
+    logger.warning("Failed to push telemetry (%d): %s", resp.status_code, resp.text[:200])
     return False
 
 
@@ -289,20 +293,21 @@ def main() -> None:
     action_repo = os.environ.get("ACTION_REPO", "")
 
     if not token:
-        print("WARNING: GITHUB_TOKEN not set; skipping telemetry push")
+        logger.warning("GITHUB_TOKEN not set; skipping telemetry push")
         return
     if not action_repo:
-        print("WARNING: ACTION_REPO not set; skipping telemetry push")
+        logger.warning("ACTION_REPO not set; skipping telemetry push")
         return
 
     record = build_telemetry_record(output_dir)
-    print(f"Telemetry record: {record['target_repo']} | "
-          f"{record['issues_found']} issues | "
-          f"{record['batches_created']} batches | "
-          f"{len(record['sessions'])} sessions")
+    logger.info(
+        "Telemetry record: %s | %d issues | %d batches | %d sessions",
+        record['target_repo'], record['issues_found'],
+        record['batches_created'], len(record['sessions']),
+    )
 
     if record["issues_found"] == 0:
-        print("No issues found in this run. Flagging telemetry as zero-issue run.")
+        logger.info("No issues found in this run. Flagging telemetry as zero-issue run.")
 
     push_telemetry(token, action_repo, record)
 

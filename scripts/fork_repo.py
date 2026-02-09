@@ -44,10 +44,14 @@ import requests
 
 try:
     from github_utils import gh_headers, normalize_repo_url, parse_repo_url
+    from logging_config import setup_logging
     from retry_utils import request_with_retry
 except ImportError:
     from scripts.github_utils import gh_headers, normalize_repo_url, parse_repo_url
+    from scripts.logging_config import setup_logging
     from scripts.retry_utils import request_with_retry
+
+logger = setup_logging(__name__)
 
 
 def resolve_owner(token: str, fallback: str) -> str:
@@ -70,8 +74,8 @@ def resolve_owner(token: str, fallback: str) -> str:
         resp.raise_for_status()
         return resp.json()["login"]
     except requests.exceptions.RequestException as e:
-        print(f"WARNING: could not determine user from /user endpoint: {e}")
-        print("Hint: set FORK_OWNER or use a Personal Access Token (PAT) with 'repo' scope.")
+        logger.warning("could not determine user from /user endpoint: %s", e)
+        logger.warning("Hint: set FORK_OWNER or use a Personal Access Token (PAT) with 'repo' scope.")
         return ""
 
 
@@ -106,7 +110,7 @@ def create_fork(token: str, owner: str, repo: str) -> dict:
     function polls up to 12 times (60 s total) until the fork's ``size``
     field is non-zero, indicating the copy is complete.
     """
-    print(f"Creating fork of {owner}/{repo}...")
+    logger.info("Creating fork of %s/%s...", owner, repo)
     resp = request_with_retry(
         "POST",
         f"https://api.github.com/repos/{owner}/{repo}/forks",
@@ -116,7 +120,7 @@ def create_fork(token: str, owner: str, repo: str) -> dict:
     )
     resp.raise_for_status()
     fork_data = resp.json()
-    print(f"Fork created: {fork_data['html_url']}")
+    logger.info("Fork created: %s", fork_data['html_url'])
 
     for attempt in range(1, 13):
         time.sleep(5)
@@ -129,9 +133,9 @@ def create_fork(token: str, owner: str, repo: str) -> dict:
         if check.status_code == 200:
             size = check.json().get("size", 0)
             if size > 0:
-                print(f"Fork ready (attempt {attempt})")
+                logger.info("Fork ready (attempt %d)", attempt)
                 return check.json()
-        print(f"Waiting for fork to be ready (attempt {attempt}/12)...")
+        logger.info("Waiting for fork to be ready (attempt %d/12)...", attempt)
 
     return fork_data
 
@@ -142,7 +146,7 @@ def sync_fork(token: str, my_user: str, repo: str, branch: str) -> None:
     Uses the ``POST /repos/{owner}/{repo}/merge-upstream`` endpoint.  A 409
     response means the branch is already up to date, which is fine.
     """
-    print(f"Syncing fork {my_user}/{repo} with upstream {branch}...")
+    logger.info("Syncing fork %s/%s with upstream %s...", my_user, repo, branch)
     resp = request_with_retry(
         "POST",
         f"https://api.github.com/repos/{my_user}/{repo}/merge-upstream",
@@ -151,9 +155,9 @@ def sync_fork(token: str, my_user: str, repo: str, branch: str) -> None:
         timeout=30,
     )
     if resp.status_code in (200, 409):
-        print(f"Fork synced: {resp.json().get('message', 'ok')}")
+        logger.info("Fork synced: %s", resp.json().get('message', 'ok'))
     else:
-        print(f"WARNING: sync returned {resp.status_code}: {resp.text}")
+        logger.warning("sync returned %d: %s", resp.status_code, resp.text)
 
 
 def main() -> None:
@@ -163,31 +167,31 @@ def main() -> None:
     fork_owner_hint = os.environ.get("FORK_OWNER", "")
 
     if not token:
-        print("ERROR: GITHUB_TOKEN is required for fork operations.")
-        print("Set the github_token input to a Personal Access Token (PAT) with 'repo' scope.")
+        logger.error("GITHUB_TOKEN is required for fork operations.")
+        logger.error("Set the github_token input to a Personal Access Token (PAT) with 'repo' scope.")
         sys.exit(1)
     if not target_repo:
-        print("ERROR: TARGET_REPO is required")
+        logger.error("TARGET_REPO is required")
         sys.exit(1)
 
     owner, repo = parse_repo_url(target_repo)
 
     my_user = resolve_owner(token, fork_owner_hint)
     if not my_user:
-        print("ERROR: Cannot determine fork owner.")
-        print("Set FORK_OWNER env var or use a PAT with 'repo' scope.")
+        logger.error("Cannot determine fork owner.")
+        logger.error("Set FORK_OWNER env var or use a PAT with 'repo' scope.")
         sys.exit(1)
 
-    print(f"Fork owner: {my_user}")
-    print(f"Target repo: {owner}/{repo}")
+    logger.info("Fork owner: %s", my_user)
+    logger.info("Target repo: %s/%s", owner, repo)
 
     if owner.lower() == my_user.lower():
-        print("Target repo is already owned by you. No fork needed.")
+        logger.info("Target repo is already owned by you. No fork needed.")
         fork_url = f"https://github.com/{my_user}/{repo}"
     else:
         existing = check_fork_exists(token, owner, repo, my_user)
         if existing:
-            print(f"Fork already exists: {existing['html_url']}")
+            logger.info("Fork already exists: %s", existing['html_url'])
             fork_url = existing["html_url"]
             sync_fork(token, my_user, repo, default_branch)
         else:
@@ -196,21 +200,15 @@ def main() -> None:
                 fork_url = fork_data["html_url"]
                 sync_fork(token, my_user, repo, default_branch)
             except requests.exceptions.RequestException as e:
-                print(f"ERROR: Could not create fork: {e}")
-                print()
-                print("The default GITHUB_TOKEN (Actions installation token) cannot create forks.")
-                print("You need a Personal Access Token (PAT) with 'repo' scope.")
-                print()
-                print("Setup instructions:")
-                print("  1. Go to https://github.com/settings/tokens")
-                print("  2. Generate new token (classic) with 'repo' scope")
-                print("  3. Copy the token")
-                print("  4. Go to your repo Settings > Secrets and variables > Actions")
-                print("  5. Create a new secret named GH_PAT with the token value")
-                print("  6. In your workflow, change:")
-                print("       github_token: ${{ secrets.GITHUB_TOKEN }}")
-                print("     to:")
-                print("       github_token: ${{ secrets.GH_PAT }}")
+                logger.error("Could not create fork: %s", e)
+                logger.error(
+                    "The default GITHUB_TOKEN (Actions installation token) cannot create forks. "
+                    "You need a Personal Access Token (PAT) with 'repo' scope. "
+                    "Setup: 1) Go to https://github.com/settings/tokens "
+                    "2) Generate new token (classic) with 'repo' scope "
+                    "3) Add as GH_PAT secret in repo Settings > Secrets > Actions "
+                    "4) Change workflow to use secrets.GH_PAT instead of secrets.GITHUB_TOKEN"
+                )
                 sys.exit(1)
 
     _write_outputs(fork_url, my_user, repo)
@@ -224,7 +222,7 @@ def _write_outputs(fork_url: str, owner: str, repo: str) -> None:
             f.write(f"fork_url={fork_url}\n")
             f.write(f"fork_owner={owner}\n")
             f.write(f"fork_repo={repo}\n")
-    print(f"FORK_URL={fork_url}")
+    logger.info("FORK_URL=%s", fork_url)
 
 
 if __name__ == "__main__":

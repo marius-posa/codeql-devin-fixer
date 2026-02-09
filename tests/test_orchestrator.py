@@ -569,7 +569,7 @@ class TestCmdPlan:
         assert output["total_issues"] >= 1
         assert output["rate_limit_max"] == 20
 
-    def test_plan_text_output(self, tmp_env, capsys):
+    def test_plan_text_output(self, tmp_env, capfd):
         conn = get_connection(tmp_env["db_path"])
         init_db(conn)
         insert_run(conn, _sample_run(run_number=1, label="r1"))
@@ -585,7 +585,7 @@ class TestCmdPlan:
         result = cmd_plan(args)
         assert result == 0
 
-        output = capsys.readouterr().out
+        output = capfd.readouterr().err
         assert "ORCHESTRATOR DISPATCH PLAN" in output
 
     def test_plan_respects_repo_filter(self, tmp_env, capsys):
@@ -645,7 +645,7 @@ class TestCmdStatus:
         assert output["total_sessions"] >= 1
         assert "rate_limit" in output
 
-    def test_status_text_output(self, tmp_env, capsys):
+    def test_status_text_output(self, tmp_env, capfd):
         class Args:
             pass
         args = Args()
@@ -655,7 +655,7 @@ class TestCmdStatus:
         result = cmd_status(args)
         assert result == 0
 
-        output = capsys.readouterr().out
+        output = capfd.readouterr().err
         assert "ORCHESTRATOR STATUS" in output
 
     def test_status_rate_limit_info(self, tmp_env, capsys):
@@ -840,7 +840,7 @@ class TestCmdDispatch:
         assert output["sessions_dry_run"] >= 1
         assert output["sessions_created"] == 0
 
-    def test_dispatch_dry_run_text_output(self, tmp_env, capsys):
+    def test_dispatch_dry_run_text_output(self, tmp_env, capfd):
         conn = get_connection(tmp_env["db_path"])
         init_db(conn)
         insert_run(conn, _sample_run(run_number=1, label="dispatch-text-r1"))
@@ -857,10 +857,10 @@ class TestCmdDispatch:
 
         result = cmd_dispatch(args)
         assert result == 0
-        output = capsys.readouterr().out
+        output = capfd.readouterr().err
         assert "DRY RUN" in output
 
-    def test_dispatch_no_api_key_without_dry_run(self, tmp_env, monkeypatch, capsys):
+    def test_dispatch_no_api_key_without_dry_run(self, tmp_env, monkeypatch, capfd):
         monkeypatch.delenv("DEVIN_API_KEY", raising=False)
 
         class Args:
@@ -873,7 +873,7 @@ class TestCmdDispatch:
 
         result = cmd_dispatch(args)
         assert result == 1
-        captured = capsys.readouterr()
+        captured = capfd.readouterr()
         assert "DEVIN_API_KEY" in captured.err
 
     def test_dispatch_max_sessions_override(self, tmp_env, capsys):
@@ -1123,7 +1123,7 @@ class TestCmdScan:
         state = load_state()
         assert "scan_schedule" in state
 
-    def test_scan_text_output(self, tmp_env, capsys):
+    def test_scan_text_output(self, tmp_env, capfd):
         class Args:
             repo = ""
             json = False
@@ -1131,7 +1131,7 @@ class TestCmdScan:
 
         result = cmd_scan(Args())
         assert result == 0
-        output = capsys.readouterr().out
+        output = capfd.readouterr().err
         assert "DRY RUN" in output
 
 
@@ -1161,7 +1161,7 @@ class TestCmdCycle:
         state = load_state()
         assert state["last_cycle"] is not None
 
-    def test_cycle_text_output(self, tmp_env, capsys):
+    def test_cycle_text_output(self, tmp_env, capfd):
         class Args:
             repo = ""
             json = False
@@ -1170,7 +1170,7 @@ class TestCmdCycle:
 
         result = cmd_cycle(Args())
         assert result == 0
-        output = capsys.readouterr().out
+        output = capfd.readouterr().err
         assert "ORCHESTRATOR CYCLE" in output
         assert "Scanning" in output
         assert "Dispatching" in output

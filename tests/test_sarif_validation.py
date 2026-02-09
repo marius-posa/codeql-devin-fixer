@@ -47,10 +47,10 @@ class TestValidateSarif:
         with pytest.raises(ValueError, match="SARIF root must be a JSON object"):
             validate_sarif([], "test.sarif")
 
-    def test_unexpected_version_warns(self, capsys):
+    def test_unexpected_version_warns(self, capfd):
         sarif = {"version": "1.0.0", "runs": []}
         validate_sarif(sarif, "test.sarif")
-        assert "unexpected SARIF version" in capsys.readouterr().out
+        assert "unexpected SARIF version" in capfd.readouterr().err
 
     def test_empty_runs_passes(self):
         sarif = {"version": "2.1.0", "runs": []}

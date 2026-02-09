@@ -17,9 +17,21 @@ import sys
 import tempfile
 from pathlib import Path
 
+from github_app.log_utils import sanitize_log
+
 log = logging.getLogger(__name__)
 
 _SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
+
+_SAFE_REPO_URL_RE = re.compile(
+    r"^https://[a-zA-Z0-9._-]+(?:\.[a-zA-Z]{2,})+/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+(?:\.git)?$"
+)
+
+
+def _validate_repo_url(url: str) -> str:
+    if not _SAFE_REPO_URL_RE.match(url):
+        raise ValueError(f"Invalid repository URL format: {url}")
+    return url
 
 
 def trigger_scan(scan_config: dict) -> dict:
@@ -55,7 +67,7 @@ def trigger_scan(scan_config: dict) -> dict:
     output_dir = os.path.join(work_dir, "output")
     os.makedirs(output_dir, exist_ok=True)
 
-    log.info("Starting scan for %s in %s", target_repo, work_dir)
+    log.info("Starting scan for %s in %s", sanitize_log(target_repo), work_dir)
 
     steps: list[dict] = []
 
@@ -137,16 +149,6 @@ def _run_fork(
         return {"error": str(exc), "status": "failed"}
 
 
-_REPO_URL_RE = re.compile(
-    r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?$"
-)
-
-
-def _validate_repo_url(url: str) -> None:
-    if not _REPO_URL_RE.match(url):
-        raise ValueError(f"Invalid repository URL: {url!r}")
-
-
 def _redact_token(text: str, token: str) -> str:
     if token and token in text:
         return text.replace(token, "***")
@@ -155,7 +157,7 @@ def _redact_token(text: str, token: str) -> str:
 
 def _run_clone(repo_url: str, clone_dir: str, github_token: str) -> dict:
     try:
-        _validate_repo_url(repo_url)
+        repo_url = _validate_repo_url(repo_url)
         cmd = ["git", "clone", "--depth", "1", "--single-branch"]
         clone_env = {**os.environ}
         if github_token:

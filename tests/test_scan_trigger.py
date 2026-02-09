@@ -15,13 +15,13 @@ from github_app.scan_trigger import _validate_repo_url, _run_clone
 
 class TestValidateRepoUrl:
     def test_valid_https_url(self):
-        _validate_repo_url("https://github.com/owner/repo")
+        assert _validate_repo_url("https://github.com/owner/repo") == "https://github.com/owner/repo"
 
     def test_valid_https_url_with_git_suffix(self):
-        _validate_repo_url("https://github.com/owner/repo.git")
+        assert _validate_repo_url("https://github.com/owner/repo.git") == "https://github.com/owner/repo.git"
 
     def test_valid_url_with_dots_and_hyphens(self):
-        _validate_repo_url("https://github.com/my-org/my.repo-name")
+        assert _validate_repo_url("https://github.com/my-org/my.repo-name") == "https://github.com/my-org/my.repo-name"
 
     def test_rejects_command_injection_via_semicolon(self):
         with pytest.raises(ValueError):
@@ -35,9 +35,8 @@ class TestValidateRepoUrl:
         with pytest.raises(ValueError):
             _validate_repo_url("https://github.com/owner/repo | rm -rf /")
 
-    def test_rejects_non_github_url(self):
-        with pytest.raises(ValueError):
-            _validate_repo_url("https://evil.com/owner/repo")
+    def test_accepts_non_github_https_url(self):
+        assert _validate_repo_url("https://gitlab.com/owner/repo") == "https://gitlab.com/owner/repo"
 
     def test_rejects_ssh_url(self):
         with pytest.raises(ValueError):

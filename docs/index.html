@@ -5,12 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CodeQL Devin Fixer - Telemetry Dashboard</title>
 <link rel="stylesheet" href="static/shared.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 </head>
 <body>
 <div class="container">
   <header>
     <h1><span>CodeQL Devin Fixer</span> Telemetry</h1>
     <div class="header-actions">
+      <span id="live-status"></span>
       <button class="btn" onclick="refreshData()" id="btn-refresh">Refresh Data</button>
       <button class="btn btn-primary" onclick="pollSessions()" id="btn-poll">Poll Sessions</button>
       <button class="btn btn-primary" onclick="openDispatchModal()" id="btn-dispatch" style="background:#1f6feb;border-color:#388bfd">Trigger Action</button>
@@ -25,93 +27,122 @@
     <span id="last-updated"></span>
   </div>
 
-  <div class="period-selector" style="margin-bottom:16px;display:flex;gap:4px;align-items:center">
-    <span style="font-size:12px;color:var(--text-muted);margin-right:8px">Period:</span>
-    <button class="btn period-btn active" data-period="all" onclick="setPeriod('all')">All Time</button>
-    <button class="btn period-btn" data-period="7d" onclick="setPeriod('7d')">7 Days</button>
-    <button class="btn period-btn" data-period="30d" onclick="setPeriod('30d')">30 Days</button>
-    <button class="btn period-btn" data-period="90d" onclick="setPeriod('90d')">90 Days</button>
-  </div>
+  <nav class="tab-nav" id="tab-nav">
+    <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview')">
+      <span class="tab-icon">&#x1F4CA;</span>Overview
+    </button>
+    <button class="tab-btn" data-tab="repos" onclick="switchTab('repos')">
+      <span class="tab-icon">&#x1F4E6;</span>Repositories
+    </button>
+    <button class="tab-btn" data-tab="issues" onclick="switchTab('issues')">
+      <span class="tab-icon">&#x1F50D;</span>Issues
+    </button>
+    <button class="tab-btn" data-tab="activity" onclick="switchTab('activity')">
+      <span class="tab-icon">&#x1F680;</span>Activity
+    </button>
+    <button class="tab-btn" data-tab="settings" onclick="switchTab('settings')">
+      <span class="tab-icon">&#x2692;</span>Settings
+    </button>
+  </nav>
 
-  <div class="metrics-grid" id="metrics-grid"></div>
-
-  <div class="panel">
-    <div class="panel-header">Security Health Trend</div>
-    <div class="panel-body" id="trend-chart"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
-  </div>
-
-  <div class="grid-2">
+  <div class="tab-content active" id="tab-overview">
+    <div class="period-selector" style="margin-bottom:16px;display:flex;gap:4px;align-items:center">
+      <span style="font-size:12px;color:var(--text-muted);margin-right:8px">Period:</span>
+      <button class="btn period-btn active" data-period="all" onclick="setPeriod('all')">All Time</button>
+      <button class="btn period-btn" data-period="7d" onclick="setPeriod('7d')">7 Days</button>
+      <button class="btn period-btn" data-period="30d" onclick="setPeriod('30d')">30 Days</button>
+      <button class="btn period-btn" data-period="90d" onclick="setPeriod('90d')">90 Days</button>
+    </div>
+    <div class="metrics-grid" id="metrics-grid"></div>
     <div class="panel">
-      <div class="panel-header">Severity Breakdown</div>
-      <div class="panel-body" id="severity-chart"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+      <div class="panel-header">Security Health Trend</div>
+      <div class="panel-body" id="trend-chart"><div class="skeleton skeleton-chart"></div></div>
+    </div>
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel-header">Severity Breakdown</div>
+        <div class="panel-body chart-canvas-wrap" id="severity-chart"><div class="skeleton skeleton-chart" style="height:200px"></div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">Category Breakdown</div>
+        <div class="panel-body chart-canvas-wrap" id="category-chart"><div class="skeleton skeleton-chart" style="height:200px"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-content" id="tab-repos">
+    <div class="panel">
+      <div class="panel-header">
+        Repositories Scanned
+        <span id="repo-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      </div>
+      <div class="panel-body" style="overflow-x:auto;" id="repos-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
+    </div>
+  </div>
+
+  <div class="tab-content" id="tab-issues">
+    <div class="panel">
+      <div class="panel-header">SLA Compliance</div>
+      <div class="panel-body" id="sla-panel-container"><div class="skeleton skeleton-chart" style="height:80px"></div></div>
     </div>
     <div class="panel">
-      <div class="panel-header">Category Breakdown</div>
-      <div class="panel-body" id="category-chart"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+      <div class="panel-header">
+        Issue Tracking
+        <span id="issues-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      </div>
+      <div class="panel-body" style="overflow-x:auto;" id="issues-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        Fix Verification
+        <span id="verification-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      </div>
+      <div class="panel-body" id="verification-stats-container"><div class="skeleton skeleton-chart" style="height:100px"></div></div>
+      <div class="panel-body" style="overflow-x:auto;" id="verification-table-container"></div>
     </div>
   </div>
 
-  <div class="panel">
-    <div class="panel-header">
-      Repositories Scanned
-      <span id="repo-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+  <div class="tab-content" id="tab-activity">
+    <div class="panel">
+      <div class="panel-header">
+        Run History
+        <span id="runs-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      </div>
+      <div class="panel-body" style="overflow-x:auto;" id="runs-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
     </div>
-    <div class="panel-body table-scroll-wrapper" id="repos-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+    <div class="panel">
+      <div class="panel-header">
+        Devin Sessions
+        <span id="sessions-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      </div>
+      <div class="panel-body" style="overflow-x:auto;" id="sessions-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        Pull Requests
+        <span id="prs-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      </div>
+      <div class="panel-body" style="overflow-x:auto;" id="prs-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
+    </div>
+
   </div>
 
-  <div class="panel">
-    <div class="panel-header">
-      Run History
-      <span id="runs-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+  <div class="tab-content" id="tab-settings">
+    <div class="panel">
+      <div class="panel-header">Export &amp; Reports</div>
+      <div class="panel-body">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+          <button class="btn" onclick="exportAllIssuesCsv()">Export Issues CSV</button>
+        </div>
+      </div>
     </div>
-    <div class="panel-body table-scroll-wrapper" id="runs-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-header">
-      Devin Sessions
-      <span id="sessions-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+    <div class="panel">
+      <div class="panel-header">
+        Scheduled Repo Registry
+        <span id="registry-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      </div>
+      <div class="panel-body" style="overflow-x:auto;" id="registry-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
     </div>
-    <div class="panel-body table-scroll-wrapper" id="sessions-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-header">
-      Pull Requests
-      <span id="prs-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
-    </div>
-    <div class="panel-body table-scroll-wrapper" id="prs-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-header">SLA Compliance</div>
-    <div class="panel-body" id="sla-panel-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-header">
-      Issue Tracking
-      <span id="issues-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
-      <button class="btn btn-sm" onclick="exportAllIssuesCsv()" style="margin-left:auto">Export CSV</button>
-    </div>
-    <div class="panel-body table-scroll-wrapper" id="issues-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-header">
-      Fix Verification
-      <span id="verification-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
-    </div>
-    <div class="panel-body" id="verification-stats-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
-    <div class="panel-body table-scroll-wrapper" id="verification-table-container"></div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-header">
-      Scheduled Repo Registry
-      <span id="registry-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
-    </div>
-    <div class="panel-body table-scroll-wrapper" id="registry-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
   </div>
 </div>
 
@@ -284,7 +315,88 @@ let stats = {};
 let registryData = null;
 let currentPeriod = 'all';
 let verificationRecords = [];
+let _chartInstances = {};
+let _livePoller = null;
 let slaData = {};
+
+function switchTab(tabId) {
+  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.toggle('active', b.dataset.tab === tabId); });
+  document.querySelectorAll('.tab-content').forEach(function(c) { c.classList.toggle('active', c.id === 'tab-' + tabId); });
+}
+
+function updateLiveStatus() {
+  var el = document.getElementById('live-status');
+  if (!el) return;
+  var running = (allSessions || []).filter(function(s) { return s.status === 'running' || s.status === 'pending'; });
+  if (running.length > 0) {
+    el.innerHTML = '<span class="live-badge live-running">' + running.length + ' active</span>';
+  } else {
+    el.innerHTML = '<span class="live-badge live-idle">idle</span>';
+  }
+}
+
+function startLivePolling(intervalMs) {
+  if (_livePoller) clearInterval(_livePoller);
+  _livePoller = setInterval(function() {
+    updateLiveStatus();
+  }, intervalMs || 30000);
+}
+
+function destroyChart(key) {
+  if (_chartInstances[key]) { _chartInstances[key].destroy(); delete _chartInstances[key]; }
+}
+
+function renderSeverityChartJs(container, data) {
+  if (!data || typeof Chart === 'undefined') return;
+  container.innerHTML = '<canvas></canvas>';
+  var canvas = container.querySelector('canvas');
+  var labels = Object.keys(data);
+  var values = labels.map(function(k) { return data[k]; });
+  var colors = { critical: '#f85149', high: '#f0883e', medium: '#d29922', low: '#58a6ff', note: '#8b949e' };
+  var bgColors = labels.map(function(l) { return colors[l.toLowerCase()] || '#8b949e'; });
+  destroyChart('severity');
+  _chartInstances['severity'] = new Chart(canvas, {
+    type: 'doughnut',
+    data: { labels: labels, datasets: [{ data: values, backgroundColor: bgColors, borderWidth: 0 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: getComputedStyle(document.body).getPropertyValue('--text-primary').trim() || '#e6edf3', font: { size: 11 } } } } }
+  });
+}
+
+function renderCategoryChartJs(container, data) {
+  if (!data || typeof Chart === 'undefined') return;
+  container.innerHTML = '<canvas></canvas>';
+  var canvas = container.querySelector('canvas');
+  var labels = Object.keys(data).slice(0, 10);
+  var values = labels.map(function(k) { return data[k]; });
+  destroyChart('category');
+  _chartInstances['category'] = new Chart(canvas, {
+    type: 'bar',
+    data: { labels: labels, datasets: [{ data: values, backgroundColor: '#388bfd', borderRadius: 4 }] },
+    options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#8b949e' }, grid: { color: 'rgba(139,148,158,0.1)' } }, y: { ticks: { color: '#8b949e', font: { size: 10 } }, grid: { display: false } } } }
+  });
+}
+
+function renderTrendChartJs(container, runs) {
+  if (!runs || !runs.length || typeof Chart === 'undefined') return;
+  container.innerHTML = '<div class="chart-canvas-wrap"><canvas></canvas></div>';
+  var canvas = container.querySelector('canvas');
+  var sorted = runs.slice().sort(function(a, b) { return (a.timestamp || '').localeCompare(b.timestamp || ''); });
+  var labels = sorted.map(function(r) { return r.timestamp ? new Date(r.timestamp).toLocaleDateString() : '#' + (r.run_number || '?'); });
+  var issuesData = sorted.map(function(r) { return r.issues_found || 0; });
+  var sessionsData = sorted.map(function(r) { return (r.sessions || []).length; });
+  destroyChart('trend');
+  _chartInstances['trend'] = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        { label: 'Issues Found', data: issuesData, borderColor: '#f0883e', backgroundColor: 'rgba(240,136,62,0.1)', fill: true, tension: 0.3, pointRadius: 3 },
+        { label: 'Sessions', data: sessionsData, borderColor: '#a371f7', backgroundColor: 'rgba(163,113,247,0.1)', fill: true, tension: 0.3, pointRadius: 3 }
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#8b949e' } } }, scales: { x: { ticks: { color: '#8b949e', maxRotation: 45 }, grid: { color: 'rgba(139,148,158,0.1)' } }, y: { ticks: { color: '#8b949e' }, grid: { color: 'rgba(139,148,158,0.1)' } } } }
+  });
+}
 
 window._cachedRuns = [];
 window._cachedPrs = [];
@@ -390,206 +502,6 @@ function renderRunsTable(runs) {
     + '</tr></thead><tbody>' + rows + '</tbody></table>';
 }
 
-const TREND_COLORS = ['#58a6ff','#3fb950','#f85149','#d29922','#bc8cff','#39d2c0','#f778ba','#a5d6ff'];
-var _dashTrendMode = 'repo';
-var _dashTrendExcluded = {};
-var _dashTrendRuns = [];
-var DASH_SEV_COLORS = { critical: '#f85149', high: '#d29922', medium: '#bc8cff', low: '#58a6ff' };
-var DASH_SEV_ORDER = ['critical', 'high', 'medium', 'low'];
-
-function _drawDashTrendByRepo(container, runs) {
-  var byRepo = {};
-  for (var ri = 0; ri < runs.length; ri++) {
-    var r = runs[ri];
-    var repo = repoShort(r.target_repo || '');
-    if (!repo || repo === '-') continue;
-    if (!byRepo[repo]) byRepo[repo] = [];
-    byRepo[repo].push({ run: r.run_number || 0, issues: r.issues_found || 0 });
-  }
-  var repos = Object.keys(byRepo);
-  if (repos.length === 0) {
-    container.querySelector('.trend-svg-wrap').innerHTML = '<div class="empty-state">No run data available yet</div>';
-    return;
-  }
-  for (var rk = 0; rk < repos.length; rk++) byRepo[repos[rk]].sort(function(a, b) { return a.run - b.run; });
-  var allIssuesArr = [], allRunNums = [];
-  for (var rk2 = 0; rk2 < repos.length; rk2++) {
-    for (var pi = 0; pi < byRepo[repos[rk2]].length; pi++) {
-      allIssuesArr.push(byRepo[repos[rk2]][pi].issues);
-      allRunNums.push(byRepo[repos[rk2]][pi].run);
-    }
-  }
-  var maxY = Math.max.apply(null, allIssuesArr.concat([1]));
-  var W = 800, H = 280, PAD_L = 55, PAD_R = 20, PAD_T = 20, PAD_B = 50;
-  var plotW = W - PAD_L - PAD_R, plotH = H - PAD_T - PAD_B;
-  var allSorted = Array.from(new Set(allRunNums)).sort(function(a, b) { return a - b; });
-  var xScale = allSorted.length > 1
-    ? function(v) { return PAD_L + (allSorted.indexOf(v) / (allSorted.length - 1)) * plotW; }
-    : function() { return PAD_L + plotW / 2; };
-  var yScale = function(v) { return PAD_T + plotH - (v / maxY) * plotH; };
-  var gridSvg = '';
-  for (var gi = 0; gi <= 5; gi++) {
-    var val = Math.round((maxY / 5) * gi), y = yScale(val);
-    gridSvg += '<line x1="' + PAD_L + '" y1="' + y + '" x2="' + (W - PAD_R) + '" y2="' + y + '" stroke="#30363d" stroke-dasharray="4,4"/>';
-    gridSvg += '<text x="' + (PAD_L - 8) + '" y="' + (y + 4) + '" fill="#8b949e" font-size="11" text-anchor="end">' + val + '</text>';
-  }
-  var xLabelSvg = '';
-  var maxLabels = Math.min(15, Math.max(5, Math.floor(W / 60)));
-  var step = Math.max(1, Math.ceil(allSorted.length / maxLabels));
-  for (var xi = 0; xi < allSorted.length; xi += step) {
-    var x = xScale(allSorted[xi]);
-    xLabelSvg += '<text x="' + x + '" y="' + (H - PAD_B + 20) + '" fill="#8b949e" font-size="11" text-anchor="middle">#' + allSorted[xi] + '</text>';
-  }
-  var linesSvg = '', dotsSvg = '';
-  repos.forEach(function(repo, idx) {
-    var color = TREND_COLORS[idx % TREND_COLORS.length], pts = byRepo[repo];
-    if (pts.length === 1) {
-      dotsSvg += '<circle cx="' + xScale(pts[0].run) + '" cy="' + yScale(pts[0].issues) + '" r="5" fill="' + color + '"><title>' + escapeHtml(repo) + ' Run #' + pts[0].run + ': ' + pts[0].issues + ' issues</title></circle>';
-    } else {
-      var d = pts.map(function(p, i) { return (i===0?'M':'L') + xScale(p.run).toFixed(1) + ',' + yScale(p.issues).toFixed(1); }).join(' ');
-      linesSvg += '<path d="' + d + '" fill="none" stroke="' + color + '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
-      pts.forEach(function(p) {
-        dotsSvg += '<circle cx="' + xScale(p.run) + '" cy="' + yScale(p.issues) + '" r="4" fill="' + color + '" stroke="var(--bg-secondary)" stroke-width="2"><title>' + escapeHtml(repo) + ' Run #' + p.run + ': ' + p.issues + ' issues</title></circle>';
-      });
-    }
-  });
-  var legendSvg = '';
-  if (repos.length > 1) {
-    repos.forEach(function(repo, idx) {
-      var color = TREND_COLORS[idx % TREND_COLORS.length], lx = PAD_L + idx * 180;
-      legendSvg += '<rect x="' + lx + '" y="' + (H - 10) + '" width="12" height="12" rx="2" fill="' + color + '"/>';
-      legendSvg += '<text x="' + (lx + 16) + '" y="' + H + '" fill="#8b949e" font-size="11">' + (repo.length > 20 ? escapeHtml(repo.slice(0,20)) + '...' : escapeHtml(repo)) + '</text>';
-    });
-  }
-  var axisLabelY = PAD_T + plotH / 2;
-  container.querySelector('.trend-svg-wrap').innerHTML = '<svg viewBox="0 0 ' + W + ' ' + (H + (repos.length > 1 ? 20 : 0)) + '" width="100%" style="max-height:340px" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">'
-    + gridSvg
-    + '<line x1="' + PAD_L + '" y1="' + PAD_T + '" x2="' + PAD_L + '" y2="' + (PAD_T + plotH) + '" stroke="#30363d"/>'
-    + '<line x1="' + PAD_L + '" y1="' + (PAD_T + plotH) + '" x2="' + (W - PAD_R) + '" y2="' + (PAD_T + plotH) + '" stroke="#30363d"/>'
-    + '<text x="' + (PAD_L + plotW / 2) + '" y="' + (H - PAD_B + 38) + '" fill="#6e7681" font-size="12" text-anchor="middle">Action Runs</text>'
-    + '<text x="14" y="' + axisLabelY + '" fill="#6e7681" font-size="12" text-anchor="middle" transform="rotate(-90,14,' + axisLabelY + ')">Issues Found</text>'
-    + xLabelSvg + linesSvg + dotsSvg + legendSvg + '</svg>';
-}
-
-function _drawDashTrendBySeverity(container, runs, excluded) {
-  var sorted = runs.slice().sort(function(a, b) { return (a.run_number || 0) - (b.run_number || 0); });
-  var activeSevs = DASH_SEV_ORDER.filter(function(s) { return !excluded[s]; });
-  if (sorted.length === 0 || activeSevs.length === 0) {
-    container.querySelector('.trend-svg-wrap').innerHTML = '<div class="empty-state">No data for selected severities</div>';
-    return;
-  }
-  var allRunNums = [];
-  sorted.forEach(function(r) { allRunNums.push(r.run_number || 0); });
-  var allSorted = Array.from(new Set(allRunNums)).sort(function(a, b) { return a - b; });
-  var bySevRun = {};
-  activeSevs.forEach(function(s) { bySevRun[s] = {}; });
-  sorted.forEach(function(r) {
-    var rn = r.run_number || 0;
-    activeSevs.forEach(function(s) {
-      bySevRun[s][rn] = (bySevRun[s][rn] || 0) + ((r.severity_breakdown || {})[s] || 0);
-    });
-  });
-  var maxY = 1;
-  activeSevs.forEach(function(s) {
-    allSorted.forEach(function(rn) { var v = bySevRun[s][rn] || 0; if (v > maxY) maxY = v; });
-  });
-  var W = 800, H = 280, PAD_L = 55, PAD_R = 20, PAD_T = 20, PAD_B = 50;
-  var plotW = W - PAD_L - PAD_R, plotH = H - PAD_T - PAD_B;
-  var xScale = allSorted.length > 1
-    ? function(v) { return PAD_L + (allSorted.indexOf(v) / (allSorted.length - 1)) * plotW; }
-    : function() { return PAD_L + plotW / 2; };
-  var yScale = function(v) { return PAD_T + plotH - (v / maxY) * plotH; };
-  var gridSvg = '';
-  for (var gi = 0; gi <= 5; gi++) {
-    var val = Math.round((maxY / 5) * gi), gy = yScale(val);
-    gridSvg += '<line x1="' + PAD_L + '" y1="' + gy + '" x2="' + (W - PAD_R) + '" y2="' + gy + '" stroke="#30363d" stroke-dasharray="4,4"/>';
-    gridSvg += '<text x="' + (PAD_L - 8) + '" y="' + (gy + 4) + '" fill="#8b949e" font-size="11" text-anchor="end">' + val + '</text>';
-  }
-  var xLabelSvg = '';
-  var maxLabels = Math.min(15, Math.max(5, Math.floor(W / 60)));
-  var step = Math.max(1, Math.ceil(allSorted.length / maxLabels));
-  for (var xi = 0; xi < allSorted.length; xi += step) {
-    xLabelSvg += '<text x="' + xScale(allSorted[xi]) + '" y="' + (H - PAD_B + 20) + '" fill="#8b949e" font-size="11" text-anchor="middle">#' + allSorted[xi] + '</text>';
-  }
-  var linesSvg = '', dotsSvg = '';
-  activeSevs.forEach(function(sev) {
-    var color = DASH_SEV_COLORS[sev] || '#8b949e';
-    var pts = allSorted.map(function(rn) { return { run: rn, v: bySevRun[sev][rn] || 0 }; });
-    if (pts.length === 1) {
-      dotsSvg += '<circle cx="' + xScale(pts[0].run) + '" cy="' + yScale(pts[0].v) + '" r="5" fill="' + color + '"><title>' + sev + ' Run #' + pts[0].run + ': ' + pts[0].v + '</title></circle>';
-    } else {
-      var d = pts.map(function(p, i) { return (i === 0 ? 'M' : 'L') + xScale(p.run).toFixed(1) + ',' + yScale(p.v).toFixed(1); }).join(' ');
-      linesSvg += '<path d="' + d + '" fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
-      pts.forEach(function(p) {
-        dotsSvg += '<circle cx="' + xScale(p.run) + '" cy="' + yScale(p.v) + '" r="3" fill="' + color + '" stroke="var(--bg-secondary)" stroke-width="2"><title>' + sev + ' Run #' + p.run + ': ' + p.v + '</title></circle>';
-      });
-    }
-  });
-  var legendSvg = '';
-  activeSevs.forEach(function(sev, idx) {
-    var color = DASH_SEV_COLORS[sev] || '#8b949e', lx = PAD_L + idx * 120;
-    legendSvg += '<rect x="' + lx + '" y="' + (H - 10) + '" width="12" height="12" rx="2" fill="' + color + '"/>';
-    legendSvg += '<text x="' + (lx + 16) + '" y="' + H + '" fill="#8b949e" font-size="11">' + sev + '</text>';
-  });
-  var axisLabelY = PAD_T + plotH / 2;
-  container.querySelector('.trend-svg-wrap').innerHTML = '<svg viewBox="0 0 ' + W + ' ' + (H + 20) + '" width="100%" style="max-height:360px" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">'
-    + gridSvg
-    + '<line x1="' + PAD_L + '" y1="' + PAD_T + '" x2="' + PAD_L + '" y2="' + (PAD_T + plotH) + '" stroke="#30363d"/>'
-    + '<line x1="' + PAD_L + '" y1="' + (PAD_T + plotH) + '" x2="' + (W - PAD_R) + '" y2="' + (PAD_T + plotH) + '" stroke="#30363d"/>'
-    + '<text x="' + (PAD_L + plotW / 2) + '" y="' + (H - PAD_B + 38) + '" fill="#6e7681" font-size="12" text-anchor="middle">Action Runs</text>'
-    + '<text x="14" y="' + axisLabelY + '" fill="#6e7681" font-size="12" text-anchor="middle" transform="rotate(-90,14,' + axisLabelY + ')">Issues</text>'
-    + xLabelSvg + linesSvg + dotsSvg + legendSvg + '</svg>';
-}
-
-function _setDashTrendMode(mode) {
-  _dashTrendMode = mode;
-  var container = document.getElementById('trend-chart');
-  _renderDashTrendControls(container);
-  _redrawDashTrend(container);
-}
-
-function _toggleDashSev(sev) {
-  _dashTrendExcluded[sev] = !_dashTrendExcluded[sev];
-  var container = document.getElementById('trend-chart');
-  _renderDashTrendControls(container);
-  _redrawDashTrend(container);
-}
-
-function _renderDashTrendControls(container) {
-  var ctrl = container.querySelector('.trend-controls');
-  if (!ctrl) return;
-  var html = '<button class="trend-toggle' + (_dashTrendMode === 'repo' ? ' active' : '') + '" onclick="_setDashTrendMode(\'repo\')">By Repo</button>';
-  html += '<button class="trend-toggle' + (_dashTrendMode === 'severity' ? ' active' : '') + '" onclick="_setDashTrendMode(\'severity\')">By Severity</button>';
-  if (_dashTrendMode === 'severity') {
-    html += '<span style="margin-left:8px"></span>';
-    DASH_SEV_ORDER.forEach(function(s) {
-      html += '<button class="sev-toggle sev-' + s + (_dashTrendExcluded[s] ? ' excluded' : '') + '" onclick="_toggleDashSev(\'' + s + '\')">' + s + '</button> ';
-    });
-  }
-  ctrl.innerHTML = html;
-}
-
-function _redrawDashTrend(container) {
-  if (_dashTrendMode === 'severity') {
-    _drawDashTrendBySeverity(container, _dashTrendRuns, _dashTrendExcluded);
-  } else {
-    _drawDashTrendByRepo(container, _dashTrendRuns);
-  }
-}
-
-function renderTrendChart(container, runs) {
-  _dashTrendRuns = runs;
-  _dashTrendMode = 'repo';
-  _dashTrendExcluded = {};
-  if (!runs || runs.length === 0) {
-    container.innerHTML = '<div class="empty-state">No run data available yet</div>';
-    return;
-  }
-  container.innerHTML = '<div class="trend-controls"></div><div class="trend-svg-wrap"></div>';
-  _renderDashTrendControls(container);
-  _drawDashTrendByRepo(container, runs);
-}
-
 function renderSlaPanel(sla) {
   var el = document.getElementById('sla-panel-container');
   if (!sla || (!sla.total_on_track && !sla.total_at_risk && !sla.total_breached && !sla.total_met)) {
@@ -691,11 +603,15 @@ function renderVerificationPanel(records) {
     + '</tr></thead><tbody>' + rows + '</tbody></table>';
 }
 
+function showAllSkeletons() {
+  document.querySelectorAll('.skeleton').forEach(function(el) { el.style.display = ''; });
+}
+
 function renderAll() {
   renderMetrics(stats);
-  renderTrendChart(document.getElementById('trend-chart'), allRuns);
-  renderBarChart(document.getElementById('severity-chart'), stats.latest_severity || stats.severity_breakdown);
-  renderBarChart(document.getElementById('category-chart'), stats.latest_category || stats.category_breakdown);
+  renderTrendChartJs(document.getElementById('trend-chart'), allRuns);
+  renderSeverityChartJs(document.getElementById('severity-chart'), stats.latest_severity || stats.severity_breakdown);
+  renderCategoryChartJs(document.getElementById('category-chart'), stats.latest_category || stats.category_breakdown);
   renderReposTable(allRepos);
   renderRunsTable(allRuns);
   renderSessionsTable(allSessions, 'sessions-table-container', 'sessions-count');
@@ -704,6 +620,7 @@ function renderAll() {
   renderIssuesTable(allIssues, 'issues-table-container', 'issues-count');
   renderVerificationPanel(verificationRecords);
   renderRegistryPanel();
+  updateLiveStatus();
 }
 
 function renderRegistryPanel() {
@@ -897,6 +814,7 @@ async function init() {
   if (!cfg.githubToken) warnings.push('GitHub token not set - PR discovery and refresh limited');
   await fetchAll();
   if (warnings.length > 0) setStatus(warnings.join(' | ') + ' (click Settings to configure)');
+  startLivePolling(30000);
 }
 init();
 </script>

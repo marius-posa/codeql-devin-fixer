@@ -38,11 +38,15 @@ from datetime import datetime, timezone
 from typing import Any
 
 try:
+    from logging_config import setup_logging
     from parse_sarif import compute_fingerprint, parse_sarif
     from pipeline_config import IssueFingerprint
 except ImportError:
+    from scripts.logging_config import setup_logging
     from scripts.parse_sarif import compute_fingerprint, parse_sarif
     from scripts.pipeline_config import IssueFingerprint
+
+logger = setup_logging(__name__)
 
 
 def extract_issue_ids_from_title(title: str) -> list[str]:
@@ -365,7 +369,7 @@ def extract_session_id_from_body(body: str) -> str:
 
 def main() -> None:
     if len(sys.argv) < 2:
-        print(
+        logger.error(
             "Usage: verify_results.py <new_sarif_path> "
             "[original_issues_json] [output_dir]"
         )
@@ -401,20 +405,20 @@ def main() -> None:
                     telemetry_dir, run_number,
                 )
         if not original_issues_path:
-            print("ERROR: Could not locate original issues")
+            logger.error("Could not locate original issues")
             sys.exit(1)
 
-    print(f"Verification scan: {sarif_path}")
-    print(f"Original issues: {original_issues_path}")
-    print(f"Issue IDs from PR title: {issue_ids}")
-    print(f"Source run: {run_number}")
-    print(f"CWE family: {cwe_family}")
+    logger.info("Verification scan: %s", sarif_path)
+    logger.info("Original issues: %s", original_issues_path)
+    logger.info("Issue IDs from PR title: %s", issue_ids)
+    logger.info("Source run: %s", run_number)
+    logger.info("CWE family: %s", cwe_family)
 
     original_fps = load_original_fingerprints(original_issues_path)
-    print(f"Loaded {len(original_fps)} original issue fingerprints")
+    logger.info("Loaded %d original issue fingerprints", len(original_fps))
 
     new_fps = compute_new_fingerprints(sarif_path)
-    print(f"Found {len(new_fps)} fingerprints in verification scan")
+    logger.info("Found %d fingerprints in verification scan", len(new_fps))
 
     comparison = compare_fingerprints(
         original_fps, new_fps,
@@ -443,12 +447,11 @@ def main() -> None:
         f.write(label)
 
     summary = record["summary"]
-    print("\nVerification Results:")
-    print(f"  Targeted: {summary['total_targeted']} issues")
-    print(f"  Fixed:    {summary['fixed_count']}")
-    print(f"  Remaining: {summary['remaining_count']}")
-    print(f"  Fix rate:  {summary['fix_rate']}%")
-    print(f"  Label:     {label}")
+    logger.info(
+        "Verification Results: Targeted=%d Fixed=%d Remaining=%d Fix rate=%s%% Label=%s",
+        summary['total_targeted'], summary['fixed_count'],
+        summary['remaining_count'], summary['fix_rate'], label,
+    )
 
     github_output = os.environ.get("GITHUB_OUTPUT")
     if github_output:

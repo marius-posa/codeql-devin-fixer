@@ -16,8 +16,15 @@ from typing import Any
 
 from . import state as _state
 
+try:
+    from logging_config import setup_logging
+except ImportError:
+    from scripts.logging_config import setup_logging
+
 from issue_tracking import _parse_ts  # noqa: E402
 from github_utils import gh_headers, parse_repo_url  # noqa: E402
+
+logger = setup_logging(__name__)
 
 try:
     from retry_utils import request_with_retry  # noqa: E402
@@ -153,7 +160,7 @@ def _resolve_target_repo(
     )
     if fork_check.status_code == 200:
         fork_url = f"https://github.com/{workflow_owner}/{repo_name}"
-        print(f"No access to {repo_url}, using fork: {fork_url}")
+        logger.info("No access to %s, using fork: %s", repo_url, fork_url)
         return fork_url
 
     return repo_url
@@ -218,10 +225,10 @@ def cmd_scan(args: argparse.Namespace) -> int:
     action_repo = os.environ.get("ACTION_REPO", "")
 
     if not github_token and not dry_run:
-        print("ERROR: GH_PAT or GITHUB_TOKEN environment variable is required (use --dry-run to skip)", file=sys.stderr)
+        logger.error("GH_PAT or GITHUB_TOKEN environment variable is required (use --dry-run to skip)")
         return 1
     if not action_repo and not dry_run:
-        print("ERROR: ACTION_REPO environment variable is required (use --dry-run to skip)", file=sys.stderr)
+        logger.error("ACTION_REPO environment variable is required (use --dry-run to skip)")
         return 1
 
     registry = _state.load_registry()
@@ -246,13 +253,13 @@ def cmd_scan(args: argparse.Namespace) -> int:
             scan_schedule.setdefault(repo_url, {})
             scan_schedule[repo_url]["last_scan"] = datetime.now(timezone.utc).isoformat()
             if not output_json:
-                print(f"Triggered scan for {repo_url}")
+                logger.info("Triggered scan for %s", repo_url)
         elif result["status"] == "dry-run":
             if not output_json:
-                print(f"[DRY RUN] Would trigger scan for {repo_url}")
+                logger.info("[DRY RUN] Would trigger scan for %s", repo_url)
         else:
             if not output_json:
-                print(f"ERROR scanning {repo_url}: {result.get('message', '')}", file=sys.stderr)
+                logger.error("ERROR scanning %s: %s", repo_url, result.get('message', ''))
 
     state["scan_schedule"] = scan_schedule
     _state.save_state(state)
@@ -278,8 +285,8 @@ def cmd_scan(args: argparse.Namespace) -> int:
         print(json.dumps(summary, indent=2))
     else:
         if not dry_run:
-            print(f"\nScan summary: {triggered} triggered, {skipped} not due, {errors} errors")
+            logger.info("Scan summary: %d triggered, %d not due, %d errors", triggered, skipped, errors)
         else:
-            print(f"\n[DRY RUN] Scan summary: {dry_run_count} would trigger, {skipped} not due")
+            logger.info("[DRY RUN] Scan summary: %d would trigger, %d not due", dry_run_count, skipped)
 
     return 1 if errors > 0 and triggered == 0 and dry_run_count == 0 else 0

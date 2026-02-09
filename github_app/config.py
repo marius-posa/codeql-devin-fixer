@@ -8,9 +8,12 @@ scan behaviour and can be overridden per-repo via ``.codeql-fixer.yml``.
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -37,17 +40,17 @@ class AppConfig:
     def from_env(cls) -> AppConfig:
         app_id_raw = os.environ.get("GITHUB_APP_ID", "")
         if not app_id_raw:
-            print("ERROR: GITHUB_APP_ID is required")
+            logger.error("GITHUB_APP_ID is required")
             sys.exit(1)
 
         private_key_path = os.environ.get("GITHUB_APP_PRIVATE_KEY_PATH", "")
         if not private_key_path:
-            print("ERROR: GITHUB_APP_PRIVATE_KEY_PATH is required")
+            logger.error("GITHUB_APP_PRIVATE_KEY_PATH is required")
             sys.exit(1)
 
         webhook_secret = os.environ.get("GITHUB_APP_WEBHOOK_SECRET", "")
         if not webhook_secret:
-            print("ERROR: GITHUB_APP_WEBHOOK_SECRET is required")
+            logger.error("GITHUB_APP_WEBHOOK_SECRET is required")
             sys.exit(1)
 
         return cls(
