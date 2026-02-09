@@ -10,7 +10,7 @@ import pathlib
 import sqlite3
 import sys
 
-from database import get_connection, init_db, is_db_empty, insert_run, DB_PATH
+from database import get_connection, init_db, is_db_empty, insert_run, refresh_fingerprint_issues, DB_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,12 @@ def ensure_db_populated(runs_dir: pathlib.Path, sample_dir: pathlib.Path | None 
         if stats["migrated"] == 0 and sample_dir and sample_dir.is_dir():
             stats = migrate_json_files(sample_dir, conn)
         logger.info("DB migration: %s", stats)
+    fp_count = conn.execute("SELECT COUNT(*) FROM fingerprint_issues").fetchone()[0]
+    issue_count = conn.execute("SELECT COUNT(*) FROM issues").fetchone()[0]
+    if fp_count == 0 and issue_count > 0:
+        n = refresh_fingerprint_issues(conn)
+        conn.commit()
+        logger.info("Populated fingerprint_issues: %d rows", n)
     conn.close()
 
 

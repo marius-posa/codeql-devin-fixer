@@ -29,6 +29,7 @@ from database import (
     query_repos,
     query_issues,
     search_issues,
+    refresh_fingerprint_issues,
     backfill_pr_urls,
     query_audit_logs,
     export_audit_logs,
@@ -266,6 +267,9 @@ def api_refresh():
         conn.commit()
         link_prs_to_sessions_db(conn)
         conn.commit()
+        if downloaded > 0:
+            refresh_fingerprint_issues(conn)
+            conn.commit()
 
         total_files = len(list(RUNS_DIR.glob("*.json")))
         _audit("refresh_runs", details=json.dumps({"downloaded": downloaded, "total_files": total_files}))
