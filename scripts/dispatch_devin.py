@@ -59,6 +59,7 @@ except ImportError:
 try:
     from fix_learning import CWE_FIX_HINTS, FixLearning
     from github_utils import validate_repo_url
+    from logging_config import setup_logging
     from parse_sarif import BATCHES_SCHEMA_VERSION
     from pipeline_config import PipelineConfig
     from playbook_manager import PlaybookManager
@@ -67,11 +68,14 @@ try:
 except ImportError:
     from scripts.fix_learning import CWE_FIX_HINTS, FixLearning
     from scripts.github_utils import validate_repo_url
+    from scripts.logging_config import setup_logging
     from scripts.parse_sarif import BATCHES_SCHEMA_VERSION
     from scripts.pipeline_config import PipelineConfig
     from scripts.playbook_manager import PlaybookManager
     from scripts.repo_context import RepoContext, analyze_repo
     from scripts.retry_utils import exponential_backoff_delay
+
+logger = setup_logging(__name__)
 
 DEVIN_API_BASE = "https://api.devin.ai/v1"
 
@@ -86,10 +90,10 @@ def _load_prompt_template(template_path: str) -> "jinja2.Template | None":
     if not template_path:
         return None
     if not os.path.isfile(template_path):
-        print(f"WARNING: Prompt template not found: {template_path}")
+        logger.warning("Prompt template not found: %s", template_path)
         return None
     if jinja2 is None:
-        print("WARNING: jinja2 not installed; custom templates disabled")
+        logger.warning("jinja2 not installed; custom templates disabled")
         return None
     with open(template_path) as f:
         return jinja2.Template(f.read())
@@ -146,7 +150,7 @@ def _send_session_webhook(
         env = {**os.environ, "WEBHOOK_URL": webhook_url, "WEBHOOK_SECRET": webhook_secret}
         subprocess.run(cmd, env=env, timeout=30, check=False)
     except Exception as e:
-        print(f"  WARNING: session_created webhook failed: {e}")
+        logger.warning("session_created webhook failed: %s", e)
 
 _PROMPT_INJECTION_PATTERNS = re.compile(
     r"(?:ignore\s+(?:all\s+)?(?:previous|above)\s+instructions"
@@ -467,8 +471,8 @@ def create_devin_session(
             last_err = e
             if attempt < MAX_RETRIES:
                 delay = exponential_backoff_delay(attempt)
-                print(f"  Retry {attempt}/{MAX_RETRIES} after error: {e} "
-                      f"(waiting {delay:.1f}s)")
+                logger.warning("Retry %d/%d after error: %s (waiting %.1fs)",
+                               attempt, MAX_RETRIES, e, delay)
                 time.sleep(delay)
     raise last_err  # type: ignore[misc]
 
@@ -487,7 +491,7 @@ def main() -> None:
     max_acu = cfg.max_acu_per_session
     target_dir = cfg.target_dir
     if target_dir and not os.path.isdir(target_dir):
-        print(f"WARNING: TARGET_DIR '{target_dir}' does not exist; code snippets disabled")
+        logger.warning("TARGET_DIR '%s' does not exist; code snippets disabled", target_dir)
         target_dir = ""
     telemetry_dir = cfg.telemetry_dir
     playbooks_dir = cfg.playbooks_dir
@@ -497,37 +501,35 @@ def main() -> None:
         playbook_mgr = PlaybookManager(playbooks_dir)
         families = playbook_mgr.available_families
         if families:
-            print(f"Loaded playbooks for: {', '.join(families)}")
+            logger.info("Loaded playbooks for: %s", ', '.join(families))
 
     fix_learn: FixLearning | None = None
     if telemetry_dir and os.path.isdir(telemetry_dir):
         fix_learn = FixLearning.from_telemetry_dir(telemetry_dir)
         rates = fix_learn.prioritized_families()
         if rates:
-            print("Historical fix rates by CWE family:")
+            logger.info("Historical fix rates by CWE family:")
             for fam, rate in rates:
-                print(f"  {fam}: {rate * 100:.0f}%")
-            print()
+                logger.info("  %s: %.0f%%", fam, rate * 100)
 
     repo_ctx: RepoContext | None = None
     if target_dir:
         repo_ctx = analyze_repo(target_dir)
         if not repo_ctx.is_empty():
-            print("Repository context discovered:")
+            logger.info("Repository context discovered:")
             if repo_ctx.dependencies:
-                print(f"  Dependencies: {', '.join(repo_ctx.dependencies.keys())}")
+                logger.info("  Dependencies: %s", ', '.join(repo_ctx.dependencies.keys()))
             if repo_ctx.test_frameworks:
-                print(f"  Test frameworks: {', '.join(repo_ctx.test_frameworks)}")
+                logger.info("  Test frameworks: %s", ', '.join(repo_ctx.test_frameworks))
             if repo_ctx.style_configs:
-                print(f"  Style configs: {', '.join(repo_ctx.style_configs)}")
-            print()
+                logger.info("  Style configs: %s", ', '.join(repo_ctx.style_configs))
 
     if not api_key and not dry_run:
-        print("ERROR: DEVIN_API_KEY is required (set DRY_RUN=true to skip)")
+        logger.error("DEVIN_API_KEY is required (set DRY_RUN=true to skip)")
         sys.exit(1)
 
     if not repo_url:
-        print("ERROR: TARGET_REPO environment variable is required")
+        logger.error("TARGET_REPO environment variable is required")
         sys.exit(1)
 
     with open(batches_path) as f:
@@ -536,10 +538,10 @@ def main() -> None:
     if isinstance(raw, dict) and "schema_version" in raw:
         file_version = raw["schema_version"]
         if file_version != BATCHES_SCHEMA_VERSION:
-            print(
-                f"ERROR: batches.json schema version '{file_version}' "
-                f"does not match expected '{BATCHES_SCHEMA_VERSION}'. "
-                "This indicates an incompatible data format."
+            logger.error(
+                "batches.json schema version '%s' does not match expected '%s'. "
+                "This indicates an incompatible data format.",
+                file_version, BATCHES_SCHEMA_VERSION,
             )
             sys.exit(1)
         batches = raw.get("batches", [])
@@ -547,7 +549,7 @@ def main() -> None:
         batches = raw if isinstance(raw, list) else []
 
     if not batches:
-        print("No batches to process. Exiting.")
+        logger.info("No batches to process. Exiting.")
         return
 
     if fix_learn:
@@ -560,26 +562,25 @@ def main() -> None:
             else:
                 kept_batches.append(batch)
         if skipped_families:
-            print(f"Skipping {len(skipped_families)} batch(es) due to low "
-                  f"historical fix rate: {', '.join(set(skipped_families))}")
+            logger.info("Skipping %d batch(es) due to low historical fix rate: %s",
+                        len(skipped_families), ', '.join(set(skipped_families)))
         batches = kept_batches
         if not batches:
-            print("All batches skipped due to low fix rates. Exiting.")
+            logger.info("All batches skipped due to low fix rates. Exiting.")
             return
 
     template_path = os.environ.get("PROMPT_TEMPLATE", "")
     prompt_template = _load_prompt_template(template_path)
     if prompt_template:
-        print(f"Using custom prompt template: {template_path}")
+        logger.info("Using custom prompt template: %s", template_path)
 
-    print(f"Processing {len(batches)} batches for {repo_url}")
-    print(f"Default branch: {default_branch}")
-    print(f"Dry run: {dry_run}")
+    logger.info("Processing %d batches for %s", len(batches), repo_url)
+    logger.info("Default branch: %s", default_branch)
+    logger.info("Dry run: %s", dry_run)
     if target_dir:
-        print(f"Target dir: {target_dir} (code snippets enabled)")
+        logger.info("Target dir: %s (code snippets enabled)", target_dir)
     if playbook_mgr:
-        print(f"Playbooks dir: {playbooks_dir}")
-    print()
+        logger.info("Playbooks dir: %s", playbooks_dir)
 
     run_id = os.environ.get("RUN_ID", "")
     sessions: list[dict] = []
@@ -610,15 +611,15 @@ def main() -> None:
         with open(prompt_path, "w") as f:
             f.write(prompt)
 
-        print(f"--- Batch {batch_id} ---")
-        print(f"  Category: {batch['cwe_family']}")
-        print(f"  Severity: {batch['severity_tier'].upper()}")
-        print(f"  Issues: {batch['issue_count']}")
+        logger.info("--- Batch %d ---", batch_id)
+        logger.info("  Category: %s", batch['cwe_family'])
+        logger.info("  Severity: %s", batch['severity_tier'].upper())
+        logger.info("  Issues: %d", batch['issue_count'])
         if batch_acu and batch_acu != max_acu:
-            print(f"  ACU budget: {batch_acu} (dynamic, base={max_acu or 'default'})")
+            logger.info("  ACU budget: %d (dynamic, base=%s)", batch_acu, max_acu or 'default')
 
         if dry_run:
-            print(f"  [DRY RUN] Prompt saved to {prompt_path}")
+            logger.info("  [DRY RUN] Prompt saved to %s", prompt_path)
             sessions.append(
                 {
                     "batch_id": batch_id,
@@ -633,7 +634,7 @@ def main() -> None:
             result = create_devin_session(api_key, prompt, batch, batch_acu)
             session_id = result["session_id"]
             url = result["url"]
-            print(f"  Session created: {url}")
+            logger.info("  Session created: %s", url)
             sessions.append(
                 {
                     "batch_id": batch_id,
@@ -647,7 +648,7 @@ def main() -> None:
             )
             time.sleep(2)
         except requests.exceptions.RequestException as e:
-            print(f"  ERROR creating session: {e}")
+            logger.error("  ERROR creating session: %s", e)
             sessions.append(
                 {
                     "batch_id": batch_id,
@@ -663,12 +664,12 @@ def main() -> None:
     with open(os.path.join(output_dir, "sessions.json"), "w") as f:
         json.dump(sessions, f, indent=2)
 
-    print("\n" + "=" * 60)
-    print("Dispatch Summary")
-    print("=" * 60)
+    logger.info("\n" + "=" * 60)
+    logger.info("Dispatch Summary")
+    logger.info("=" * 60)
 
     if sessions_failed:
-        print(f"WARNING: {sessions_failed}/{len(sessions)} session(s) failed to create")
+        logger.warning("%d/%d session(s) failed to create", sessions_failed, len(sessions))
 
     summary_lines = ["\n## Devin Sessions Created\n"]
     summary_lines.append("| Batch | Category | Severity | Session | Status |")
@@ -685,7 +686,7 @@ def main() -> None:
         )
 
     summary = "\n".join(summary_lines)
-    print(summary)
+    logger.info("\n%s", summary)
 
     github_summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if github_summary:
@@ -706,10 +707,10 @@ def main() -> None:
     if sessions and not dry_run and sessions_failed > 0:
         actual_rate = (sessions_failed / len(sessions)) * 100
         if actual_rate > max_failure_rate:
-            print(
-                f"\nERROR: Session failure rate {actual_rate:.0f}% exceeds "
-                f"maximum allowed {max_failure_rate}% "
-                f"({sessions_failed}/{len(sessions)} failed)"
+            logger.error(
+                "Session failure rate %.0f%% exceeds maximum allowed %.0f%% "
+                "(%d/%d failed)",
+                actual_rate, max_failure_rate, sessions_failed, len(sessions),
             )
             sys.exit(1)
 

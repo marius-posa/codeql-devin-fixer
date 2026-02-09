@@ -33,6 +33,10 @@ from datetime import datetime, timezone
 
 import requests
 
+from logging_config import setup_logging
+
+logger = setup_logging(__name__)
+
 
 def _sign_payload(payload: bytes, secret: str) -> str:
     return "sha256=" + hmac.new(
@@ -67,15 +71,15 @@ def send_webhook(
         try:
             resp = requests.post(url, data=payload, headers=headers, timeout=timeout)
             if resp.status_code < 400:
-                print(f"Webhook '{event}' delivered ({resp.status_code})")
+                logger.info("Webhook '%s' delivered (%d)", event, resp.status_code)
                 return True
-            print(f"Webhook '{event}' failed ({resp.status_code}): {resp.text[:200]}")
+            logger.error("Webhook '%s' failed (%d): %s", event, resp.status_code, resp.text[:200])
         except requests.exceptions.RequestException as e:
-            print(f"Webhook '{event}' error (attempt {attempt + 1}/3): {e}")
+            logger.error("Webhook '%s' error (attempt %d/3): %s", event, attempt + 1, e)
         if attempt < 2:
             time.sleep(2 ** attempt)
 
-    print(f"WARNING: Webhook '{event}' delivery failed after 3 attempts")
+    logger.warning("Webhook '%s' delivery failed after 3 attempts", event)
     return False
 
 
@@ -96,7 +100,7 @@ def main() -> None:
 
     url = os.environ.get("WEBHOOK_URL", "")
     if not url:
-        print("No WEBHOOK_URL set; skipping webhook")
+        logger.info("No WEBHOOK_URL set; skipping webhook")
         return
 
     secret = os.environ.get("WEBHOOK_SECRET", "")

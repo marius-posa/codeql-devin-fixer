@@ -13,6 +13,10 @@ import time
 
 import requests
 
+from logging_config import setup_logging
+
+logger = setup_logging(__name__)
+
 MAX_RETRIES = 3
 BASE_DELAY = 2.0
 MAX_JITTER = 1.0
@@ -69,8 +73,8 @@ def request_with_retry(
             resp = requests.request(method, url, **kwargs)
             if resp.status_code in retry_statuses and attempt < max_retries:
                 delay = exponential_backoff_delay(attempt, base_delay, max_jitter)
-                print(f"  Retry {attempt}/{max_retries} for {url} "
-                      f"(status {resp.status_code}, waiting {delay:.1f}s)")
+                logger.warning("Retry %d/%d for %s (status %d, waiting %.1fs)",
+                               attempt, max_retries, url, resp.status_code, delay)
                 time.sleep(delay)
                 continue
             return resp
@@ -78,8 +82,8 @@ def request_with_retry(
             last_err = e
             if attempt < max_retries:
                 delay = exponential_backoff_delay(attempt, base_delay, max_jitter)
-                print(f"  Retry {attempt}/{max_retries} for {url} "
-                      f"(error: {e}, waiting {delay:.1f}s)")
+                logger.warning("Retry %d/%d for %s (error: %s, waiting %.1fs)",
+                               attempt, max_retries, url, e, delay)
                 time.sleep(delay)
             else:
                 raise
@@ -115,7 +119,7 @@ def run_git_with_retry(
         last_result = result
         if attempt < max_retries:
             delay = exponential_backoff_delay(attempt, base_delay)
-            print(f"  git {' '.join(args)} failed (attempt {attempt}/{max_retries}), "
-                  f"retrying in {delay:.1f}s: {result.stderr.strip()}")
+            logger.warning("git %s failed (attempt %d/%d), retrying in %.1fs: %s",
+                           ' '.join(args), attempt, max_retries, delay, result.stderr.strip())
             time.sleep(delay)
     return last_result  # type: ignore[return-value]

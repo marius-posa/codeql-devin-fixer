@@ -5,10 +5,13 @@ Can be executed as a standalone script or called from app startup.
 """
 
 import json
+import logging
 import pathlib
 import sqlite3
 
 from database import get_connection, init_db, is_db_empty, insert_run, DB_PATH
+
+logger = logging.getLogger(__name__)
 
 
 def migrate_json_files(
@@ -30,7 +33,7 @@ def migrate_json_files(
             else:
                 stats["migrated"] += 1
         except (json.JSONDecodeError, OSError, sqlite3.Error) as exc:
-            print(f"ERROR migrating {fp.name}: {exc}")
+            logger.error("ERROR migrating %s: %s", fp.name, exc)
             stats["errors"] += 1
     conn.commit()
     return stats
@@ -43,7 +46,7 @@ def ensure_db_populated(runs_dir: pathlib.Path, sample_dir: pathlib.Path | None 
         stats = migrate_json_files(runs_dir, conn)
         if stats["migrated"] == 0 and sample_dir and sample_dir.is_dir():
             stats = migrate_json_files(sample_dir, conn)
-        print(f"DB migration: {stats}")
+        logger.info("DB migration: %s", stats)
     conn.close()
 
 
@@ -52,8 +55,8 @@ if __name__ == "__main__":
     init_db()
     conn = get_connection()
     stats = migrate_json_files(runs_dir, conn)
-    print(f"Migration complete: {stats}")
-    print(f"Database: {DB_PATH}")
+    logger.info("Migration complete: %s", stats)
+    logger.info("Database: %s", DB_PATH)
     row = conn.execute("SELECT COUNT(*) as c FROM runs").fetchone()
-    print(f"Total runs in DB: {row['c']}")
+    logger.info("Total runs in DB: %d", row['c'])
     conn.close()

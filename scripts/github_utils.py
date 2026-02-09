@@ -10,6 +10,10 @@ makes it easier to apply changes (e.g. adding retry logic) in one place.
 
 import re
 
+from logging_config import setup_logging
+
+logger = setup_logging(__name__)
+
 
 def gh_headers(token: str = "") -> dict[str, str]:
     """Return standard GitHub API request headers.
@@ -47,7 +51,7 @@ def validate_repo_url(url: str) -> str:
     url = normalize_repo_url(url)
     pattern = r"^https://github\.com/[\w.-]+/[\w.-]+$"
     if not re.match(pattern, url):
-        print(f"WARNING: repo URL may be invalid: {url}")
+        logger.warning("repo URL may be invalid: %s", url)
     return url
 
 

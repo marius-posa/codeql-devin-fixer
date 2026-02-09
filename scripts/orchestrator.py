@@ -58,6 +58,9 @@ from issue_tracking import _parse_ts  # noqa: E402
 from verification import load_verification_records, build_fingerprint_fix_map  # noqa: E402
 from fix_learning import CWE_FIX_HINTS, FixLearning  # noqa: E402
 from github_utils import gh_headers, parse_repo_url  # noqa: E402
+from logging_config import setup_logging  # noqa: E402
+
+logger = setup_logging(__name__)
 
 try:
     from dispatch_devin import create_devin_session  # noqa: E402
@@ -549,10 +552,10 @@ def cmd_ingest(args: argparse.Namespace) -> int:
     target_repo = args.target_repo
 
     if not batches_path or not os.path.isfile(batches_path):
-        print(f"ERROR: Batches file not found: {batches_path}")
+        logger.error("Batches file not found: %s", batches_path)
         return 1
     if not issues_path or not os.path.isfile(issues_path):
-        print(f"ERROR: Issues file not found: {issues_path}")
+        logger.error("Issues file not found: %s", issues_path)
         return 1
 
     with open(batches_path) as f:
@@ -619,11 +622,11 @@ def cmd_ingest(args: argparse.Namespace) -> int:
         conn.commit()
 
         if result is not None:
-            print(f"Ingested {len(issues)} issues ({len(batches)} batches) for {target_repo}")
-            print(f"Run label: {run_label}")
-            print(f"DB row ID: {result}")
+            logger.info("Ingested %d issues (%d batches) for %s", len(issues), len(batches), target_repo)
+            logger.info("Run label: %s", run_label)
+            logger.info("DB row ID: %s", result)
         else:
-            print(f"Run {run_label} already exists in DB (skipped)")
+            logger.info("Run %s already exists in DB (skipped)", run_label)
 
         state = load_state()
         state["last_cycle"] = datetime.now(timezone.utc).isoformat()
@@ -694,7 +697,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
     }
 
     if output_json:
-        print(json.dumps(plan, indent=2))
+        sys.stdout.write(json.dumps(plan, indent=2) + "\n")
     else:
         _print_plan(plan)
 
@@ -771,7 +774,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     }
 
     if output_json:
-        print(json.dumps(status_data, indent=2))
+        sys.stdout.write(json.dumps(status_data, indent=2) + "\n")
     else:
         _print_status(status_data)
 
@@ -997,11 +1000,11 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
 
     api_key = os.environ.get("DEVIN_API_KEY", "")
     if not api_key and not dry_run:
-        print("ERROR: DEVIN_API_KEY environment variable is required (use --dry-run to skip)", file=sys.stderr)
+        logger.error("DEVIN_API_KEY environment variable is required (use --dry-run to skip)")
         return 1
 
     if not _HAS_DISPATCH and not dry_run:
-        print("ERROR: dispatch_devin module not available (missing requests library)", file=sys.stderr)
+        logger.error("dispatch_devin module not available (missing requests library)")
         return 1
 
     data = _compute_eligible_issues(repo_filter)
@@ -1018,9 +1021,9 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     if not eligible:
         msg = "No eligible issues to dispatch."
         if output_json:
-            print(json.dumps({"status": "no_eligible_issues", "message": msg, "sessions_created": 0}))
+            sys.stdout.write(json.dumps({"status": "no_eligible_issues", "message": msg, "sessions_created": 0}) + "\n")
         else:
-            print(msg)
+            logger.info("%s", msg)
         return 0
 
     batches = _form_dispatch_batches(eligible, registry, rate_limiter, remaining)
@@ -1028,9 +1031,9 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     if not batches:
         msg = "No batches to dispatch (rate limit or per-repo limits reached)."
         if output_json:
-            print(json.dumps({"status": "rate_limited", "message": msg, "sessions_created": 0}))
+            sys.stdout.write(json.dumps({"status": "rate_limited", "message": msg, "sessions_created": 0}) + "\n")
         else:
-            print(msg)
+            logger.info("%s", msg)
         return 0
 
     results: list[dict[str, Any]] = []
@@ -1044,9 +1047,9 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
 
         if dry_run:
             if not output_json:
-                print(
-                    f"[DRY RUN] Would dispatch batch {batch['batch_id']}: "
-                    f"{batch['cwe_family']} ({batch['issue_count']} issues) for {repo_url}"
+                logger.info(
+                    "[DRY RUN] Would dispatch batch %s: %s (%d issues) for %s",
+                    batch['batch_id'], batch['cwe_family'], batch['issue_count'], repo_url,
                 )
             results.append({
                 "batch_id": batch["batch_id"],
@@ -1061,7 +1064,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
 
         if not rate_limiter.can_create_session():
             if not output_json:
-                print(f"Rate limit reached, skipping batch {batch['batch_id']}", file=sys.stderr)
+                logger.warning("Rate limit reached, skipping batch %s", batch['batch_id'])
             results.append({
                 "batch_id": batch["batch_id"],
                 "target_repo": repo_url,
@@ -1080,7 +1083,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             session_id = result["session_id"]
             session_url = result["url"]
             if not output_json:
-                print(f"Session created for batch {batch['batch_id']}: {session_url}")
+                logger.info("Session created for batch %s: %s", batch['batch_id'], session_url)
 
             rate_limiter.record_session()
 
@@ -1111,7 +1114,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
 
         except Exception as e:
             if not output_json:
-                print(f"ERROR creating session for batch {batch['batch_id']}: {e}", file=sys.stderr)
+                logger.error("ERROR creating session for batch %s: %s", batch['batch_id'], e)
             for issue in batch["issues"]:
                 fp = issue.get("fingerprint", "")
                 if not fp:
@@ -1154,7 +1157,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     }
 
     if output_json:
-        print(json.dumps(summary, indent=2))
+        sys.stdout.write(json.dumps(summary, indent=2) + "\n")
     else:
         _print_dispatch_summary(summary)
 
@@ -1290,7 +1293,7 @@ def _resolve_target_repo(
     )
     if fork_check.status_code == 200:
         fork_url = f"https://github.com/{workflow_owner}/{repo_name}"
-        print(f"No access to {repo_url}, using fork: {fork_url}")
+        logger.info("No access to %s, using fork: %s", repo_url, fork_url)
         return fork_url
 
     return repo_url
@@ -1355,10 +1358,10 @@ def cmd_scan(args: argparse.Namespace) -> int:
     action_repo = os.environ.get("ACTION_REPO", "")
 
     if not github_token and not dry_run:
-        print("ERROR: GH_PAT or GITHUB_TOKEN environment variable is required (use --dry-run to skip)", file=sys.stderr)
+        logger.error("GH_PAT or GITHUB_TOKEN environment variable is required (use --dry-run to skip)")
         return 1
     if not action_repo and not dry_run:
-        print("ERROR: ACTION_REPO environment variable is required (use --dry-run to skip)", file=sys.stderr)
+        logger.error("ACTION_REPO environment variable is required (use --dry-run to skip)")
         return 1
 
     registry = load_registry()
@@ -1383,13 +1386,13 @@ def cmd_scan(args: argparse.Namespace) -> int:
             scan_schedule.setdefault(repo_url, {})
             scan_schedule[repo_url]["last_scan"] = datetime.now(timezone.utc).isoformat()
             if not output_json:
-                print(f"Triggered scan for {repo_url}")
+                logger.info("Triggered scan for %s", repo_url)
         elif result["status"] == "dry-run":
             if not output_json:
-                print(f"[DRY RUN] Would trigger scan for {repo_url}")
+                logger.info("[DRY RUN] Would trigger scan for %s", repo_url)
         else:
             if not output_json:
-                print(f"ERROR scanning {repo_url}: {result.get('message', '')}", file=sys.stderr)
+                logger.error("ERROR scanning %s: %s", repo_url, result.get('message', ''))
 
     state["scan_schedule"] = scan_schedule
     save_state(state)
@@ -1412,12 +1415,12 @@ def cmd_scan(args: argparse.Namespace) -> int:
     }
 
     if output_json:
-        print(json.dumps(summary, indent=2))
+        sys.stdout.write(json.dumps(summary, indent=2) + "\n")
     else:
         if not dry_run:
-            print(f"\nScan summary: {triggered} triggered, {skipped} not due, {errors} errors")
+            logger.info("Scan summary: %d triggered, %d not due, %d errors", triggered, skipped, errors)
         else:
-            print(f"\n[DRY RUN] Scan summary: {dry_run_count} would trigger, {skipped} not due")
+            logger.info("[DRY RUN] Scan summary: %d would trigger, %d not due", dry_run_count, skipped)
 
     return 1 if errors > 0 and triggered == 0 and dry_run_count == 0 else 0
 
@@ -1512,12 +1515,11 @@ def cmd_cycle(args: argparse.Namespace) -> int:
         json=True,
     )
     if not output_json:
-        print("=" * 60)
-        print("ORCHESTRATOR CYCLE")
-        print("=" * 60)
-        print(f"Started: {now}")
-        print()
-        print("--- Phase 1: Scanning ---")
+        logger.info("=" * 60)
+        logger.info("ORCHESTRATOR CYCLE")
+        logger.info("=" * 60)
+        logger.info("Started: %s", now)
+        logger.info("--- Phase 1: Scanning ---")
 
     import io
     from contextlib import redirect_stdout
@@ -1534,12 +1536,11 @@ def cmd_cycle(args: argparse.Namespace) -> int:
     if not output_json:
         scan_data = cycle_results["scan"]
         if isinstance(scan_data, dict) and "triggered" in scan_data:
-            print(f"  Scans triggered: {scan_data.get('triggered', 0)}")
-            print(f"  Repos not due: {scan_data.get('skipped_not_due', 0)}")
+            logger.info("  Scans triggered: %d", scan_data.get('triggered', 0))
+            logger.info("  Repos not due: %d", scan_data.get('skipped_not_due', 0))
             if scan_data.get("errors"):
-                print(f"  Errors: {scan_data['errors']}")
-        print()
-        print("--- Phase 2: Dispatching ---")
+                logger.info("  Errors: %d", scan_data['errors'])
+        logger.info("--- Phase 2: Dispatching ---")
 
     dispatch_args = argparse.Namespace(
         repo=repo_filter,
@@ -1560,14 +1561,13 @@ def cmd_cycle(args: argparse.Namespace) -> int:
     if not output_json:
         dispatch_data = cycle_results["dispatch"]
         if isinstance(dispatch_data, dict) and "sessions_created" in dispatch_data:
-            print(f"  Sessions created: {dispatch_data.get('sessions_created', 0)}")
+            logger.info("  Sessions created: %d", dispatch_data.get('sessions_created', 0))
             if dispatch_data.get("sessions_failed"):
-                print(f"  Sessions failed: {dispatch_data['sessions_failed']}")
-            print(f"  Rate limit remaining: {dispatch_data.get('rate_limit_remaining', '?')}")
+                logger.info("  Sessions failed: %d", dispatch_data['sessions_failed'])
+            logger.info("  Rate limit remaining: %s", dispatch_data.get('rate_limit_remaining', '?'))
         elif isinstance(dispatch_data, dict) and "status" in dispatch_data:
-            print(f"  {dispatch_data.get('message', dispatch_data.get('status', ''))}")
-        print()
-        print("--- Phase 3: Alerts & Learning ---")
+            logger.info("  %s", dispatch_data.get('message', dispatch_data.get('status', '')))
+        logger.info("--- Phase 3: Alerts & Learning ---")
 
     registry = load_registry()
     orch_config = registry.get("orchestrator", {})
@@ -1637,16 +1637,15 @@ def cmd_cycle(args: argparse.Namespace) -> int:
             vf = alerts_data.get("verified_fixes_alerted", 0)
             om = alerts_data.get("objectives_newly_met", 0)
             sb = alerts_data.get("sla_breaches_alerted", 0)
-            print(f"  Verified fix alerts: {vf}")
-            print(f"  Objectives newly met: {om}")
-            print(f"  SLA breach alerts: {sb}")
+            logger.info("  Verified fix alerts: %d", vf)
+            logger.info("  Objectives newly met: %d", om)
+            logger.info("  SLA breach alerts: %d", sb)
         fe = cycle_results.get("fix_examples_collected", 0)
         if fe:
-            print(f"  Fix examples collected: {fe}")
-        print()
-        print("Cycle complete.")
+            logger.info("  Fix examples collected: %d", fe)
+        logger.info("Cycle complete.")
     else:
-        print(json.dumps(cycle_results, indent=2))
+        sys.stdout.write(json.dumps(cycle_results, indent=2) + "\n")
 
     return 0
 
@@ -1686,145 +1685,139 @@ def _fallback_fingerprint(issue: dict[str, Any]) -> str:
 
 
 def _print_plan(plan: dict[str, Any]) -> None:
-    print("=" * 60)
-    print("ORCHESTRATOR DISPATCH PLAN")
-    print("=" * 60)
-    print(f"Generated: {plan['timestamp']}")
+    logger.info("=" * 60)
+    logger.info("ORCHESTRATOR DISPATCH PLAN")
+    logger.info("=" * 60)
+    logger.info("Generated: %s", plan['timestamp'])
     if plan["repo_filter"]:
-        print(f"Filter: {plan['repo_filter']}")
-    print()
-    print(f"Total issues in DB:    {plan['total_issues']}")
-    print(f"Eligible for dispatch: {plan['eligible_issues']}")
-    print(f"Skipped:               {plan['skipped_issues']}")
-    print(f"Sessions planned:      {plan['sessions_planned']}")
-    print(f"Rate limit:            {plan['rate_limit_remaining']}/{plan['rate_limit_max']} remaining ({plan['rate_limit_period_hours']}h window)")
-    print()
+        logger.info("Filter: %s", plan['repo_filter'])
+    logger.info("Total issues in DB:    %d", plan['total_issues'])
+    logger.info("Eligible for dispatch: %d", plan['eligible_issues'])
+    logger.info("Skipped:               %d", plan['skipped_issues'])
+    logger.info("Sessions planned:      %d", plan['sessions_planned'])
+    logger.info("Rate limit:            %d/%d remaining (%dh window)",
+                plan['rate_limit_remaining'], plan['rate_limit_max'], plan['rate_limit_period_hours'])
 
     if plan["objective_progress"]:
-        print("--- Objective Progress ---")
+        logger.info("--- Objective Progress ---")
         for obj in plan["objective_progress"]:
             status = "MET" if obj["met"] else "IN PROGRESS"
-            print(f"  {obj['objective']}: {obj['current_count']} issues ({status}, target: {obj['target_count']})")
-        print()
+            logger.info("  %s: %d issues (%s, target: %d)",
+                        obj['objective'], obj['current_count'], status, obj['target_count'])
 
     if plan["planned_dispatches"]:
-        print("--- Planned Dispatches ---")
-        print(f"{'#':<4} {'Score':<8} {'Severity':<10} {'Family':<20} {'Repo':<40} {'File'}")
-        print("-" * 120)
+        logger.info("--- Planned Dispatches ---")
+        logger.info("%-4s %-8s %-10s %-20s %-40s %s", "#", "Score", "Severity", "Family", "Repo", "File")
+        logger.info("-" * 120)
         for i, d in enumerate(plan["planned_dispatches"], 1):
             repo_short = d.get("target_repo", "")
             if "github.com/" in repo_short:
                 repo_short = repo_short.split("github.com/")[-1]
-            print(
-                f"{i:<4} {d.get('priority_score', 0):<8.4f} "
-                f"{d.get('severity_tier', ''):<10} "
-                f"{d.get('cwe_family', ''):<20} "
-                f"{repo_short:<40} "
-                f"{d.get('file', '')}"
+            logger.info(
+                "%-4d %-8.4f %-10s %-20s %-40s %s",
+                i, d.get('priority_score', 0),
+                d.get('severity_tier', ''),
+                d.get('cwe_family', ''),
+                repo_short,
+                d.get('file', ''),
             )
     else:
-        print("No dispatches planned.")
+        logger.info("No dispatches planned.")
 
     if plan["skipped"]:
         reasons: dict[str, int] = {}
         for s in plan["skipped"]:
             r = s.get("reason", "unknown")
             reasons[r] = reasons.get(r, 0) + 1
-        print()
-        print("--- Skip Reasons ---")
+        logger.info("--- Skip Reasons ---")
         for reason, count in sorted(reasons.items(), key=lambda x: -x[1]):
-            print(f"  {reason}: {count}")
+            logger.info("  %s: %d", reason, count)
 
 
 def _print_status(data: dict[str, Any]) -> None:
-    print("=" * 60)
-    print("ORCHESTRATOR STATUS")
-    print("=" * 60)
-    print(f"Timestamp: {data['timestamp']}")
+    logger.info("=" * 60)
+    logger.info("ORCHESTRATOR STATUS")
+    logger.info("=" * 60)
+    logger.info("Timestamp: %s", data['timestamp'])
     if data["repo_filter"]:
-        print(f"Filter: {data['repo_filter']}")
+        logger.info("Filter: %s", data['repo_filter'])
     if data["last_cycle"]:
-        print(f"Last cycle: {data['last_cycle']}")
-    print()
+        logger.info("Last cycle: %s", data['last_cycle'])
 
-    print("--- Issue State ---")
+    logger.info("--- Issue State ---")
     for state_name, count in sorted(data["issue_state_breakdown"].items()):
-        print(f"  {state_name}: {count}")
-    print(f"  TOTAL: {data['total_issues']}")
-    print()
+        logger.info("  %s: %d", state_name, count)
+    logger.info("  TOTAL: %d", data['total_issues'])
 
-    print("--- Sessions ---")
+    logger.info("--- Sessions ---")
     for status, count in sorted(data["session_status_breakdown"].items()):
-        print(f"  {status}: {count}")
-    print(f"  TOTAL: {data['total_sessions']}")
-    print()
+        logger.info("  %s: %d", status, count)
+    logger.info("  TOTAL: %d", data['total_sessions'])
 
-    print("--- Pull Requests ---")
-    print(f"  Total: {data['total_prs']}")
-    print(f"  Merged: {data['prs_merged']}")
-    print(f"  Open: {data['prs_open']}")
-    print()
+    logger.info("--- Pull Requests ---")
+    logger.info("  Total: %d", data['total_prs'])
+    logger.info("  Merged: %d", data['prs_merged'])
+    logger.info("  Open: %d", data['prs_open'])
 
     rl = data["rate_limit"]
-    print("--- Rate Limit ---")
-    print(f"  Used: {rl['used']}/{rl['max']} ({rl['period_hours']}h window)")
-    print(f"  Remaining: {rl['remaining']}")
-    print()
+    logger.info("--- Rate Limit ---")
+    logger.info("  Used: %d/%d (%dh window)", rl['used'], rl['max'], rl['period_hours'])
+    logger.info("  Remaining: %d", rl['remaining'])
 
     if data["objective_progress"]:
-        print("--- Objective Progress ---")
+        logger.info("--- Objective Progress ---")
         for obj in data["objective_progress"]:
             status = "MET" if obj["met"] else "IN PROGRESS"
-            print(f"  {obj['objective']}: {obj['current_count']} issues ({status}, target: {obj['target_count']})")
-        print()
+            logger.info("  %s: %d issues (%s, target: %d)",
+                        obj['objective'], obj['current_count'], status, obj['target_count'])
 
     if data["repos"]:
-        print("--- Per-Repo Summary ---")
-        print(f"{'Repo':<50} {'Total':<7} {'New':<7} {'Recurring':<10} {'Fixed':<7} {'Verified'}")
-        print("-" * 100)
+        logger.info("--- Per-Repo Summary ---")
+        logger.info("%-50s %-7s %-7s %-10s %-7s %s", "Repo", "Total", "New", "Recurring", "Fixed", "Verified")
+        logger.info("-" * 100)
         for repo_url, counts in sorted(data["repos"].items()):
             repo_short = repo_url
             if "github.com/" in repo_short:
                 repo_short = repo_short.split("github.com/")[-1]
-            print(
-                f"{repo_short:<50} "
-                f"{counts.get('total', 0):<7} "
-                f"{counts.get('new', 0):<7} "
-                f"{counts.get('recurring', 0):<10} "
-                f"{counts.get('fixed', 0):<7} "
-                f"{counts.get('verified_fixed', 0)}"
+            logger.info(
+                "%-50s %-7d %-7d %-10d %-7d %d",
+                repo_short,
+                counts.get('total', 0),
+                counts.get('new', 0),
+                counts.get('recurring', 0),
+                counts.get('fixed', 0),
+                counts.get('verified_fixed', 0),
             )
 
 
 def _print_dispatch_summary(summary: dict[str, Any]) -> None:
-    print("=" * 60)
-    print("ORCHESTRATOR DISPATCH SUMMARY")
-    print("=" * 60)
-    print(f"Timestamp: {summary['timestamp']}")
+    logger.info("=" * 60)
+    logger.info("ORCHESTRATOR DISPATCH SUMMARY")
+    logger.info("=" * 60)
+    logger.info("Timestamp: %s", summary['timestamp'])
     if summary["repo_filter"]:
-        print(f"Filter: {summary['repo_filter']}")
+        logger.info("Filter: %s", summary['repo_filter'])
     if summary["dry_run"]:
-        print("Mode: DRY RUN")
-    print()
-    print(f"Eligible issues:    {summary['total_eligible']}")
-    print(f"Batches formed:     {summary['batches_formed']}")
-    print(f"Sessions created:   {summary['sessions_created']}")
+        logger.info("Mode: DRY RUN")
+    logger.info("Eligible issues:    %d", summary['total_eligible'])
+    logger.info("Batches formed:     %d", summary['batches_formed'])
+    logger.info("Sessions created:   %d", summary['sessions_created'])
     if summary["sessions_failed"]:
-        print(f"Sessions failed:    {summary['sessions_failed']}")
+        logger.info("Sessions failed:    %d", summary['sessions_failed'])
     if summary["sessions_dry_run"]:
-        print(f"Sessions (dry-run): {summary['sessions_dry_run']}")
-    print(f"Rate limit remain:  {summary['rate_limit_remaining']}")
-    print()
+        logger.info("Sessions (dry-run): %d", summary['sessions_dry_run'])
+    logger.info("Rate limit remain:  %d", summary['rate_limit_remaining'])
 
     if summary["results"]:
-        print("--- Dispatch Results ---")
-        print(f"{'#':<4} {'Family':<20} {'Issues':<8} {'Status':<15} {'Session URL'}")
-        print("-" * 100)
+        logger.info("--- Dispatch Results ---")
+        logger.info("%-4s %-20s %-8s %-15s %s", "#", "Family", "Issues", "Status", "Session URL")
+        logger.info("-" * 100)
         for r in summary["results"]:
             url = r.get("session_url", "") or ""
-            print(
-                f"{r['batch_id']:<4} {r['cwe_family']:<20} "
-                f"{r['issue_count']:<8} {r['status']:<15} {url}"
+            logger.info(
+                "%-4s %-20s %-8d %-15s %s",
+                r['batch_id'], r['cwe_family'],
+                r['issue_count'], r['status'], url,
             )
 
 
