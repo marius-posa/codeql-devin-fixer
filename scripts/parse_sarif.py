@@ -429,7 +429,7 @@ def _file_proximity_score(issue_a: ParsedIssue, issue_b: ParsedIssue) -> float:
     return 0.0
 
 
-def _sort_by_file_proximity(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _sort_by_file_proximity(issues: list[ParsedIssue]) -> list[ParsedIssue]:
     """Re-order issues within a family group so file-proximate issues are adjacent.
 
     Uses a greedy nearest-neighbour approach: start with the first issue,
@@ -439,7 +439,7 @@ def _sort_by_file_proximity(issues: list[dict[str, Any]]) -> list[dict[str, Any]
     if len(issues) <= 1:
         return list(issues)
     remaining = list(issues)
-    ordered: list[dict[str, Any]] = [remaining.pop(0)]
+    ordered: list[ParsedIssue] = [remaining.pop(0)]
     while remaining:
         last = ordered[-1]
         best_idx = 0

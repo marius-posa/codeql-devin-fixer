@@ -179,7 +179,7 @@ def find_original_issues_from_telemetry(
 
 
 def compare_fingerprints(
-    original_fps: list[dict[str, Any]],
+    original_fps: list[IssueFingerprint],
     new_fps: set[str],
     target_issue_ids: list[str] | None = None,
 ) -> dict[str, Any]:
