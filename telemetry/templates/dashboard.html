@@ -954,7 +954,7 @@ async function fetchAuditLog() {
   if (actionFilter) qs += '&action=' + encodeURIComponent(actionFilter);
   if (userFilter) qs += '&user=' + encodeURIComponent(userFilter);
   try {
-    var res = await fetch(API + '/api/audit-log' + qs);
+    var res = await _authedFetch(API + '/api/audit-log' + qs);
     if (res.ok) {
       auditLogData = await res.json();
       renderAuditLogPanel();

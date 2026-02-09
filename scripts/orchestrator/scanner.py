@@ -23,7 +23,7 @@ except ImportError:
 
 from issue_tracking import _parse_ts  # noqa: E402
 from github_utils import gh_headers, parse_repo_url  # noqa: E402
-from database import get_connection, insert_audit_log  # noqa: E402
+from database import get_connection, insert_audit_log, auto_export_audit_log  # noqa: E402
 
 logger = setup_logging(__name__)
 
@@ -274,6 +274,9 @@ def cmd_scan(args: argparse.Namespace) -> int:
             resource=repo_filter,
             details=json.dumps({"dry_run": dry_run, "triggered": triggered, "total_repos": len(results)}),
         )
+        auto_export_audit_log(conn)
+    except Exception:
+        logger.warning("audit log write/export failed", exc_info=True)
     finally:
         conn.close()
     skipped = len([r for r in results if r["status"] == "not_due"])

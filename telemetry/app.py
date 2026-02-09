@@ -10,6 +10,7 @@ import functools
 import hmac
 import io
 import json
+import logging
 import os
 import pathlib
 
@@ -117,11 +118,14 @@ def _get_audit_user() -> str:
 
 
 def _audit(action: str, resource: str = "", details: str = "") -> None:
-    conn = get_connection()
     try:
-        insert_audit_log(conn, _get_audit_user(), action, resource, details)
-    finally:
-        conn.close()
+        conn = get_connection()
+        try:
+            insert_audit_log(conn, _get_audit_user(), action, resource, details)
+        finally:
+            conn.close()
+    except Exception:
+        logging.getLogger(__name__).warning("audit log write failed: action=%s", action, exc_info=True)
 
 
 def _paginate(items: list, page: int, per_page: int) -> dict:
@@ -1005,6 +1009,7 @@ AUDIT_LOG_DIR = pathlib.Path(__file__).resolve().parent.parent / "logs"
 
 
 @app.route("/api/audit-log")
+@require_api_key
 def api_audit_log():
     page, per_page = _get_pagination()
     action_filter = flask_request.args.get("action", "")

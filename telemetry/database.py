@@ -1095,6 +1095,21 @@ def export_audit_logs(
     return [dict(r) for r in rows]
 
 
+def auto_export_audit_log(conn: sqlite3.Connection, logs_dir: str = "") -> str:
+    if not logs_dir:
+        logs_dir = str(pathlib.Path(__file__).resolve().parent.parent / "logs")
+    log_path = pathlib.Path(logs_dir)
+    log_path.mkdir(parents=True, exist_ok=True)
+    entries = export_audit_logs(conn)
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    out = log_path / f"audit-log-{ts}.json"
+    with open(out, "w") as f:
+        import json as _json
+        _json.dump({"exported_at": ts, "entries": entries}, f, indent=2)
+        f.write("\n")
+    return str(out)
+
+
 def collect_search_repos_from_db(conn: sqlite3.Connection) -> set[str]:
     from urllib.parse import urlparse
     rows = conn.execute(
