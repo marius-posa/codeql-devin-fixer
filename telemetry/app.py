@@ -32,6 +32,9 @@ from database import (
     query_issues,
     search_issues,
     backfill_pr_urls,
+    insert_audit_log,
+    query_audit_logs,
+    export_audit_logs,
 )
 from migrate_json_to_sqlite import ensure_db_populated
 from github_service import fetch_prs_from_github_to_db, link_prs_to_sessions_db
@@ -102,6 +105,23 @@ def require_api_key(fn):
             return jsonify({"error": "Unauthorized"}), 401
         return fn(*args, **kwargs)
     return wrapper
+
+
+def _get_audit_user() -> str:
+    user = get_current_user()
+    if user:
+        return user.get("login", "unknown")
+    if _is_authenticated():
+        return "api-key"
+    return "anonymous"
+
+
+def _audit(action: str, resource: str = "", details: str = "") -> None:
+    conn = get_connection()
+    try:
+        insert_audit_log(conn, _get_audit_user(), action, resource, details)
+    finally:
+        conn.close()
 
 
 def _paginate(items: list, page: int, per_page: int) -> dict:
@@ -287,6 +307,7 @@ def api_poll():
         conn.commit()
         link_prs_to_sessions_db(conn)
         conn.commit()
+        _audit("poll_sessions", details=json.dumps({"polled": len(updated), "prs_found": prs_count}))
         return jsonify({"sessions": updated, "polled": len(updated), "prs_found": prs_count})
     finally:
         conn.close()
@@ -300,6 +321,7 @@ def api_poll_prs():
         prs_count = fetch_prs_from_github_to_db(conn)
         conn.commit()
         all_prs = query_all_prs(conn)
+        _audit("poll_prs", details=json.dumps({"prs_found": prs_count}))
         return jsonify({"prs": all_prs, "total": prs_count})
     finally:
         conn.close()
@@ -355,6 +377,7 @@ def api_refresh():
         conn.commit()
 
         total_files = len(list(RUNS_DIR.glob("*.json")))
+        _audit("refresh_runs", details=json.dumps({"downloaded": downloaded, "total_files": total_files}))
         return jsonify({
             "downloaded": downloaded,
             "total_files": total_files,
@@ -447,6 +470,7 @@ def api_backfill():
                 with open(fp, "w") as f:
                     json.dump(run_data, f, indent=2)
 
+        _audit("backfill", details=json.dumps({"patched_files": patched_files, "db_patched": patched}))
         return jsonify({"patched_files": patched_files, "db_patched": patched})
     finally:
         conn.close()
@@ -597,6 +621,7 @@ def api_dispatch():
     try:
         resp = requests.post(url, headers=gh_headers(), json=payload, timeout=30)
         if resp.status_code == 204:
+            _audit("dispatch_workflow", resource=target_repo, details=json.dumps(inputs))
             return jsonify({"success": True, "message": "Workflow dispatched successfully"})
         else:
             error_body = resp.text
@@ -758,6 +783,7 @@ def api_orchestrator_dispatch():
         cwd=str(_ORCHESTRATOR_DIR.parent),
         env={**os.environ},
     )
+    _audit("orchestrator_dispatch", resource=repo_filter, details=json.dumps({"dry_run": dry_run}))
     try:
         return jsonify(json.loads(result.stdout))
     except (json.JSONDecodeError, ValueError):
@@ -790,6 +816,7 @@ def api_orchestrator_scan():
         cwd=str(_ORCHESTRATOR_DIR.parent),
         env={**os.environ},
     )
+    _audit("orchestrator_scan", resource=repo_filter, details=json.dumps({"dry_run": dry_run}))
     try:
         return jsonify(json.loads(result.stdout))
     except (json.JSONDecodeError, ValueError):
@@ -849,6 +876,7 @@ def api_orchestrator_cycle():
         cwd=str(_ORCHESTRATOR_DIR.parent),
         env={**os.environ},
     )
+    _audit("orchestrator_cycle", resource=repo_filter, details=json.dumps({"dry_run": dry_run}))
     try:
         return jsonify(json.loads(result.stdout))
     except (json.JSONDecodeError, ValueError):
@@ -890,6 +918,7 @@ def api_orchestrator_config_update():
         json.dump(registry, f, indent=2)
         f.write("\n")
 
+    _audit("update_orchestrator_config", details=json.dumps({k: body[k] for k in allowed_keys if k in body}))
     return jsonify(_serialize_orch_config(orch_config))
 
 
@@ -918,6 +947,7 @@ def api_registry_update():
     if not body:
         return jsonify({"error": "Request body is required"}), 400
     registry = _load_registry()
+    updated_keys = [k for k in ("defaults", "concurrency", "orchestrator", "repos") if k in body]
     if "defaults" in body:
         registry["defaults"] = body["defaults"]
     if "concurrency" in body:
@@ -927,6 +957,7 @@ def api_registry_update():
     if "repos" in body:
         registry["repos"] = body["repos"]
     _save_registry(registry)
+    _audit("update_registry", details=json.dumps({"updated_sections": updated_keys}))
     return jsonify(registry)
 
 
@@ -949,6 +980,7 @@ def api_registry_add_repo():
     }
     registry.setdefault("repos", []).append(entry)
     _save_registry(registry)
+    _audit("add_registry_repo", resource=repo_url)
     return jsonify(entry), 201
 
 
@@ -965,7 +997,45 @@ def api_registry_remove_repo():
     if len(registry["repos"]) == original_len:
         return jsonify({"error": "Repo not found in registry"}), 404
     _save_registry(registry)
+    _audit("remove_registry_repo", resource=repo_url)
     return jsonify({"removed": repo_url})
+
+
+AUDIT_LOG_DIR = pathlib.Path(__file__).resolve().parent.parent / "logs"
+
+
+@app.route("/api/audit-log")
+def api_audit_log():
+    page, per_page = _get_pagination()
+    action_filter = flask_request.args.get("action", "")
+    user_filter = flask_request.args.get("user", "")
+    conn = get_connection()
+    try:
+        return jsonify(query_audit_logs(conn, page=page, per_page=per_page,
+                                        action_filter=action_filter, user_filter=user_filter))
+    finally:
+        conn.close()
+
+
+@app.route("/api/audit-log/export", methods=["POST"])
+@require_api_key
+def api_audit_log_export():
+    body = flask_request.get_json(silent=True) or {}
+    since = body.get("since", "")
+    conn = get_connection()
+    try:
+        entries = export_audit_logs(conn, since=since)
+        AUDIT_LOG_DIR.mkdir(parents=True, exist_ok=True)
+        from datetime import datetime, timezone
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        export_path = AUDIT_LOG_DIR / f"audit-log-{ts}.json"
+        with open(export_path, "w") as f:
+            json.dump({"exported_at": ts, "since": since, "entries": entries}, f, indent=2)
+            f.write("\n")
+        _audit("export_audit_log", details=json.dumps({"file": str(export_path), "entries": len(entries)}))
+        return jsonify({"file": str(export_path), "entries": len(entries)})
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":

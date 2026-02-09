@@ -26,6 +26,8 @@ try:
 except ImportError:
     from scripts.logging_config import setup_logging
 
+from database import get_connection, insert_audit_log  # noqa: E402
+
 logger = setup_logging(__name__)
 
 
@@ -287,6 +289,16 @@ def cmd_cycle(args: argparse.Namespace) -> int:
     state["last_cycle"] = now
     state["objective_progress"] = current_progress
     _state.save_state(state)
+
+    conn = get_connection()
+    try:
+        insert_audit_log(
+            conn, "orchestrator-cli", "orchestrator_cycle",
+            resource=repo_filter,
+            details=json.dumps({"dry_run": dry_run, "timestamp": now}),
+        )
+    finally:
+        conn.close()
 
     _alerts.send_cycle_summary(cycle_results, dry_run=dry_run)
 

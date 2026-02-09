@@ -118,6 +118,19 @@ CREATE TABLE IF NOT EXISTS metadata (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS audit_log (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT    NOT NULL,
+    user      TEXT    NOT NULL DEFAULT '',
+    action    TEXT    NOT NULL,
+    resource  TEXT    NOT NULL DEFAULT '',
+    details   TEXT    NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON audit_log(timestamp);
+CREATE INDEX IF NOT EXISTS idx_audit_log_user      ON audit_log(user);
+CREATE INDEX IF NOT EXISTS idx_audit_log_action    ON audit_log(action);
 """
 
 _FTS_SCHEMA_SQL = """\
@@ -1005,6 +1018,81 @@ def collect_session_ids_from_db(conn: sqlite3.Connection) -> set[str]:
         clean = sid.replace("devin-", "") if sid.startswith("devin-") else sid
         ids.add(clean)
     return ids
+
+
+# ---------------------------------------------------------------------------
+# Audit log helpers
+# ---------------------------------------------------------------------------
+
+def insert_audit_log(
+    conn: sqlite3.Connection,
+    user: str,
+    action: str,
+    resource: str = "",
+    details: str = "",
+) -> int:
+    now = datetime.now(timezone.utc).isoformat()
+    cur = conn.execute(
+        """INSERT INTO audit_log (timestamp, user, action, resource, details)
+           VALUES (?, ?, ?, ?, ?)""",
+        (now, user, action, resource, details),
+    )
+    conn.commit()
+    return cur.lastrowid or 0
+
+
+def query_audit_logs(
+    conn: sqlite3.Connection,
+    page: int = 1,
+    per_page: int = 50,
+    action_filter: str = "",
+    user_filter: str = "",
+) -> dict:
+    conditions: list[str] = []
+    params: list[str] = []
+    if action_filter:
+        conditions.append("action = ?")
+        params.append(action_filter)
+    if user_filter:
+        conditions.append("user = ?")
+        params.append(user_filter)
+
+    where = ""
+    if conditions:
+        where = "WHERE " + " AND ".join(conditions)
+
+    total_row = conn.execute(
+        f"SELECT COUNT(*) FROM audit_log {where}", params
+    ).fetchone()
+    total = total_row[0]
+
+    offset = (page - 1) * per_page
+    rows = conn.execute(
+        f"""SELECT * FROM audit_log {where}
+            ORDER BY timestamp DESC
+            LIMIT ? OFFSET ?""",
+        params + [per_page, offset],
+    ).fetchall()
+
+    items = [dict(r) for r in rows]
+    pages = max(1, (total + per_page - 1) // per_page)
+    return {"items": items, "page": page, "per_page": per_page, "total": total, "pages": pages}
+
+
+def export_audit_logs(
+    conn: sqlite3.Connection,
+    since: str = "",
+) -> list[dict]:
+    if since:
+        rows = conn.execute(
+            "SELECT * FROM audit_log WHERE timestamp >= ? ORDER BY timestamp",
+            (since,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM audit_log ORDER BY timestamp"
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def collect_search_repos_from_db(conn: sqlite3.Connection) -> set[str]:
