@@ -448,8 +448,8 @@ class TestStatePersistence:
     def test_save_and_load(self, tmp_env):
         state = {
             "last_cycle": "2026-01-01T00:00:00Z",
-            "rate_limiter": {"max_sessions": 10},
-            "dispatch_history": {"fp-1": {"dispatch_count": 2}},
+            "rate_limiter": {"created_timestamps": ["2026-01-01T00:00:00Z"]},
+            "dispatch_history": {"fp-1": {"dispatch_count": 2, "fingerprint": "fp-1", "last_dispatched": "", "last_session_id": "", "consecutive_failures": 0}},
             "objective_progress": [],
             "scan_schedule": {},
         }
@@ -457,6 +457,7 @@ class TestStatePersistence:
         loaded = load_state()
         assert loaded["last_cycle"] == "2026-01-01T00:00:00Z"
         assert loaded["dispatch_history"]["fp-1"]["dispatch_count"] == 2
+        assert loaded["rate_limiter"]["created_timestamps"] == ["2026-01-01T00:00:00Z"]
 
     def test_load_missing_returns_defaults(self, tmp_env):
         state = load_state()
