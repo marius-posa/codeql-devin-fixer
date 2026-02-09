@@ -17,6 +17,7 @@ import pathlib
 import requests
 from flask import Flask, jsonify, render_template, request as flask_request, send_file
 from flask_cors import CORS
+from cachelib import FileSystemCache
 from flask_session import Session
 
 from config import RUNS_DIR, gh_headers
@@ -68,8 +69,8 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(32).hex())
 
 _SESSION_DIR = pathlib.Path(__file__).parent / "flask_session"
 _SESSION_DIR.mkdir(parents=True, exist_ok=True)
-app.config["SESSION_TYPE"] = "filesystem"
-app.config["SESSION_FILE_DIR"] = str(_SESSION_DIR)
+app.config["SESSION_TYPE"] = "cachelib"
+app.config["SESSION_CACHELIB"] = FileSystemCache(str(_SESSION_DIR), threshold=500)
 app.config["SESSION_PERMANENT"] = False
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SECURE"] = os.environ.get("SESSION_COOKIE_SECURE", "true").lower() == "true"

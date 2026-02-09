@@ -919,8 +919,8 @@ class TestAuditLogEndpoints:
 
 
 class TestServerSideSessions:
-    def test_session_type_is_filesystem(self):
-        assert app.config["SESSION_TYPE"] == "filesystem"
+    def test_session_type_is_cachelib(self):
+        assert app.config["SESSION_TYPE"] == "cachelib"
 
     def test_session_cookie_httponly(self):
         assert app.config["SESSION_COOKIE_HTTPONLY"] is True
