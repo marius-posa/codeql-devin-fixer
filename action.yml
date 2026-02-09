@@ -60,6 +60,22 @@ inputs:
     description: "Polling interval in seconds"
     required: false
     default: "30"
+  enable_knowledge:
+    description: "Enable Devin Knowledge API to store/reference successful fix patterns"
+    required: false
+    default: "false"
+  enable_retry_feedback:
+    description: "Enable retry-with-feedback: send verification results back to sessions or create follow-ups"
+    required: false
+    default: "false"
+  max_retry_attempts:
+    description: "Maximum retry attempts per session when retry-with-feedback is enabled"
+    required: false
+    default: "2"
+  knowledge_folder_id:
+    description: "Optional Devin Knowledge folder ID to organize fix knowledge entries"
+    required: false
+    default: ""
 
 outputs:
   total_issues:
@@ -83,6 +99,9 @@ outputs:
   issues_addressed:
     description: "Proxy: sum of issues in finished sessions with PR (if waited)"
     value: ${{ steps.dispatch.outputs.issues_addressed }}
+  retry_attempts:
+    description: "Number of retry-with-feedback attempts made (if enabled)"
+    value: ${{ steps.dispatch.outputs.retry_attempts }}
 
 runs:
   using: "composite"
@@ -273,6 +292,10 @@ runs:
         WAIT_FOR_SESSIONS: ${{ inputs.wait_for_sessions }}
         POLL_TIMEOUT: ${{ inputs.poll_timeout }}
         POLL_INTERVAL: ${{ inputs.poll_interval }}
+        ENABLE_KNOWLEDGE: ${{ inputs.enable_knowledge }}
+        ENABLE_RETRY_FEEDBACK: ${{ inputs.enable_retry_feedback }}
+        MAX_RETRY_ATTEMPTS: ${{ inputs.max_retry_attempts }}
+        KNOWLEDGE_FOLDER_ID: ${{ inputs.knowledge_folder_id }}
       run: |
         python "${{ github.action_path }}/scripts/dispatch_devin.py" \
           "${{ runner.temp }}/codeql-output/batches.json" \

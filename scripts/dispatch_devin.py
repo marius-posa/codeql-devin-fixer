@@ -6,7 +6,11 @@ import os
 import re
 import sys
 import time
+
 import requests
+
+from knowledge import build_knowledge_context, store_fix_knowledge
+from retry_feedback import process_retry_batch
 
 
 DEVIN_API_BASE = "https://api.devin.ai/v1"
@@ -25,7 +29,12 @@ def validate_repo_url(url: str) -> str:
     return url
 
 
-def build_batch_prompt(batch: dict, repo_url: str, default_branch: str) -> str:
+def build_batch_prompt(
+    batch: dict,
+    repo_url: str,
+    default_branch: str,
+    knowledge_context: str = "",
+) -> str:
     family = batch["cwe_family"]
     tier = batch["severity_tier"]
     issues = batch["issues"]
@@ -85,6 +94,9 @@ def build_batch_prompt(batch: dict, repo_url: str, default_branch: str) -> str:
     )
     for f in sorted(file_list):
         prompt_parts.append(f"- {f}")
+
+    if knowledge_context:
+        prompt_parts.append(knowledge_context)
 
     return "\n".join(prompt_parts)
 
@@ -251,6 +263,11 @@ def main() -> None:
 
     max_acu = int(max_acu_str) if max_acu_str else None
 
+    enable_knowledge = os.environ.get("ENABLE_KNOWLEDGE", "false").lower() == "true"
+    enable_retry = os.environ.get("ENABLE_RETRY_FEEDBACK", "false").lower() == "true"
+    max_retry_attempts = int(os.environ.get("MAX_RETRY_ATTEMPTS", "2"))
+    knowledge_folder_id = os.environ.get("KNOWLEDGE_FOLDER_ID") or None
+
     if not api_key and not dry_run:
         print("ERROR: DEVIN_API_KEY is required (set DRY_RUN=true to skip)")
         sys.exit(1)
@@ -269,13 +286,34 @@ def main() -> None:
     print(f"Processing {len(batches)} batches for {repo_url}")
     print(f"Default branch: {default_branch}")
     print(f"Dry run: {dry_run}")
+    if enable_knowledge:
+        print("Knowledge API: enabled")
+    if enable_retry:
+        print(f"Retry-with-feedback: enabled (max {max_retry_attempts} attempts)")
     print()
 
     sessions: list[dict] = []
+    prompts_by_batch: dict[int, str] = {}
 
     for batch in batches:
-        prompt = build_batch_prompt(batch, repo_url, default_branch)
+        knowledge_context = ""
+        if enable_knowledge and not dry_run:
+            try:
+                knowledge_context = build_knowledge_context(
+                    api_key, batch["cwe_family"]
+                )
+                if knowledge_context:
+                    print(
+                        f"  Found knowledge entries for {batch['cwe_family']}"
+                    )
+            except Exception as e:
+                print(f"  WARNING: Failed to fetch knowledge: {e}")
+
+        prompt = build_batch_prompt(
+            batch, repo_url, default_branch, knowledge_context
+        )
         batch_id = batch["batch_id"]
+        prompts_by_batch[batch_id] = prompt
 
         prompt_path = os.path.join(output_dir, f"prompt_batch_{batch_id}.txt")
         with open(prompt_path, "w") as f:
@@ -411,6 +449,75 @@ def main() -> None:
                 f.write(f"sessions_finished={len(finished)}\n")
                 f.write(f"sessions_with_pr={len(with_pr)}\n")
                 f.write(f"issues_addressed={issues_addressed}\n")
+
+        if enable_knowledge and addressed:
+            print("\nStoring fix knowledge for successful sessions...")
+            for o in addressed:
+                try:
+                    store_fix_knowledge(
+                        api_key=api_key,
+                        cwe_family=o.get("cwe_family", "other"),
+                        batch_id=o["batch_id"],
+                        pr_url=o.get("pr_url", ""),
+                        diff_summary=(
+                            f"Resolved {o.get('issues', 0)} {o.get('cwe_family', '')} "
+                            f"issue(s) in batch {o['batch_id']}. "
+                            f"PR: {o.get('pr_url', 'N/A')}"
+                        ),
+                        issue_count=o.get("issues", 0),
+                        severity_tier=o.get("severity_tier", "medium"),
+                        repo_url=repo_url,
+                        parent_folder_id=knowledge_folder_id,
+                    )
+                    print(
+                        f"  Stored knowledge for batch {o['batch_id']} "
+                        f"({o.get('cwe_family', '')})"
+                    )
+                except Exception as e:
+                    print(f"  WARNING: Failed to store knowledge for batch {o['batch_id']}: {e}")
+
+        if enable_retry:
+            needs_work = [
+                o
+                for o in outcomes
+                if o.get("status") in ("finished", "blocked", "failed")
+                and o.get("pr_url")
+                and o.get("session_id")
+                and o not in addressed
+            ]
+            if needs_work:
+                print(
+                    f"\nRetrying {len(needs_work)} session(s) with feedback..."
+                )
+                retry_results = process_retry_batch(
+                    api_key=api_key,
+                    outcomes=needs_work,
+                    batches=batches,
+                    prompts=prompts_by_batch,
+                    max_retry_attempts=max_retry_attempts,
+                    max_acu=max_acu,
+                )
+                with open(os.path.join(output_dir, "retry_results.json"), "w") as f:
+                    json.dump(retry_results, f, indent=2)
+
+                retry_lines = ["\n## Retry-with-Feedback Results\n"]
+                retry_lines.append("| Batch | Action | Session | Attempt |")
+                retry_lines.append("|-------|--------|---------|---------|")
+                for r in retry_results:
+                    sid = r.get("session_id", "-")
+                    retry_lines.append(
+                        f"| {r.get('batch_id', '')} | {r.get('action', '')} "
+                        f"| {sid[:12]}... | {r.get('attempt', '')} |"
+                    )
+                retry_summary = "\n".join(retry_lines)
+                print(retry_summary)
+
+                if github_summary:
+                    with open(github_summary, "a") as f:
+                        f.write(retry_summary + "\n")
+                if github_output:
+                    with open(github_output, "a") as f:
+                        f.write(f"retry_attempts={len(retry_results)}\n")
 
 
 if __name__ == "__main__":
