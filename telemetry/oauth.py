@@ -137,7 +137,7 @@ def callback():
     expected_state = session.pop("oauth_state", None)
     if not code or not expected_state or state != expected_state:
         log.warning("OAuth callback: missing code or state mismatch")
-        return redirect(url_for("index"))
+        return redirect(url_for("api.index"))
 
     resp = requests.post(
         _GITHUB_TOKEN_URL,
@@ -151,13 +151,13 @@ def callback():
     )
     if resp.status_code != 200:
         log.warning("OAuth token exchange failed: %s", resp.status_code)
-        return redirect(url_for("index"))
+        return redirect(url_for("api.index"))
 
     token_data = resp.json()
     access_token = token_data.get("access_token")
     if not access_token:
         log.warning("No access_token in OAuth response")
-        return redirect(url_for("index"))
+        return redirect(url_for("api.index"))
 
     try:
         user = _fetch_user_profile(access_token)
@@ -165,14 +165,14 @@ def callback():
         orgs = _fetch_user_orgs(access_token)
     except Exception:
         log.exception("Failed to fetch user data from GitHub")
-        return redirect(url_for("index"))
+        return redirect(url_for("api.index"))
 
     session["gh_user"] = user
     session["gh_repos"] = repos
     session["gh_orgs"] = orgs
     session["gh_token"] = access_token
 
-    return redirect(url_for("index"))
+    return redirect(url_for("api.index"))
 
 
 @oauth_bp.route("/logout")
@@ -181,7 +181,7 @@ def logout():
     session.pop("gh_repos", None)
     session.pop("gh_orgs", None)
     session.pop("gh_token", None)
-    return redirect(url_for("index"))
+    return redirect(url_for("api.index"))
 
 
 @oauth_bp.route("/api/me")
