@@ -14,6 +14,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from scripts.dispatch_devin import (
     build_batch_prompt,
+    compute_wave_fix_rate,
+    group_batches_by_wave,
+    poll_sessions_until_done,
     validate_repo_url,
     create_devin_session,
     sanitize_prompt_text,
@@ -670,3 +673,112 @@ class TestRenderTemplatePrompt:
         result = _render_template_prompt(template, self._batch(), "https://github.com/o/r", "main")
         assert "Tier: critical" in result
         assert "Score: 9.8" in result
+
+
+class TestGroupBatchesByWave:
+    def _batch(self, batch_id, tier):
+        return {
+            "batch_id": batch_id,
+            "cwe_family": "injection",
+            "cwe_families": ["injection"],
+            "cross_family": False,
+            "severity_tier": tier,
+            "max_severity_score": 9.0,
+            "issue_count": 1,
+            "issues": [],
+        }
+
+    def test_single_tier(self):
+        batches = [self._batch(1, "critical"), self._batch(2, "critical")]
+        waves = group_batches_by_wave(batches)
+        assert len(waves) == 1
+        assert len(waves[0]) == 2
+
+    def test_multiple_tiers_ordered(self):
+        batches = [
+            self._batch(1, "low"),
+            self._batch(2, "critical"),
+            self._batch(3, "high"),
+        ]
+        waves = group_batches_by_wave(batches)
+        assert len(waves) == 3
+        assert waves[0][0]["severity_tier"] == "critical"
+        assert waves[1][0]["severity_tier"] == "high"
+        assert waves[2][0]["severity_tier"] == "low"
+
+    def test_empty_batches(self):
+        assert group_batches_by_wave([]) == []
+
+    def test_unknown_tier_goes_last(self):
+        batches = [self._batch(1, "critical"), self._batch(2, "unknown")]
+        waves = group_batches_by_wave(batches)
+        assert len(waves) == 2
+        assert waves[0][0]["severity_tier"] == "critical"
+        assert waves[1][0]["severity_tier"] == "unknown"
+
+
+class TestComputeWaveFixRate:
+    def test_all_finished(self):
+        sessions = [
+            {"batch_id": 1, "session_id": "s1", "url": "u1", "status": "finished"},
+            {"batch_id": 2, "session_id": "s2", "url": "u2", "status": "finished"},
+        ]
+        assert compute_wave_fix_rate(sessions) == 1.0
+
+    def test_mixed_results(self):
+        sessions = [
+            {"batch_id": 1, "session_id": "s1", "url": "u1", "status": "finished"},
+            {"batch_id": 2, "session_id": "s2", "url": "u2", "status": "failed"},
+        ]
+        assert compute_wave_fix_rate(sessions) == 0.5
+
+    def test_all_failed(self):
+        sessions = [
+            {"batch_id": 1, "session_id": "s1", "url": "u1", "status": "error"},
+        ]
+        assert compute_wave_fix_rate(sessions) == 0.0
+
+    def test_empty_sessions(self):
+        assert compute_wave_fix_rate([]) == 0.0
+
+    def test_dry_run_excluded(self):
+        sessions = [
+            {"batch_id": 1, "session_id": "dry-run", "url": "dry-run", "status": "dry-run"},
+        ]
+        assert compute_wave_fix_rate(sessions) == 0.0
+
+
+class TestPollSessionsUntilDone:
+    @patch("scripts.dispatch_devin.requests.get")
+    @patch("scripts.dispatch_devin.time.sleep")
+    def test_returns_when_all_terminal(self, mock_sleep, mock_get):
+        sessions = [
+            {"batch_id": 1, "session_id": "s1", "url": "u1", "status": "finished"},
+        ]
+        result = poll_sessions_until_done("key", sessions, poll_interval=1, timeout=5)
+        assert result[0]["status"] == "finished"
+        mock_get.assert_not_called()
+
+    @patch("scripts.dispatch_devin.requests.get")
+    @patch("scripts.dispatch_devin.time.sleep")
+    def test_polls_until_finished(self, mock_sleep, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"status_enum": "finished"}
+        mock_get.return_value = mock_resp
+
+        sessions = [
+            {"batch_id": 1, "session_id": "s1", "url": "u1", "status": "created"},
+        ]
+        result = poll_sessions_until_done("key", sessions, poll_interval=1, timeout=10)
+        assert result[0]["status"] == "finished"
+
+    @patch("scripts.dispatch_devin.requests.get")
+    @patch("scripts.dispatch_devin.time.sleep")
+    def test_skips_dry_run_sessions(self, mock_sleep, mock_get):
+        sessions = [
+            {"batch_id": 1, "session_id": "dry-run", "url": "dry-run", "status": "dry-run"},
+        ]
+        result = poll_sessions_until_done("key", sessions, poll_interval=1, timeout=5)
+        assert result[0]["status"] == "dry-run"
+        mock_get.assert_not_called()

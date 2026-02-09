@@ -24,7 +24,7 @@ from __future__ import annotations
 import os
 import sys
 from dataclasses import dataclass
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 try:
     from logging_config import setup_logging
@@ -39,7 +39,7 @@ class IssueLocation(TypedDict):
     start_line: int
     end_line: int
     start_column: int
-    end_column: int
+    end_column: NotRequired[int]
 
 
 class ParsedIssue(TypedDict):
@@ -47,19 +47,35 @@ class ParsedIssue(TypedDict):
     rule_id: str
     rule_name: str
     severity_tier: str
-    cvss_score: float
-    cwe_ids: list[str]
+    severity_score: float
+    cwes: list[str]
     cwe_family: str
     message: str
     locations: list[IssueLocation]
-    fingerprint: str
+    fingerprint: NotRequired[str]
+    rule_description: NotRequired[str]
+    rule_help: NotRequired[str]
+    level: NotRequired[str]
+    partial_fingerprints: NotRequired[dict[str, str]]
 
 
 class Batch(TypedDict):
     batch_id: int
     cwe_family: str
+    cwe_families: list[str]
+    cross_family: bool
     severity_tier: str
+    max_severity_score: float
+    issue_count: int
+    file_count: NotRequired[int]
     issues: list[ParsedIssue]
+
+
+class DispatchSession(TypedDict):
+    batch_id: int
+    session_id: str
+    url: str
+    status: str
 
 
 class SessionRecord(TypedDict):
@@ -68,6 +84,18 @@ class SessionRecord(TypedDict):
     batch_id: int
     status: str
     issue_ids: list[str]
+    pr_url: NotRequired[str]
+
+
+class IssueFingerprint(TypedDict):
+    id: str
+    fingerprint: str
+    rule_id: str
+    severity_tier: str
+    cwe_family: str
+    file: str
+    start_line: int
+    message: NotRequired[str]
 
 
 class TelemetryRecord(TypedDict):
@@ -79,12 +107,14 @@ class TelemetryRecord(TypedDict):
     run_label: str
     timestamp: str
     issues_found: int
+    issues_dispatched: NotRequired[int]
     severity_breakdown: dict[str, int]
     category_breakdown: dict[str, int]
     batches_created: int
     sessions: list[SessionRecord]
-    issue_fingerprints: list[dict[str, str | int]]
+    issue_fingerprints: list[IssueFingerprint]
     zero_issue_run: bool
+    fix_examples: NotRequired[list[dict[str, str]]]
 
 
 @dataclass(frozen=True)
@@ -116,6 +146,12 @@ class PipelineConfig:
     fork_url: str = ""
     run_id: str = ""
     max_failure_rate: int = 50
+
+    # -- wave dispatch ----------------------------------------------------------
+    wave_dispatch: bool = False
+    wave_fix_rate_threshold: float = 0.5
+    wave_poll_interval: int = 60
+    wave_timeout: int = 3600
 
     # -- fork_repo.py ---------------------------------------------------------
     fork_owner: str = ""
@@ -157,6 +193,10 @@ class PipelineConfig:
             fork_url=os.environ.get("FORK_URL", ""),
             run_id=os.environ.get("RUN_ID", ""),
             max_failure_rate=int(os.environ.get("MAX_FAILURE_RATE", "50")),
+            wave_dispatch=os.environ.get("WAVE_DISPATCH", "false").lower() == "true",
+            wave_fix_rate_threshold=float(os.environ.get("WAVE_FIX_RATE_THRESHOLD", "0.5")),
+            wave_poll_interval=int(os.environ.get("WAVE_POLL_INTERVAL", "60")),
+            wave_timeout=int(os.environ.get("WAVE_TIMEOUT", "3600")),
             fork_owner=os.environ.get("FORK_OWNER", ""),
             repo_dir=os.environ.get("REPO_DIR", ""),
             run_label=os.environ.get("RUN_LABEL", ""),

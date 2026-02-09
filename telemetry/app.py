@@ -724,7 +724,7 @@ def api_orchestrator_status():
 def api_orchestrator_plan():
     import subprocess
     result = subprocess.run(
-        ["python3", str(_ORCHESTRATOR_DIR / "orchestrator.py"), "plan", "--json"],
+        ["python3", "-m", "scripts.orchestrator", "plan", "--json"],
         capture_output=True, text=True, timeout=60,
         cwd=str(_ORCHESTRATOR_DIR.parent),
     )
@@ -747,7 +747,7 @@ def api_orchestrator_dispatch():
         return jsonify({"error": "DEVIN_API_KEY not configured on server"}), 400
 
     import subprocess
-    cmd = ["python3", str(_ORCHESTRATOR_DIR / "orchestrator.py"), "dispatch", "--json"]
+    cmd = ["python3", "-m", "scripts.orchestrator", "dispatch", "--json"]
     if repo_filter:
         cmd.extend(["--repo", repo_filter])
     if dry_run:
@@ -779,7 +779,7 @@ def api_orchestrator_scan():
             return jsonify({"error": f"Missing env vars: {', '.join(missing)}"}), 400
 
     import subprocess
-    cmd = ["python3", str(_ORCHESTRATOR_DIR / "orchestrator.py"), "scan", "--json"]
+    cmd = ["python3", "-m", "scripts.orchestrator", "scan", "--json"]
     if repo_filter:
         cmd.extend(["--repo", repo_filter])
     if dry_run:
@@ -838,7 +838,7 @@ def api_orchestrator_cycle():
             return jsonify({"error": "DEVIN_API_KEY not configured on server"}), 400
 
     import subprocess
-    cmd = ["python3", str(_ORCHESTRATOR_DIR / "orchestrator.py"), "cycle", "--json"]
+    cmd = ["python3", "-m", "scripts.orchestrator", "cycle", "--json"]
     if repo_filter:
         cmd.extend(["--repo", repo_filter])
     if dry_run:

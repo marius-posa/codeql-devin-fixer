@@ -37,11 +37,21 @@ try:
     from github_utils import gh_headers
     from logging_config import setup_logging
     from parse_sarif import BATCHES_SCHEMA_VERSION, ISSUES_SCHEMA_VERSION
+    from pipeline_config import (
+        IssueFingerprint,
+        SessionRecord,
+        TelemetryRecord,
+    )
     from retry_utils import request_with_retry
 except ImportError:
     from scripts.github_utils import gh_headers
     from scripts.logging_config import setup_logging
     from scripts.parse_sarif import BATCHES_SCHEMA_VERSION, ISSUES_SCHEMA_VERSION
+    from scripts.pipeline_config import (
+        IssueFingerprint,
+        SessionRecord,
+        TelemetryRecord,
+    )
     from scripts.retry_utils import request_with_retry
 
 logger = setup_logging(__name__)
@@ -136,7 +146,7 @@ def _collect_fix_examples(
     return examples
 
 
-def build_telemetry_record(output_dir: str) -> dict:
+def build_telemetry_record(output_dir: str) -> TelemetryRecord:
     target_repo = os.environ.get("TARGET_REPO", "")
     fork_url = os.environ.get("FORK_URL", "")
     run_number = os.environ.get("RUN_NUMBER", "0")
@@ -181,7 +191,7 @@ def build_telemetry_record(output_dir: str) -> dict:
 
     severity_breakdown: dict[str, int] = {}
     category_breakdown: dict[str, int] = {}
-    issue_fingerprints: list[dict] = []
+    issue_fingerprints: list[IssueFingerprint] = []
     for issue in all_issues:
         tier = issue.get("severity_tier", "unknown")
         severity_breakdown[tier] = severity_breakdown.get(tier, 0) + 1
@@ -199,7 +209,7 @@ def build_telemetry_record(output_dir: str) -> dict:
                 "start_line": (issue.get("locations") or [{}])[0].get("start_line", 0),
             })
 
-    session_records = []
+    session_records: list[SessionRecord] = []
     for s in sessions:
         session_records.append({
             "session_id": s.get("session_id", ""),
@@ -249,7 +259,7 @@ def build_telemetry_record(output_dir: str) -> dict:
     return record
 
 
-def push_telemetry(token: str, action_repo: str, record: dict) -> bool:
+def push_telemetry(token: str, action_repo: str, record: TelemetryRecord) -> bool:
     repo_short = _repo_short_name(record["target_repo"])
     run_id = record.get("run_id", "") or str(record["run_number"])
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")

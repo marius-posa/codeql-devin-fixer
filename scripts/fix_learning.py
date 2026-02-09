@@ -27,7 +27,10 @@ import json
 import os
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
-from typing import Any
+try:
+    from pipeline_config import TelemetryRecord
+except ImportError:
+    from scripts.pipeline_config import TelemetryRecord
 
 DEFAULT_ACU_BUDGET = 10
 MIN_ACU_BUDGET = 3
@@ -148,11 +151,11 @@ class FamilyStats:
 class FixLearning:
     """Analyses past telemetry to guide future dispatch decisions."""
 
-    runs: list[dict[str, Any]] = field(default_factory=list)
+    runs: list[TelemetryRecord] = field(default_factory=list)
 
     @classmethod
     def from_telemetry_dir(cls, telemetry_dir: str) -> "FixLearning":
-        runs: list[dict[str, Any]] = []
+        runs: list[TelemetryRecord] = []
         if not os.path.isdir(telemetry_dir):
             return cls(runs=runs)
         for entry in sorted(os.listdir(telemetry_dir)):

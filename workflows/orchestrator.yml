@@ -44,7 +44,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_PAT: ${{ secrets.GH_PAT }}
           ACTION_REPO: ${{ github.repository }}
-        run: python scripts/orchestrator.py ${{ inputs.command || 'cycle' }} --json
+        run: python -m scripts.orchestrator ${{ inputs.command || 'cycle' }} --json
 
       - name: Commit state changes
         run: |
