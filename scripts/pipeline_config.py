@@ -71,6 +71,83 @@ class Batch(TypedDict):
     issues: list[ParsedIssue]
 
 
+class BlockedIssue(TypedDict):
+    id: str
+    reason: str
+
+
+class StructuredOutputSchema(TypedDict, total=False):
+    status: str
+    issues_attempted: list[str]
+    issues_fixed: list[str]
+    issues_blocked: list[BlockedIssue]
+    pull_request_url: str
+    files_changed: int
+    tests_passing: bool
+
+
+STRUCTURED_OUTPUT_SCHEMA: dict = {
+    "type": "object",
+    "properties": {
+        "status": {
+            "type": "string",
+            "enum": [
+                "analyzing",
+                "fixing",
+                "testing",
+                "creating_pr",
+                "done",
+                "blocked",
+            ],
+            "description": "Current phase of the fix session.",
+        },
+        "issues_attempted": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Issue IDs the session is working on.",
+        },
+        "issues_fixed": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Issue IDs that have been successfully fixed.",
+        },
+        "issues_blocked": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "reason": {"type": "string"},
+                },
+                "required": ["id", "reason"],
+            },
+            "description": "Issues that could not be fixed, with reasons.",
+        },
+        "pull_request_url": {
+            "type": "string",
+            "description": "URL of the created pull request (empty until PR exists).",
+        },
+        "files_changed": {
+            "type": "integer",
+            "description": "Number of files modified so far.",
+        },
+        "tests_passing": {
+            "type": "boolean",
+            "description": "Whether existing tests still pass after fixes.",
+        },
+    },
+    "required": [
+        "status",
+        "issues_attempted",
+        "issues_fixed",
+        "issues_blocked",
+        "pull_request_url",
+        "files_changed",
+        "tests_passing",
+    ],
+}
+
+
 class DispatchSession(TypedDict):
     batch_id: int
     session_id: str
@@ -85,6 +162,7 @@ class SessionRecord(TypedDict):
     status: str
     issue_ids: list[str]
     pr_url: NotRequired[str]
+    structured_output: NotRequired[StructuredOutputSchema]
 
 
 class IssueFingerprint(TypedDict):

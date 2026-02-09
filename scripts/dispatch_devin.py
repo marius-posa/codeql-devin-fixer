@@ -61,7 +61,9 @@ try:
     from github_utils import validate_repo_url
     from logging_config import setup_logging
     from parse_sarif import BATCHES_SCHEMA_VERSION
-    from pipeline_config import Batch, DispatchSession, PipelineConfig
+    from pipeline_config import (
+        Batch, DispatchSession, PipelineConfig, STRUCTURED_OUTPUT_SCHEMA,
+    )
     from playbook_manager import PlaybookManager
     from repo_context import RepoContext, analyze_repo
     from retry_utils import exponential_backoff_delay
@@ -70,7 +72,9 @@ except ImportError:
     from scripts.github_utils import validate_repo_url
     from scripts.logging_config import setup_logging
     from scripts.parse_sarif import BATCHES_SCHEMA_VERSION
-    from scripts.pipeline_config import Batch, DispatchSession, PipelineConfig
+    from scripts.pipeline_config import (
+        Batch, DispatchSession, PipelineConfig, STRUCTURED_OUTPUT_SCHEMA,
+    )
     from scripts.playbook_manager import PlaybookManager
     from scripts.repo_context import RepoContext, analyze_repo
     from scripts.retry_utils import exponential_backoff_delay
@@ -406,6 +410,40 @@ def build_batch_prompt(
         for _fam, pb in playbooks:
             prompt_parts.extend(["", playbook_mgr.format_improvement_request(pb)])
 
+    prompt_parts.extend([
+        "",
+        "## Structured Output",
+        "",
+        "You MUST maintain a structured output object throughout this session.",
+        "Update it whenever you make meaningful progress.",
+        "Use the following JSON schema:",
+        "",
+        "```json",
+        json.dumps(STRUCTURED_OUTPUT_SCHEMA, indent=2),
+        "```",
+        "",
+        "Update the structured output at these key moments:",
+        '- When starting analysis: set status to "analyzing", populate issues_attempted',
+        '- When fixing issues: set status to "fixing", update issues_fixed as each is resolved',
+        '- When running tests: set status to "testing", set tests_passing accordingly',
+        '- When creating the PR: set status to "creating_pr", set pull_request_url once created',
+        '- When finished: set status to "done", ensure all fields are final',
+        '- If blocked: set status to "blocked", populate issues_blocked with id and reason',
+        "",
+        "Example initial value:",
+        "```json",
+        json.dumps({
+            "status": "analyzing",
+            "issues_attempted": issue_ids,
+            "issues_fixed": [],
+            "issues_blocked": [],
+            "pull_request_url": "",
+            "files_changed": 0,
+            "tests_passing": False,
+        }, indent=2),
+        "```",
+    ])
+
     return "\n".join(prompt_parts)
 
 
@@ -452,6 +490,7 @@ def create_devin_session(
             f"CodeQL Fix ({ids_tag}): {batch['cwe_family']} "
             f"({batch['severity_tier'].upper()})"
         ),
+        "structured_output_schema": STRUCTURED_OUTPUT_SCHEMA,
     }
     if max_acu is not None and max_acu > 0:
         payload["max_acu_limit"] = max_acu
@@ -541,6 +580,13 @@ def poll_sessions_until_done(
                         or "unknown"
                     ).lower()
                     s["status"] = status_str
+
+                    so = data.get("structured_output")
+                    if isinstance(so, dict):
+                        pr_url = so.get("pull_request_url", "")
+                        if pr_url:
+                            s["pr_url"] = pr_url
+                        s["structured_output"] = so
             except requests.RequestException:
                 pass
 
