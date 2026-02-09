@@ -16,6 +16,8 @@ _SCRIPTS_DIR = str(pathlib.Path(__file__).resolve().parent.parent / "scripts")
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 
+from devin_api import clean_session_id as _clean_session_id  # noqa: E402
+
 DB_PATH = pathlib.Path(
     os.environ.get(
         "TELEMETRY_DB_PATH",
@@ -1081,8 +1083,7 @@ def collect_session_ids_from_db(conn: sqlite3.Connection) -> set[str]:
     ids: set[str] = set()
     for r in rows:
         sid = r["session_id"]
-        from devin_api import clean_session_id
-        clean = clean_session_id(sid)
+        clean = _clean_session_id(sid)
         ids.add(clean)
     return ids
 
