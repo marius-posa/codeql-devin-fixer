@@ -42,6 +42,9 @@ from scripts.fix_learning import FixLearning
 import database as database_mod
 from database import get_connection, init_db, insert_run
 import scripts.orchestrator as orchestrator_mod
+import scripts.orchestrator.state as orchestrator_state_mod
+import scripts.orchestrator.dispatcher as orchestrator_dispatcher_mod
+import scripts.orchestrator.scanner as orchestrator_scanner_mod
 
 
 @pytest.fixture
@@ -83,9 +86,9 @@ def tmp_env(monkeypatch, tmp_path):
         ],
     }))
 
-    monkeypatch.setattr(orchestrator_mod, "REGISTRY_PATH", registry_path)
-    monkeypatch.setattr(orchestrator_mod, "STATE_PATH", state_path)
-    monkeypatch.setattr(orchestrator_mod, "RUNS_DIR", runs_dir)
+    monkeypatch.setattr(orchestrator_state_mod, "REGISTRY_PATH", registry_path)
+    monkeypatch.setattr(orchestrator_state_mod, "STATE_PATH", state_path)
+    monkeypatch.setattr(orchestrator_state_mod, "RUNS_DIR", runs_dir)
     monkeypatch.setattr(database_mod, "DB_PATH", db_path)
 
     conn = get_connection(db_path)
@@ -903,13 +906,13 @@ class TestCmdDispatch:
         conn.close()
 
         monkeypatch.setenv("DEVIN_API_KEY", "test-key")
-        monkeypatch.setattr(orchestrator_mod, "_HAS_DISPATCH", True)
+        monkeypatch.setattr(orchestrator_dispatcher_mod, "_HAS_DISPATCH", True)
 
         mock_create = MagicMock(return_value={
             "session_id": "sess-test-123",
             "url": "https://app.devin.ai/sessions/sess-test-123",
         })
-        with patch("scripts.orchestrator.create_devin_session", mock_create, create=True):
+        with patch("scripts.orchestrator.dispatcher.create_devin_session", mock_create, create=True):
             class Args:
                 pass
             args = Args()
@@ -936,10 +939,10 @@ class TestCmdDispatch:
         conn.close()
 
         monkeypatch.setenv("DEVIN_API_KEY", "test-key")
-        monkeypatch.setattr(orchestrator_mod, "_HAS_DISPATCH", True)
+        monkeypatch.setattr(orchestrator_dispatcher_mod, "_HAS_DISPATCH", True)
 
         mock_create = MagicMock(side_effect=RuntimeError("API down"))
-        with patch("scripts.orchestrator.create_devin_session", mock_create, create=True):
+        with patch("scripts.orchestrator.dispatcher.create_devin_session", mock_create, create=True):
             class Args:
                 pass
             args = Args()
@@ -981,7 +984,7 @@ class TestResolveTargetRepo:
     def test_returns_original_when_accessible(self):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        with patch("scripts.orchestrator.request_with_retry", return_value=mock_resp):
+        with patch("scripts.orchestrator.scanner.request_with_retry", return_value=mock_resp):
             result = _resolve_target_repo(
                 "https://github.com/juice-shop/juice-shop",
                 "fake-token",
@@ -994,7 +997,7 @@ class TestResolveTargetRepo:
         no_access.status_code = 403
         fork_found = MagicMock()
         fork_found.status_code = 200
-        with patch("scripts.orchestrator.request_with_retry", side_effect=[no_access, fork_found]):
+        with patch("scripts.orchestrator.scanner.request_with_retry", side_effect=[no_access, fork_found]):
             result = _resolve_target_repo(
                 "https://github.com/juice-shop/juice-shop",
                 "fake-token",
@@ -1007,7 +1010,7 @@ class TestResolveTargetRepo:
         no_access.status_code = 403
         no_fork = MagicMock()
         no_fork.status_code = 404
-        with patch("scripts.orchestrator.request_with_retry", side_effect=[no_access, no_fork]):
+        with patch("scripts.orchestrator.scanner.request_with_retry", side_effect=[no_access, no_fork]):
             result = _resolve_target_repo(
                 "https://github.com/juice-shop/juice-shop",
                 "fake-token",
@@ -1018,7 +1021,7 @@ class TestResolveTargetRepo:
     def test_skips_fork_check_when_owner_matches(self):
         no_access = MagicMock()
         no_access.status_code = 403
-        with patch("scripts.orchestrator.request_with_retry", return_value=no_access) as mock_req:
+        with patch("scripts.orchestrator.scanner.request_with_retry", return_value=no_access) as mock_req:
             result = _resolve_target_repo(
                 "https://github.com/marius-posa/some-repo",
                 "fake-token",
