@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -19,6 +20,16 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 _SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
+
+_SAFE_REPO_URL_RE = re.compile(
+    r"^https://[a-zA-Z0-9._-]+(?:\.[a-zA-Z]{2,})+/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+(?:\.git)?$"
+)
+
+
+def _validate_repo_url(url: str) -> str:
+    if not _SAFE_REPO_URL_RE.match(url):
+        raise ValueError(f"Invalid repository URL format: {url}")
+    return url
 
 
 def trigger_scan(scan_config: dict) -> dict:
@@ -144,6 +155,7 @@ def _redact_token(text: str, token: str) -> str:
 
 def _run_clone(repo_url: str, clone_dir: str, github_token: str) -> dict:
     try:
+        repo_url = _validate_repo_url(repo_url)
         cmd = ["git", "clone", "--depth", "1", "--single-branch"]
         clone_env = {**os.environ}
         if github_token:
