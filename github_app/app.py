@@ -58,7 +58,7 @@ def create_app(config: AppConfig | None = None) -> Flask:
             })
         except Exception as exc:
             log.error("Health check failed: %s", exc)
-            return jsonify({"status": "error", "detail": str(exc)}), 503
+            return jsonify({"status": "error", "detail": "internal error"}), 503
 
     @app.route("/api/github/webhook", methods=["POST"])
     def webhook():
@@ -95,7 +95,8 @@ def create_app(config: AppConfig | None = None) -> Flask:
         try:
             token = auth.get_installation_token(int(installation_id))
         except Exception as exc:
-            return jsonify({"error": f"Token error: {exc}"}), 400
+            log.error("Token error for installation %s: %s", installation_id, exc)
+            return jsonify({"error": "Failed to obtain installation token"}), 400
 
         scan_config = {
             "target_repo": f"https://github.com/{repo}",
@@ -133,7 +134,8 @@ def create_app(config: AppConfig | None = None) -> Flask:
                 "total": len(installations),
             })
         except Exception as exc:
-            return jsonify({"error": str(exc)}), 500
+            log.error("Failed to list installations: %s", exc)
+            return jsonify({"error": "Failed to list installations"}), 500
 
     @app.route("/api/github/installations/<int:installation_id>/repos")
     def installation_repos(installation_id: int):
@@ -153,7 +155,8 @@ def create_app(config: AppConfig | None = None) -> Flask:
                 "total": len(repos),
             })
         except Exception as exc:
-            return jsonify({"error": str(exc)}), 500
+            log.error("Failed to list repos for installation %s: %s", installation_id, exc)
+            return jsonify({"error": "Failed to list repositories"}), 500
 
     return app
 
