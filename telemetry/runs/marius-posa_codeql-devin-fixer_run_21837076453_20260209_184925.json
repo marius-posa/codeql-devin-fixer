@@ -1,0 +1,218 @@
+{
+  "target_repo": "https://github.com/marius-posa/codeql-devin-fixer",
+  "fork_url": "https://github.com/marius-posa/codeql-devin-fixer",
+  "run_number": 36,
+  "run_id": "21837076453",
+  "run_url": "https://github.com/marius-posa/codeql-devin-fixer/actions/runs/21837076453",
+  "run_label": "run-36-2026-02-09-184920",
+  "timestamp": "2026-02-09T18:49:25.589013+00:00",
+  "issues_found": 21,
+  "issues_dispatched": 21,
+  "severity_breakdown": {
+    "high": 10,
+    "critical": 2,
+    "medium": 9
+  },
+  "category_breakdown": {
+    "xss": 7,
+    "info-disclosure": 5,
+    "other": 2,
+    "injection": 1,
+    "ssrf": 1,
+    "logging": 5
+  },
+  "batches_created": 5,
+  "sessions": [],
+  "issue_fingerprints": [
+    {
+      "id": "CQLF-ALL-R36-0001",
+      "fingerprint": "ae60403386e4f7715b46",
+      "rule_id": "js/xss-through-dom",
+      "severity_tier": "high",
+      "cwe_family": "xss",
+      "file": "docs/index.html",
+      "start_line": 555
+    },
+    {
+      "id": "CQLF-ALL-R36-0002",
+      "fingerprint": "4c3cb0aaa0ad6a402aba",
+      "rule_id": "js/xss-through-dom",
+      "severity_tier": "high",
+      "cwe_family": "xss",
+      "file": "docs/index.html",
+      "start_line": 612
+    },
+    {
+      "id": "CQLF-ALL-R36-0003",
+      "fingerprint": "ffab745dd78c045c63fa",
+      "rule_id": "py/clear-text-logging-sensitive-data",
+      "severity_tier": "high",
+      "cwe_family": "info-disclosure",
+      "file": "github_app/scan_trigger.py",
+      "start_line": 70
+    },
+    {
+      "id": "CQLF-ALL-R36-0004",
+      "fingerprint": "3c7c530d7c38c76c82c9",
+      "rule_id": "py/incomplete-url-substring-sanitization",
+      "severity_tier": "high",
+      "cwe_family": "other",
+      "file": "scripts/orchestrator/cli.py",
+      "start_line": 359
+    },
+    {
+      "id": "CQLF-ALL-R36-0005",
+      "fingerprint": "4ba4edf6ab182fd7743b",
+      "rule_id": "py/incomplete-url-substring-sanitization",
+      "severity_tier": "high",
+      "cwe_family": "other",
+      "file": "scripts/orchestrator/cli.py",
+      "start_line": 432
+    },
+    {
+      "id": "CQLF-ALL-R36-0006",
+      "fingerprint": "73559aa8b9e1fc687fa1",
+      "rule_id": "py/command-line-injection",
+      "severity_tier": "critical",
+      "cwe_family": "injection",
+      "file": "github_app/scan_trigger.py",
+      "start_line": 178
+    },
+    {
+      "id": "CQLF-ALL-R36-0007",
+      "fingerprint": "2f8c4c59f5d27d1354c8",
+      "rule_id": "py/stack-trace-exposure",
+      "severity_tier": "medium",
+      "cwe_family": "info-disclosure",
+      "file": "github_app/app.py",
+      "start_line": 70
+    },
+    {
+      "id": "CQLF-ALL-R36-0008",
+      "fingerprint": "4c735d21d88bf22d43f9",
+      "rule_id": "py/stack-trace-exposure",
+      "severity_tier": "medium",
+      "cwe_family": "info-disclosure",
+      "file": "github_app/app.py",
+      "start_line": 107
+    },
+    {
+      "id": "CQLF-ALL-R36-0009",
+      "fingerprint": "cd72321eda4f0bda5118",
+      "rule_id": "py/stack-trace-exposure",
+      "severity_tier": "medium",
+      "cwe_family": "info-disclosure",
+      "file": "github_app/app.py",
+      "start_line": 145
+    },
+    {
+      "id": "CQLF-ALL-R36-0010",
+      "fingerprint": "59745178434251c8b656",
+      "rule_id": "py/stack-trace-exposure",
+      "severity_tier": "medium",
+      "cwe_family": "info-disclosure",
+      "file": "github_app/app.py",
+      "start_line": 165
+    },
+    {
+      "id": "CQLF-ALL-R36-0011",
+      "fingerprint": "a46de6d546eb91d1d105",
+      "rule_id": "py/jinja2/autoescape-false",
+      "severity_tier": "medium",
+      "cwe_family": "xss",
+      "file": "scripts/dispatch_devin.py",
+      "start_line": 103
+    },
+    {
+      "id": "CQLF-ALL-R36-0012",
+      "fingerprint": "18586a9f4c8f3e1c7e9c",
+      "rule_id": "py/jinja2/autoescape-false",
+      "severity_tier": "medium",
+      "cwe_family": "xss",
+      "file": "tests/test_dispatch_devin.py",
+      "start_line": 652
+    },
+    {
+      "id": "CQLF-ALL-R36-0013",
+      "fingerprint": "d9d9d928a36f1b4e3522",
+      "rule_id": "py/jinja2/autoescape-false",
+      "severity_tier": "medium",
+      "cwe_family": "xss",
+      "file": "tests/test_dispatch_devin.py",
+      "start_line": 660
+    },
+    {
+      "id": "CQLF-ALL-R36-0014",
+      "fingerprint": "3aaecccacce2e668db27",
+      "rule_id": "py/jinja2/autoescape-false",
+      "severity_tier": "medium",
+      "cwe_family": "xss",
+      "file": "tests/test_dispatch_devin.py",
+      "start_line": 666
+    },
+    {
+      "id": "CQLF-ALL-R36-0015",
+      "fingerprint": "2023331a690baa315fca",
+      "rule_id": "py/jinja2/autoescape-false",
+      "severity_tier": "medium",
+      "cwe_family": "xss",
+      "file": "tests/test_dispatch_devin.py",
+      "start_line": 673
+    },
+    {
+      "id": "CQLF-ALL-R36-0016",
+      "fingerprint": "8a1c358a5accdecd5121",
+      "rule_id": "py/partial-ssrf",
+      "severity_tier": "critical",
+      "cwe_family": "ssrf",
+      "file": "github_app/auth.py",
+      "start_line": 102
+    },
+    {
+      "id": "CQLF-ALL-R36-0017",
+      "fingerprint": "b00fc9763aeface15be8",
+      "rule_id": "py/log-injection",
+      "severity_tier": "high",
+      "cwe_family": "logging",
+      "file": "github_app/app.py",
+      "start_line": 84
+    },
+    {
+      "id": "CQLF-ALL-R36-0018",
+      "fingerprint": "4db8f7f4c892983713df",
+      "rule_id": "py/log-injection",
+      "severity_tier": "high",
+      "cwe_family": "logging",
+      "file": "github_app/app.py",
+      "start_line": 183
+    },
+    {
+      "id": "CQLF-ALL-R36-0019",
+      "fingerprint": "a00ce6d728e6cb41de88",
+      "rule_id": "py/log-injection",
+      "severity_tier": "high",
+      "cwe_family": "logging",
+      "file": "github_app/app.py",
+      "start_line": 198
+    },
+    {
+      "id": "CQLF-ALL-R36-0020",
+      "fingerprint": "bd928df0ba5f6623eafa",
+      "rule_id": "py/log-injection",
+      "severity_tier": "high",
+      "cwe_family": "logging",
+      "file": "github_app/scan_trigger.py",
+      "start_line": 70
+    },
+    {
+      "id": "CQLF-ALL-R36-0021",
+      "fingerprint": "a5b290e817f338da5bba",
+      "rule_id": "py/log-injection",
+      "severity_tier": "high",
+      "cwe_family": "logging",
+      "file": "github_app/webhook_handler.py",
+      "start_line": 44
+    }
+  ],
+  "zero_issue_run": false
+}
