@@ -10,6 +10,10 @@ DEVIN_API_BASE = "https://api.devin.ai/v1"
 MAX_RETRIES = 3
 RETRY_DELAY = 5
 
+TERMINAL_STATUSES = frozenset(
+    {"finished", "blocked", "expired", "failed", "canceled", "cancelled"}
+)
+
 
 def headers(api_key: str) -> dict[str, str]:
     return {

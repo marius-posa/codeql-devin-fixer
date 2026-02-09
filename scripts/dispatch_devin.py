@@ -11,14 +11,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import requests
 
+from devin_api import DEVIN_API_BASE, TERMINAL_STATUSES, request_with_retry
 from knowledge import build_knowledge_context, store_fix_knowledge
 from retry_feedback import process_retry_batch
-
-
-DEVIN_API_BASE = "https://api.devin.ai/v1"
-
-MAX_RETRIES = 3
-RETRY_DELAY = 5
 
 
 def validate_repo_url(url: str) -> str:
@@ -109,11 +104,6 @@ def create_devin_session(
     batch: dict,
     max_acu: int | None = None,
 ) -> dict:
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-
     tags = [
         "codeql-fix",
         f"severity-{batch['severity_tier']}",
@@ -133,34 +123,13 @@ def create_devin_session(
     if max_acu is not None and max_acu > 0:
         payload["max_acu_limit"] = max_acu
 
-    last_err = None
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            resp = requests.post(
-                f"{DEVIN_API_BASE}/sessions",
-                headers=headers,
-                json=payload,
-                timeout=30,
-            )
-            resp.raise_for_status()
-            return resp.json()
-        except requests.exceptions.RequestException as e:
-            last_err = e
-            if attempt < MAX_RETRIES:
-                print(f"  Retry {attempt}/{MAX_RETRIES} after error: {e}")
-                time.sleep(RETRY_DELAY * attempt)
-    raise last_err  # type: ignore[misc]
+    return request_with_retry("POST", f"{DEVIN_API_BASE}/sessions", api_key, payload)
 
 
 def check_session_status(api_key: str, session_id: str) -> dict:
-    headers = {"Authorization": f"Bearer {api_key}"}
-    resp = requests.get(
-        f"{DEVIN_API_BASE}/sessions/{session_id}",
-        headers=headers,
-        timeout=30,
+    return request_with_retry(
+        "GET", f"{DEVIN_API_BASE}/sessions/{session_id}", api_key
     )
-    resp.raise_for_status()
-    return resp.json()
 
 
 def _get_status_enum(payload: dict) -> str:
@@ -178,14 +147,7 @@ def _get_pr_url(payload: dict) -> str:
 
 
 def _is_terminal(status: str) -> bool:
-    return status in {
-        "finished",
-        "blocked",
-        "expired",
-        "failed",
-        "canceled",
-        "cancelled",
-    }
+    return status in TERMINAL_STATUSES
 
 
 def poll_sessions(

@@ -8,13 +8,9 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from devin_api import DEVIN_API_BASE, request_with_retry
+from devin_api import DEVIN_API_BASE, TERMINAL_STATUSES, request_with_retry
 
 DEFAULT_MAX_RETRY_ATTEMPTS = 2
-
-TERMINAL_STATUSES = frozenset(
-    {"finished", "blocked", "expired", "failed", "canceled", "cancelled"}
-)
 
 
 def send_message(api_key: str, session_id: str, message: str) -> dict:
