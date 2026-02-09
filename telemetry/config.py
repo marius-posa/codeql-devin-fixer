@@ -3,11 +3,12 @@ import pathlib
 import sys
 
 RUNS_DIR = pathlib.Path(__file__).parent / "runs"
-DEVIN_API_BASE = "https://api.devin.ai/v1"
 
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent.parent / "scripts"
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
+
+from devin_api import DEVIN_API_BASE  # noqa: E402
 
 from github_utils import gh_headers as _shared_gh_headers  # noqa: E402
 
