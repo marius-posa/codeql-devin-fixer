@@ -31,9 +31,9 @@
       "repo": "https://github.com/juice-shop/juice-shop",
       "enabled": true,
       "importance": "high",
-      "importance_score": 90,
+      "importance_score": 80,
       "schedule": "weekly",
-      "max_sessions_per_cycle": 10,
+      "max_sessions_per_cycle": 2,
       "auto_scan": true,
       "auto_dispatch": true,
       "tags": [
