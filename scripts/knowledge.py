@@ -3,55 +3,17 @@
 
 import json
 import os
-import time
+import sys
 
-import requests
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-DEVIN_API_BASE = "https://api.devin.ai/v1"
-
-MAX_RETRIES = 3
-RETRY_DELAY = 5
+from devin_api import DEVIN_API_BASE, fetch_pr_diff, request_with_retry
 
 KNOWLEDGE_NAME_PREFIX = "codeql-fix"
 
 
-def _headers(api_key: str) -> dict[str, str]:
-    return {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-
-
-def _request_with_retry(
-    method: str,
-    url: str,
-    api_key: str,
-    json_data: dict | None = None,
-) -> dict:
-    last_err: requests.exceptions.RequestException | None = None
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            resp = requests.request(
-                method,
-                url,
-                headers=_headers(api_key),
-                json=json_data,
-                timeout=30,
-            )
-            resp.raise_for_status()
-            if resp.status_code == 204:
-                return {}
-            return resp.json()
-        except requests.exceptions.RequestException as e:
-            last_err = e
-            if attempt < MAX_RETRIES:
-                print(f"  Retry {attempt}/{MAX_RETRIES} after error: {e}")
-                time.sleep(RETRY_DELAY * attempt)
-    raise last_err  # type: ignore[misc]
-
-
 def list_knowledge(api_key: str) -> list[dict]:
-    data = _request_with_retry("GET", f"{DEVIN_API_BASE}/knowledge", api_key)
+    data = request_with_retry("GET", f"{DEVIN_API_BASE}/knowledge", api_key)
     if isinstance(data, list):
         return data
     return data.get("items", data.get("knowledge", []))
@@ -74,7 +36,7 @@ def create_knowledge(
         payload["pinned_repo"] = pinned_repo
     if parent_folder_id:
         payload["parent_folder_id"] = parent_folder_id
-    return _request_with_retry(
+    return request_with_retry(
         "POST", f"{DEVIN_API_BASE}/knowledge", api_key, payload
     )
 
@@ -93,13 +55,13 @@ def update_knowledge(
         payload["body"] = body
     if trigger_description is not None:
         payload["trigger_description"] = trigger_description
-    return _request_with_retry(
+    return request_with_retry(
         "PUT", f"{DEVIN_API_BASE}/knowledge/{note_id}", api_key, payload
     )
 
 
 def delete_knowledge(api_key: str, note_id: str) -> dict:
-    return _request_with_retry(
+    return request_with_retry(
         "DELETE", f"{DEVIN_API_BASE}/knowledge/{note_id}", api_key
     )
 
@@ -139,9 +101,12 @@ def store_fix_knowledge(
     severity_tier: str,
     repo_url: str = "",
     parent_folder_id: str | None = None,
+    github_token: str = "",
 ) -> dict:
     fix_pattern = _classify_fix_pattern(cwe_family)
     name = _make_knowledge_name(cwe_family, batch_id)
+
+    diff_content = fetch_pr_diff(pr_url, github_token)
 
     body_parts = [
         f"# Verified Fix: {cwe_family} ({severity_tier.upper()})",
@@ -155,11 +120,22 @@ def store_fix_knowledge(
     body_parts.extend(
         [
             "",
-            "## Fix Diff Summary",
+            "## Fix Summary",
             "",
             diff_summary,
         ]
     )
+    if diff_content:
+        body_parts.extend(
+            [
+                "",
+                "## Actual Fix Diff",
+                "",
+                "```diff",
+                diff_content,
+                "```",
+            ]
+        )
     body = "\n".join(body_parts)
 
     trigger_description = (
@@ -228,6 +204,7 @@ def main() -> None:
             severity_tier=os.environ.get("SEVERITY_TIER", "medium"),
             repo_url=os.environ.get("TARGET_REPO", ""),
             parent_folder_id=os.environ.get("KNOWLEDGE_FOLDER_ID"),
+            github_token=os.environ.get("GITHUB_TOKEN", ""),
         )
         print(json.dumps(result, indent=2))
     elif action == "search":

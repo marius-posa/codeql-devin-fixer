@@ -4,12 +4,11 @@
 import sys
 import os
 import unittest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(__file__))
 
 from retry_feedback import (
-    DEFAULT_MAX_RETRY_ATTEMPTS,
     _build_feedback_message,
     _build_followup_prompt,
     create_session,
@@ -21,7 +20,7 @@ from retry_feedback import (
 
 
 class TestSendMessage(unittest.TestCase):
-    @patch("retry_feedback.requests.request")
+    @patch("devin_api.requests.request")
     def test_send_message(self, mock_req):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -40,7 +39,7 @@ class TestSendMessage(unittest.TestCase):
 
 
 class TestGetSession(unittest.TestCase):
-    @patch("retry_feedback.requests.request")
+    @patch("devin_api.requests.request")
     def test_get_session(self, mock_req):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -56,7 +55,7 @@ class TestGetSession(unittest.TestCase):
 
 
 class TestCreateSession(unittest.TestCase):
-    @patch("retry_feedback.requests.request")
+    @patch("devin_api.requests.request")
     def test_create_session(self, mock_req):
         mock_resp = MagicMock()
         mock_resp.status_code = 200

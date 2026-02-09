@@ -7,6 +7,8 @@ import re
 import sys
 import time
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 import requests
 
 from knowledge import build_knowledge_context, store_fix_knowledge
@@ -468,6 +470,7 @@ def main() -> None:
                         severity_tier=o.get("severity_tier", "medium"),
                         repo_url=repo_url,
                         parent_folder_id=knowledge_folder_id,
+                        github_token=os.environ.get("GITHUB_TOKEN", ""),
                     )
                     print(
                         f"  Stored knowledge for batch {o['batch_id']} "

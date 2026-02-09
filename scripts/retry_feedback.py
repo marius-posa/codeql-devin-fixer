@@ -3,14 +3,12 @@
 
 import json
 import os
+import sys
 import time
 
-import requests
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-DEVIN_API_BASE = "https://api.devin.ai/v1"
-
-MAX_RETRIES = 3
-RETRY_DELAY = 5
+from devin_api import DEVIN_API_BASE, request_with_retry
 
 DEFAULT_MAX_RETRY_ATTEMPTS = 2
 
@@ -19,43 +17,8 @@ TERMINAL_STATUSES = frozenset(
 )
 
 
-def _headers(api_key: str) -> dict[str, str]:
-    return {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-
-
-def _request_with_retry(
-    method: str,
-    url: str,
-    api_key: str,
-    json_data: dict | None = None,
-) -> dict:
-    last_err: requests.exceptions.RequestException | None = None
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            resp = requests.request(
-                method,
-                url,
-                headers=_headers(api_key),
-                json=json_data,
-                timeout=30,
-            )
-            resp.raise_for_status()
-            if resp.status_code == 204:
-                return {}
-            return resp.json()
-        except requests.exceptions.RequestException as e:
-            last_err = e
-            if attempt < MAX_RETRIES:
-                print(f"  Retry {attempt}/{MAX_RETRIES} after error: {e}")
-                time.sleep(RETRY_DELAY * attempt)
-    raise last_err  # type: ignore[misc]
-
-
 def send_message(api_key: str, session_id: str, message: str) -> dict:
-    return _request_with_retry(
+    return request_with_retry(
         "POST",
         f"{DEVIN_API_BASE}/sessions/{session_id}/message",
         api_key,
@@ -64,7 +27,7 @@ def send_message(api_key: str, session_id: str, message: str) -> dict:
 
 
 def get_session(api_key: str, session_id: str) -> dict:
-    return _request_with_retry(
+    return request_with_retry(
         "GET",
         f"{DEVIN_API_BASE}/sessions/{session_id}",
         api_key,
@@ -88,7 +51,7 @@ def create_session(
         payload["title"] = title
     if max_acu is not None and max_acu > 0:
         payload["max_acu_limit"] = max_acu
-    return _request_with_retry(
+    return request_with_retry(
         "POST", f"{DEVIN_API_BASE}/sessions", api_key, payload
     )
 

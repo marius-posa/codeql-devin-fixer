@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Tests for knowledge.py - Devin Knowledge API client."""
 
-import json
 import sys
 import os
 import unittest
@@ -42,7 +41,7 @@ class TestKnowledgeNaming(unittest.TestCase):
 
 
 class TestListKnowledge(unittest.TestCase):
-    @patch("knowledge.requests.request")
+    @patch("devin_api.requests.request")
     def test_list_returns_list(self, mock_req):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -54,7 +53,7 @@ class TestListKnowledge(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["name"], "test")
 
-    @patch("knowledge.requests.request")
+    @patch("devin_api.requests.request")
     def test_list_returns_dict_with_items(self, mock_req):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -67,7 +66,7 @@ class TestListKnowledge(unittest.TestCase):
 
 
 class TestCreateKnowledge(unittest.TestCase):
-    @patch("knowledge.requests.request")
+    @patch("devin_api.requests.request")
     def test_create_basic(self, mock_req):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -89,7 +88,7 @@ class TestCreateKnowledge(unittest.TestCase):
         self.assertEqual(payload["body"], "test body")
         self.assertNotIn("pinned_repo", payload)
 
-    @patch("knowledge.requests.request")
+    @patch("devin_api.requests.request")
     def test_create_with_pinned_repo(self, mock_req):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -110,7 +109,7 @@ class TestCreateKnowledge(unittest.TestCase):
 
 
 class TestUpdateKnowledge(unittest.TestCase):
-    @patch("knowledge.requests.request")
+    @patch("devin_api.requests.request")
     def test_update(self, mock_req):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -125,7 +124,7 @@ class TestUpdateKnowledge(unittest.TestCase):
 
 
 class TestDeleteKnowledge(unittest.TestCase):
-    @patch("knowledge.requests.request")
+    @patch("devin_api.requests.request")
     def test_delete(self, mock_req):
         mock_resp = MagicMock()
         mock_resp.status_code = 204
@@ -137,9 +136,11 @@ class TestDeleteKnowledge(unittest.TestCase):
 
 
 class TestStoreFixKnowledge(unittest.TestCase):
+    @patch("knowledge.fetch_pr_diff")
     @patch("knowledge.create_knowledge")
-    def test_store_fix(self, mock_create):
+    def test_store_fix(self, mock_create, mock_diff):
         mock_create.return_value = {"id": "new-knowledge"}
+        mock_diff.return_value = "--- a/app.js\n+++ b/app.js\n@@ -1 +1 @@\n-bad\n+good"
 
         result = store_fix_knowledge(
             api_key="test-key",
@@ -159,6 +160,8 @@ class TestStoreFixKnowledge(unittest.TestCase):
         self.assertIn("parameterized", call_kwargs["trigger_description"])
         self.assertIn("injection", call_kwargs["trigger_description"])
         self.assertEqual(call_kwargs["pinned_repo"], "org/repo")
+        self.assertIn("Actual Fix Diff", call_kwargs["body"])
+        self.assertIn("```diff", call_kwargs["body"])
 
 
 class TestFindKnowledgeForCwe(unittest.TestCase):
