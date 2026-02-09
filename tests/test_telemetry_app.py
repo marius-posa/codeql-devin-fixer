@@ -44,7 +44,7 @@ def _seed_db(runs=None, prs=None):
 
 def _clear_db():
     conn = get_connection(pathlib.Path(_test_db_path))
-    for tbl in ["pr_issue_ids", "prs", "session_issue_ids", "sessions", "issues", "runs", "metadata"]:
+    for tbl in ["pr_issue_ids", "prs", "session_issue_ids", "sessions", "issues", "runs", "metadata", "orchestrator_kv", "dispatch_history", "rate_limiter_timestamps", "scan_schedule"]:
         try:
             conn.execute(f"DELETE FROM {tbl}")
         except Exception:
@@ -449,7 +449,7 @@ class TestOrchestratorEndpoints:
             )
             assert resp.status_code == 200
 
-    def test_load_orchestrator_state_missing_file(self):
+    def test_load_orchestrator_state_empty_db(self):
         with patch("routes.orchestrator._ORCHESTRATOR_STATE_PATH") as mock_path:
             mock_path.exists.return_value = False
             state = _load_orchestrator_state()

@@ -8,7 +8,7 @@ import subprocess
 from flask import Blueprint, jsonify, request as flask_request
 
 from config import RUNS_DIR
-from database import get_connection, query_issues
+from database import get_connection, init_db, query_issues, load_orchestrator_state, is_orchestrator_state_empty, save_orchestrator_state
 from verification import load_verification_records, build_fingerprint_fix_map
 from helpers import require_api_key, _audit, _paginate, _get_pagination
 from extensions import limiter
@@ -21,18 +21,19 @@ _ORCHESTRATOR_REGISTRY_PATH = pathlib.Path(__file__).resolve().parent.parent.par
 
 
 def _load_orchestrator_state() -> dict:
-    if not _ORCHESTRATOR_STATE_PATH.exists():
-        return {
-            "last_cycle": None,
-            "rate_limiter": {},
-            "dispatch_history": {},
-            "objective_progress": [],
-            "scan_schedule": {},
-        }
+    conn = get_connection()
     try:
-        with open(_ORCHESTRATOR_STATE_PATH) as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError):
+        init_db(conn)
+        if is_orchestrator_state_empty(conn):
+            if _ORCHESTRATOR_STATE_PATH.exists():
+                try:
+                    with open(_ORCHESTRATOR_STATE_PATH) as f:
+                        data = json.load(f)
+                    save_orchestrator_state(conn, data)
+                except (json.JSONDecodeError, OSError):
+                    pass
+        return load_orchestrator_state(conn)
+    except Exception:
         return {
             "last_cycle": None,
             "rate_limiter": {},
@@ -40,6 +41,8 @@ def _load_orchestrator_state() -> dict:
             "objective_progress": [],
             "scan_schedule": {},
         }
+    finally:
+        conn.close()
 
 
 def _serialize_orch_config(orch_config: dict) -> dict:

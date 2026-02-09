@@ -28,6 +28,7 @@ if str(_TELEMETRY_DIR) not in sys.path:
     sys.path.insert(0, str(_TELEMETRY_DIR))
 
 from database import get_connection, init_db, is_db_empty, query_all_sessions, query_all_prs, query_issues  # noqa: E402
+from database import load_orchestrator_state, save_orchestrator_state, is_orchestrator_state_empty  # noqa: E402
 from migrate_json_to_sqlite import migrate_json_files  # noqa: E402
 from issue_tracking import _parse_ts  # noqa: E402
 from verification import load_verification_records, build_fingerprint_fix_map  # noqa: E402
@@ -133,19 +134,25 @@ def load_registry() -> dict[str, Any]:
         return json.load(f)
 
 
-def load_state() -> dict[str, Any]:
+def _migrate_json_state_to_db(conn: sqlite3.Connection) -> None:
     if not STATE_PATH.exists():
-        return {
-            "last_cycle": None,
-            "rate_limiter": {},
-            "dispatch_history": {},
-            "objective_progress": [],
-            "scan_schedule": {},
-        }
+        return
     try:
         with open(STATE_PATH) as f:
-            return json.load(f)
+            data = json.load(f)
     except (json.JSONDecodeError, OSError):
+        return
+    save_orchestrator_state(conn, data)
+
+
+def load_state() -> dict[str, Any]:
+    conn = get_connection()
+    try:
+        init_db(conn)
+        if is_orchestrator_state_empty(conn):
+            _migrate_json_state_to_db(conn)
+        return load_orchestrator_state(conn)
+    except sqlite3.OperationalError:
         return {
             "last_cycle": None,
             "rate_limiter": {},
@@ -153,13 +160,17 @@ def load_state() -> dict[str, Any]:
             "objective_progress": [],
             "scan_schedule": {},
         }
+    finally:
+        conn.close()
 
 
 def save_state(state: dict[str, Any]) -> None:
-    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(STATE_PATH, "w") as f:
-        json.dump(state, f, indent=2)
-        f.write("\n")
+    conn = get_connection()
+    try:
+        init_db(conn)
+        save_orchestrator_state(conn, state)
+    finally:
+        conn.close()
 
 
 def get_repo_config(registry: dict[str, Any], repo_url: str) -> dict[str, Any]:

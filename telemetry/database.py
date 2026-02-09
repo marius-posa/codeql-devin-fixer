@@ -132,6 +132,33 @@ CREATE TABLE IF NOT EXISTS audit_log (
 CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON audit_log(timestamp);
 CREATE INDEX IF NOT EXISTS idx_audit_log_user      ON audit_log(user);
 CREATE INDEX IF NOT EXISTS idx_audit_log_action    ON audit_log(action);
+
+CREATE TABLE IF NOT EXISTS orchestrator_kv (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS dispatch_history (
+    fingerprint          TEXT PRIMARY KEY,
+    dispatch_count       INTEGER NOT NULL DEFAULT 0,
+    last_dispatched      TEXT    NOT NULL DEFAULT '',
+    last_session_id      TEXT    NOT NULL DEFAULT '',
+    consecutive_failures INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS rate_limiter_timestamps (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_rate_limiter_ts ON rate_limiter_timestamps(timestamp);
+
+CREATE TABLE IF NOT EXISTS scan_schedule (
+    repo_url  TEXT PRIMARY KEY,
+    last_scan TEXT NOT NULL DEFAULT '',
+    run_label TEXT NOT NULL DEFAULT '',
+    extra     TEXT NOT NULL DEFAULT '{}'
+);
 """
 
 _FTS_SCHEMA_SQL = """\
@@ -1130,6 +1157,123 @@ def auto_export_audit_log(conn: sqlite3.Connection, logs_dir: str = "") -> str:
         json.dump({"exported_at": ts, "entries": entries}, f, indent=2)
         f.write("\n")
     return str(out)
+
+
+def load_orchestrator_state(conn: sqlite3.Connection) -> dict:
+    state: dict = {
+        "last_cycle": None,
+        "rate_limiter": {},
+        "dispatch_history": {},
+        "objective_progress": [],
+        "scan_schedule": {},
+    }
+
+    kv_rows = conn.execute("SELECT key, value FROM orchestrator_kv").fetchall()
+    for row in kv_rows:
+        k, v = row["key"], row["value"]
+        if k == "last_cycle":
+            state["last_cycle"] = v if v else None
+        elif k == "objective_progress":
+            try:
+                state["objective_progress"] = json.loads(v) if v else []
+            except (json.JSONDecodeError, ValueError):
+                state["objective_progress"] = []
+
+    ts_rows = conn.execute(
+        "SELECT timestamp FROM rate_limiter_timestamps ORDER BY timestamp"
+    ).fetchall()
+    state["rate_limiter"] = {
+        "created_timestamps": [r["timestamp"] for r in ts_rows],
+    }
+
+    dh_rows = conn.execute(
+        "SELECT fingerprint, dispatch_count, last_dispatched, "
+        "last_session_id, consecutive_failures FROM dispatch_history"
+    ).fetchall()
+    for row in dh_rows:
+        state["dispatch_history"][row["fingerprint"]] = {
+            "dispatch_count": row["dispatch_count"],
+            "fingerprint": row["fingerprint"],
+            "last_dispatched": row["last_dispatched"],
+            "last_session_id": row["last_session_id"],
+            "consecutive_failures": row["consecutive_failures"],
+        }
+
+    ss_rows = conn.execute(
+        "SELECT repo_url, last_scan, run_label, extra FROM scan_schedule"
+    ).fetchall()
+    for row in ss_rows:
+        entry: dict = {"last_scan": row["last_scan"]}
+        if row["run_label"]:
+            entry["run_label"] = row["run_label"]
+        extra = row["extra"]
+        if extra and extra != "{}":
+            try:
+                entry.update(json.loads(extra))
+            except (json.JSONDecodeError, ValueError):
+                pass
+        state["scan_schedule"][row["repo_url"]] = entry
+
+    return state
+
+
+def save_orchestrator_state(conn: sqlite3.Connection, state: dict) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO orchestrator_kv (key, value) VALUES (?, ?)",
+        ("last_cycle", state.get("last_cycle") or ""),
+    )
+    obj_progress = state.get("objective_progress", [])
+    conn.execute(
+        "INSERT OR REPLACE INTO orchestrator_kv (key, value) VALUES (?, ?)",
+        ("objective_progress", json.dumps(obj_progress)),
+    )
+
+    conn.execute("DELETE FROM rate_limiter_timestamps")
+    rl = state.get("rate_limiter", {})
+    for ts in rl.get("created_timestamps", []):
+        conn.execute(
+            "INSERT INTO rate_limiter_timestamps (timestamp) VALUES (?)", (ts,)
+        )
+
+    conn.execute("DELETE FROM dispatch_history")
+    for fp, entry in state.get("dispatch_history", {}).items():
+        if isinstance(entry, list):
+            dispatch_count = len(entry)
+            last_record = entry[-1] if entry else {}
+            last_dispatched = last_record.get("dispatched_at", "")
+            last_session_id = last_record.get("session_id", "")
+            consecutive_failures = 0
+        else:
+            dispatch_count = entry.get("dispatch_count", 0)
+            last_dispatched = entry.get("last_dispatched", "")
+            last_session_id = entry.get("last_session_id", "")
+            consecutive_failures = entry.get("consecutive_failures", 0)
+        conn.execute(
+            "INSERT INTO dispatch_history "
+            "(fingerprint, dispatch_count, last_dispatched, last_session_id, consecutive_failures) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (fp, dispatch_count, last_dispatched, last_session_id, consecutive_failures),
+        )
+
+    conn.execute("DELETE FROM scan_schedule")
+    for repo_url, entry in state.get("scan_schedule", {}).items():
+        last_scan = entry.get("last_scan", "") if isinstance(entry, dict) else ""
+        run_label = entry.get("run_label", "") if isinstance(entry, dict) else ""
+        extra_keys = {k: v for k, v in entry.items() if k not in ("last_scan", "run_label")} if isinstance(entry, dict) else {}
+        conn.execute(
+            "INSERT INTO scan_schedule (repo_url, last_scan, run_label, extra) VALUES (?, ?, ?, ?)",
+            (repo_url, last_scan, run_label, json.dumps(extra_keys) if extra_keys else "{}"),
+        )
+
+    conn.commit()
+
+
+def is_orchestrator_state_empty(conn: sqlite3.Connection) -> bool:
+    try:
+        row = conn.execute("SELECT COUNT(*) FROM orchestrator_kv").fetchone()
+        return row[0] == 0
+    except sqlite3.OperationalError:
+        return True
 
 
 def collect_search_repos_from_db(conn: sqlite3.Connection) -> set[str]:
