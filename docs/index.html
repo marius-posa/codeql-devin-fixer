@@ -332,6 +332,56 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="edit-repo-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Edit Repository: <span id="edit-repo-name"></span></h2>
+      <button class="modal-close" onclick="_closeRepoEditModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label for="edit-repo-importance">Importance</label>
+          <select class="form-input" id="edit-repo-importance">
+            <option value="low">low</option>
+            <option value="medium">medium</option>
+            <option value="high">high</option>
+            <option value="critical">critical</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="edit-repo-score">Importance Score (0-100)</label>
+          <input class="form-input" id="edit-repo-score" type="number" min="0" max="100" value="50">
+        </div>
+        <div class="form-group">
+          <label for="edit-repo-max-sessions">Max Sessions per Cycle</label>
+          <input class="form-input" id="edit-repo-max-sessions" type="number" min="1" value="5">
+        </div>
+        <div class="form-group">
+          <label for="edit-repo-tags">Tags (comma-separated)</label>
+          <input class="form-input" id="edit-repo-tags" type="text" placeholder="web-app, internal">
+        </div>
+        <div class="form-group">
+          <label class="form-check"><input type="checkbox" id="edit-repo-auto-scan"><span>Auto Scan</span></label>
+        </div>
+        <div class="form-group">
+          <label class="form-check"><input type="checkbox" id="edit-repo-auto-dispatch"><span>Auto Dispatch</span></label>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="edit-repo-overrides">Overrides (JSON)</label>
+        <textarea class="form-input" id="edit-repo-overrides" rows="4" style="font-family:monospace;font-size:12px">{}</textarea>
+        <div class="hint">Override default settings for this repo (e.g. languages, severity_threshold)</div>
+      </div>
+      <div class="dispatch-result" id="edit-repo-result"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="_closeRepoEditModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="_submitRepoEditStatic()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
 <script src="static/api.js"></script>
 <script src="static/shared.js"></script>
 <script>
@@ -662,6 +712,7 @@ function renderRegistryPanel() {
     onScheduleChange: function(idx, val) { _staticRegistrySchedule(idx, val); },
     onRemove: function(idx) { _staticRegistryRemove(idx); },
     onAdd: function(url, schedule) { _staticRegistryAdd(url, schedule); },
+    onEditRepo: function(idx) { _openRepoEditModalStatic(idx); },
   } : {};
   if (registryData) renderRegistryTable(registryData, 'registry-table-container', 'registry-count', callbacks);
 }
@@ -699,6 +750,63 @@ async function _staticRegistryRemove(idx) {
   renderRegistryPanel();
   var ok = await _saveRegistryStatic();
   if (!ok) { registryData.repos.splice(idx, 0, removed); renderRegistryPanel(); }
+}
+
+var _editingRepoIdx = -1;
+function _openRepoEditModalStatic(idx) {
+  _editingRepoIdx = idx;
+  var r = registryData.repos[idx];
+  var modal = document.getElementById('edit-repo-modal');
+  if (!modal) return;
+  modal.classList.add('active');
+  document.getElementById('edit-repo-name').textContent = repoShort(r.repo);
+  document.getElementById('edit-repo-importance').value = r.importance || 'medium';
+  document.getElementById('edit-repo-score').value = r.importance_score != null ? r.importance_score : 50;
+  document.getElementById('edit-repo-max-sessions').value = r.max_sessions_per_cycle != null ? r.max_sessions_per_cycle : 5;
+  document.getElementById('edit-repo-auto-scan').checked = r.auto_scan !== false;
+  document.getElementById('edit-repo-auto-dispatch').checked = r.auto_dispatch !== false;
+  document.getElementById('edit-repo-tags').value = (r.tags || []).join(', ');
+  document.getElementById('edit-repo-overrides').value = JSON.stringify(r.overrides || {}, null, 2);
+  var resultEl = document.getElementById('edit-repo-result');
+  if (resultEl) { resultEl.className = 'dispatch-result'; resultEl.textContent = ''; }
+}
+
+function _closeRepoEditModal() {
+  var modal = document.getElementById('edit-repo-modal');
+  if (modal) modal.classList.remove('active');
+  _editingRepoIdx = -1;
+}
+
+async function _submitRepoEditStatic() {
+  if (_editingRepoIdx < 0) return;
+  var idx = _editingRepoIdx;
+  var resultEl = document.getElementById('edit-repo-result');
+  var r = registryData.repos[idx];
+  var prev = Object.assign({}, r);
+  r.importance = document.getElementById('edit-repo-importance').value;
+  r.importance_score = parseInt(document.getElementById('edit-repo-score').value, 10) || 50;
+  r.max_sessions_per_cycle = parseInt(document.getElementById('edit-repo-max-sessions').value, 10) || 5;
+  r.auto_scan = document.getElementById('edit-repo-auto-scan').checked;
+  r.auto_dispatch = document.getElementById('edit-repo-auto-dispatch').checked;
+  r.tags = document.getElementById('edit-repo-tags').value.split(',').map(function(t) { return t.trim(); }).filter(Boolean);
+  try {
+    var overridesStr = document.getElementById('edit-repo-overrides').value.trim();
+    if (overridesStr) r.overrides = JSON.parse(overridesStr);
+  } catch (e) {
+    resultEl.textContent = 'Invalid overrides JSON';
+    resultEl.className = 'dispatch-result error';
+    Object.assign(r, prev);
+    return;
+  }
+  var ok = await _saveRegistryStatic();
+  if (ok) {
+    _closeRepoEditModal();
+    renderRegistryPanel();
+  } else {
+    Object.assign(r, prev);
+    resultEl.textContent = 'Failed to save. Check your GitHub token.';
+    resultEl.className = 'dispatch-result error';
+  }
 }
 
 async function _staticRegistryAdd(url, schedule) {
