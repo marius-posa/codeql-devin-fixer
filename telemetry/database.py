@@ -1104,8 +1104,7 @@ def auto_export_audit_log(conn: sqlite3.Connection, logs_dir: str = "") -> str:
     ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     out = log_path / f"audit-log-{ts}.json"
     with open(out, "w") as f:
-        import json as _json
-        _json.dump({"exported_at": ts, "entries": entries}, f, indent=2)
+        json.dump({"exported_at": ts, "entries": entries}, f, indent=2)
         f.write("\n")
     return str(out)
 
