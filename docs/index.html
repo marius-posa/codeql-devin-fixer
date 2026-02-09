@@ -82,6 +82,10 @@
 
   <div class="tab-content" id="tab-issues">
     <div class="panel">
+      <div class="panel-header">SLA Compliance</div>
+      <div class="panel-body" id="sla-panel-container"><div class="skeleton skeleton-chart" style="height:80px"></div></div>
+    </div>
+    <div class="panel">
       <div class="panel-header">
         Issue Tracking
         <span id="issues-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
@@ -133,8 +137,12 @@
       </div>
     </div>
     <div class="panel">
+      <div class="panel-header">
+        Scheduled Repo Registry
+        <span id="registry-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      </div>
+      <div class="panel-body" style="overflow-x:auto;" id="registry-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
     </div>
-
   </div>
 </div>
 
