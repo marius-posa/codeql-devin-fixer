@@ -24,7 +24,6 @@ from config import RUNS_DIR
 from migrate_json_to_sqlite import ensure_db_populated
 from oauth import oauth_bp
 from routes import api_bp, orchestrator_bp, registry_bp, demo_bp
-from helpers import _paginate, _audit, require_api_key
 
 SAMPLE_DATA_DIR = pathlib.Path(__file__).parent / "sample_data"
 
