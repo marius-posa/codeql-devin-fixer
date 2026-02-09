@@ -1,0 +1,41 @@
+{
+  "target_repo": "https://github.com/marius-posa/dvpwa",
+  "fork_url": "https://github.com/marius-posa/dvpwa",
+  "run_number": 37,
+  "run_id": "21844765028",
+  "run_url": "https://github.com/marius-posa/codeql-devin-fixer/actions/runs/21844765028",
+  "run_label": "run-37-2026-02-09-232057",
+  "timestamp": "2026-02-09T23:21:05.947778+00:00",
+  "issues_found": 1,
+  "issues_dispatched": 1,
+  "severity_breakdown": {
+    "high": 1
+  },
+  "category_breakdown": {
+    "crypto": 1
+  },
+  "batches_created": 1,
+  "sessions": [
+    {
+      "session_id": "devin-da08c5b3b97c4d71a780f42e74d0c256",
+      "session_url": "https://app.devin.ai/sessions/da08c5b3b97c4d71a780f42e74d0c256",
+      "batch_id": 1,
+      "status": "created",
+      "issue_ids": [
+        "CQLF-R37-0001"
+      ]
+    }
+  ],
+  "issue_fingerprints": [
+    {
+      "id": "CQLF-ALL-R37-0001",
+      "fingerprint": "4c61cb3f3f1109b4d403",
+      "rule_id": "py/weak-sensitive-data-hashing",
+      "severity_tier": "high",
+      "cwe_family": "crypto",
+      "file": "sqli/dao/user.py",
+      "start_line": 41
+    }
+  ],
+  "zero_issue_run": false
+}
