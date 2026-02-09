@@ -520,7 +520,7 @@ runs:
         RUN_LABEL: ${{ steps.parse.outputs.run_label }}
       run: |
         echo "Mode: orchestrator -- ingesting scan results via orchestrator engine."
-        python -m scripts.orchestrator ingest \
+        PYTHONPATH="${{ github.action_path }}:$PYTHONPATH" python -m scripts.orchestrator ingest \
           --batches "${{ runner.temp }}/codeql-output/batches.json" \
           --issues "${{ runner.temp }}/codeql-output/issues.json" \
           --run-label "$RUN_LABEL" \
