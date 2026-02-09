@@ -308,6 +308,74 @@ class TestParseImprovementSuggestions:
         assert len(result) == 1
 
 
+class TestSyncToDevinApi:
+    def test_sync_creates_playbooks(self):
+        from unittest.mock import patch, MagicMock
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _write_playbook(tmpdir, "injection", _minimal_playbook_data("injection"))
+            pm = PlaybookManager(tmpdir)
+
+            mock_list_resp = MagicMock()
+            mock_list_resp.json.return_value = []
+            mock_list_resp.raise_for_status.return_value = None
+
+            mock_create_resp = MagicMock()
+            mock_create_resp.json.return_value = {"playbook_id": "pb-123"}
+            mock_create_resp.raise_for_status.return_value = None
+
+            with patch("scripts.playbook_manager.requests.get", return_value=mock_list_resp) as mock_get, \
+                 patch("scripts.playbook_manager.requests.post", return_value=mock_create_resp) as mock_post:
+                result = pm.sync_to_devin_api("fake-key")
+
+            assert result == {"injection": "pb-123"}
+            assert pm.get_devin_playbook_id("injection") == "pb-123"
+            mock_get.assert_called_once()
+            mock_post.assert_called_once()
+
+    def test_sync_updates_existing_playbooks(self):
+        from unittest.mock import patch, MagicMock
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _write_playbook(tmpdir, "injection", _minimal_playbook_data("injection"))
+            pm = PlaybookManager(tmpdir)
+
+            mock_list_resp = MagicMock()
+            mock_list_resp.json.return_value = [
+                {"title": "codeql-fix-injection", "playbook_id": "pb-existing"},
+            ]
+            mock_list_resp.raise_for_status.return_value = None
+
+            mock_put_resp = MagicMock()
+            mock_put_resp.raise_for_status.return_value = None
+
+            with patch("scripts.playbook_manager.requests.get", return_value=mock_list_resp), \
+                 patch("scripts.playbook_manager.requests.put", return_value=mock_put_resp) as mock_put:
+                result = pm.sync_to_devin_api("fake-key")
+
+            assert result == {"injection": "pb-existing"}
+            assert pm.get_devin_playbook_id("injection") == "pb-existing"
+            mock_put.assert_called_once()
+
+    def test_sync_empty_api_key_returns_empty(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _write_playbook(tmpdir, "injection", _minimal_playbook_data("injection"))
+            pm = PlaybookManager(tmpdir)
+            assert pm.sync_to_devin_api("") == {}
+
+    def test_sync_api_failure_returns_empty(self):
+        import requests as req
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _write_playbook(tmpdir, "injection", _minimal_playbook_data("injection"))
+            pm = PlaybookManager(tmpdir)
+            with patch("scripts.playbook_manager.requests.get", side_effect=req.exceptions.ConnectionError("fail")):
+                assert pm.sync_to_devin_api("fake-key") == {}
+
+    def test_get_devin_playbook_id_missing(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pm = PlaybookManager(tmpdir)
+            assert pm.get_devin_playbook_id("injection") == ""
+
+
 class TestBuiltInPlaybooks:
     def test_injection_playbook_loads(self):
         playbooks_dir = os.path.join(

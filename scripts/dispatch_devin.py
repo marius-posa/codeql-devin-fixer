@@ -414,6 +414,7 @@ def create_devin_session(
     prompt: str,
     batch: Batch,
     max_acu: int | None = None,
+    playbook_id: str = "",
 ) -> dict:
     """POST to the Devin API to create a new fix session with retry logic."""
     headers = {
@@ -455,6 +456,8 @@ def create_devin_session(
     }
     if max_acu is not None and max_acu > 0:
         payload["max_acu_limit"] = max_acu
+    if playbook_id:
+        payload["playbook_id"] = playbook_id
 
     last_err = None
     for attempt in range(1, MAX_RETRIES + 1):
@@ -619,8 +622,12 @@ def dispatch_wave(
             })
             continue
 
+        playbook_id = ""
+        if playbook_mgr:
+            playbook_id = playbook_mgr.get_devin_playbook_id(family)
+
         try:
-            result = create_devin_session(api_key, prompt, batch, batch_acu)
+            result = create_devin_session(api_key, prompt, batch, batch_acu, playbook_id)
             session_id = result["session_id"]
             url = result["url"]
             logger.info("  Session created: %s", url)
@@ -668,6 +675,10 @@ def main() -> None:
         families = playbook_mgr.available_families
         if families:
             logger.info("Loaded playbooks for: %s", ', '.join(families))
+        if api_key and families:
+            synced = playbook_mgr.sync_to_devin_api(api_key)
+            if synced:
+                logger.info("Synced %d playbook(s) to Devin API", len(synced))
 
     fix_learn: FixLearning | None = None
     if telemetry_dir and os.path.isdir(telemetry_dir):

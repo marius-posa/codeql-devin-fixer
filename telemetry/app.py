@@ -17,6 +17,8 @@ import pathlib
 import requests
 from flask import Flask, jsonify, render_template, request as flask_request, send_file
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 from config import RUNS_DIR, gh_headers
 from database import (
@@ -66,6 +68,13 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(32).hex())
 CORS(app)
 app.register_blueprint(oauth_bp)
+
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["120/minute"],
+    storage_uri="memory://",
+)
 
 ensure_db_populated(RUNS_DIR, SAMPLE_DATA_DIR)
 
@@ -600,6 +609,7 @@ def api_dispatch_preflight():
 
 
 @app.route("/api/dispatch", methods=["POST"])
+@limiter.limit("10/minute")
 @require_api_key
 def api_dispatch():
     token = os.environ.get("GITHUB_TOKEN", "")
@@ -777,6 +787,7 @@ def api_orchestrator_plan():
 
 
 @app.route("/api/orchestrator/dispatch", methods=["POST"])
+@limiter.limit("5/minute")
 @require_api_key
 def api_orchestrator_dispatch():
     body = flask_request.get_json(silent=True) or {}
@@ -866,6 +877,7 @@ def api_orchestrator_history():
 
 
 @app.route("/api/orchestrator/cycle", methods=["POST"])
+@limiter.limit("5/minute")
 @require_api_key
 def api_orchestrator_cycle():
     body = flask_request.get_json(silent=True) or {}
