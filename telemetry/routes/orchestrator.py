@@ -11,6 +11,7 @@ from config import RUNS_DIR
 from database import get_connection, query_issues
 from verification import load_verification_records, build_fingerprint_fix_map
 from helpers import require_api_key, _audit, _paginate, _get_pagination
+from extensions import limiter
 
 orchestrator_bp = Blueprint("orchestrator", __name__)
 
@@ -143,6 +144,7 @@ def api_orchestrator_plan():
 
 
 @orchestrator_bp.route("/api/orchestrator/dispatch", methods=["POST"])
+@limiter.limit("5/minute")
 @require_api_key
 def api_orchestrator_dispatch():
     body = flask_request.get_json(silent=True) or {}
@@ -230,6 +232,7 @@ def api_orchestrator_history():
 
 
 @orchestrator_bp.route("/api/orchestrator/cycle", methods=["POST"])
+@limiter.limit("5/minute")
 @require_api_key
 def api_orchestrator_cycle():
     body = flask_request.get_json(silent=True) or {}

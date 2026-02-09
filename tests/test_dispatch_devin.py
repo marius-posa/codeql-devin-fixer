@@ -421,6 +421,30 @@ class TestCreateDevinSession:
         payload = mock_post.call_args.kwargs.get("json") or mock_post.call_args[1].get("json")
         assert "max_acu_limit" not in payload
 
+    @patch("scripts.dispatch_devin.requests.post")
+    def test_playbook_id_included_when_set(self, mock_post):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"session_id": "s1", "url": "u1"}
+        mock_resp.raise_for_status.return_value = None
+        mock_post.return_value = mock_resp
+
+        batch = {"batch_id": 1, "cwe_family": "injection", "severity_tier": "high", "issues": []}
+        create_devin_session("key", "prompt", batch, playbook_id="pb-abc")
+        payload = mock_post.call_args.kwargs.get("json") or mock_post.call_args[1].get("json")
+        assert payload["playbook_id"] == "pb-abc"
+
+    @patch("scripts.dispatch_devin.requests.post")
+    def test_playbook_id_omitted_when_empty(self, mock_post):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"session_id": "s1", "url": "u1"}
+        mock_resp.raise_for_status.return_value = None
+        mock_post.return_value = mock_resp
+
+        batch = {"batch_id": 1, "cwe_family": "xss", "severity_tier": "high", "issues": []}
+        create_devin_session("key", "prompt", batch)
+        payload = mock_post.call_args.kwargs.get("json") or mock_post.call_args[1].get("json")
+        assert "playbook_id" not in payload
+
 
 class TestSanitizePromptText:
     def test_plain_text_unchanged(self):

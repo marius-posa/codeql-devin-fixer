@@ -25,11 +25,17 @@ Usage
 from __future__ import annotations
 
 import copy
+import logging
 import os
 from dataclasses import dataclass, field
 from typing import Any
 
+import requests
 import yaml
+
+logger = logging.getLogger(__name__)
+
+DEVIN_API_BASE = "https://api.devin.ai/v1"
 
 
 PLAYBOOK_SCHEMA_VERSION = 1
@@ -83,6 +89,7 @@ class PlaybookManager:
     def __init__(self, playbooks_dir: str) -> None:
         self._dir = playbooks_dir
         self._playbooks: dict[str, Playbook] = {}
+        self._devin_ids: dict[str, str] = {}
         self._load()
 
     def _load(self) -> None:
@@ -195,6 +202,77 @@ class PlaybookManager:
             return True
         except OSError:
             return False
+
+    def sync_to_devin_api(self, api_key: str) -> dict[str, str]:
+        """Sync local playbooks to the Devin Playbooks API.
+
+        For each local playbook, creates or updates a corresponding
+        playbook via the Devin API.  Returns a mapping of
+        ``{family: playbook_id}`` for all successfully synced playbooks.
+        """
+        if not api_key:
+            return {}
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+        existing: dict[str, str] = {}
+        try:
+            resp = requests.get(
+                f"{DEVIN_API_BASE}/playbooks",
+                headers=headers,
+                timeout=15,
+            )
+            resp.raise_for_status()
+            for item in resp.json():
+                title = item.get("title", "")
+                pid = item.get("playbook_id", "")
+                if title and pid:
+                    existing[title] = pid
+        except requests.exceptions.RequestException as exc:
+            logger.warning("Failed to list Devin playbooks: %s", exc)
+            return {}
+
+        synced: dict[str, str] = {}
+        for family, pb in self._playbooks.items():
+            title = f"codeql-fix-{pb.name}"
+            body = self.format_for_prompt(pb)
+            payload = {"title": title, "body": body}
+
+            try:
+                if title in existing:
+                    pid = existing[title]
+                    requests.put(
+                        f"{DEVIN_API_BASE}/playbooks/{pid}",
+                        headers=headers,
+                        json=payload,
+                        timeout=15,
+                    ).raise_for_status()
+                    synced[family] = pid
+                    logger.info("Updated Devin playbook '%s' (%s)", title, pid)
+                else:
+                    resp = requests.post(
+                        f"{DEVIN_API_BASE}/playbooks",
+                        headers=headers,
+                        json=payload,
+                        timeout=15,
+                    )
+                    resp.raise_for_status()
+                    pid = resp.json().get("playbook_id", "")
+                    if pid:
+                        synced[family] = pid
+                        logger.info("Created Devin playbook '%s' (%s)", title, pid)
+            except requests.exceptions.RequestException as exc:
+                logger.warning("Failed to sync playbook '%s': %s", family, exc)
+
+        self._devin_ids.update(synced)
+        return synced
+
+    def get_devin_playbook_id(self, family: str) -> str:
+        """Return the Devin API playbook ID for *family*, or empty string."""
+        return self._devin_ids.get(family, "")
 
 
 def _playbook_to_dict(pb: Playbook) -> dict[str, Any]:
