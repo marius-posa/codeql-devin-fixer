@@ -13,3 +13,6 @@ telemetry/telemetry.db-shm
 *.db
 *.db-wal
 *.db-shm
+
+# Audit log exports
+logs/

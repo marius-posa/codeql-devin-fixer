@@ -30,6 +30,9 @@ from database import (
     backfill_pr_urls,
     collect_session_ids_from_db,
     collect_search_repos_from_db,
+    insert_audit_log,
+    query_audit_logs,
+    export_audit_logs,
 )
 
 
@@ -403,3 +406,67 @@ class TestCollectHelpers:
         db.commit()
         repos = collect_search_repos_from_db(db)
         assert len(repos) >= 1
+
+
+class TestAuditLog:
+    def test_audit_log_table_exists(self, db):
+        tables = {r[0] for r in db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()}
+        assert "audit_log" in tables
+
+    def test_insert_audit_log(self, db):
+        row_id = insert_audit_log(db, "testuser", "test_action", "res", "details")
+        assert row_id > 0
+        row = db.execute("SELECT * FROM audit_log WHERE id = ?", (row_id,)).fetchone()
+        assert row["user"] == "testuser"
+        assert row["action"] == "test_action"
+        assert row["resource"] == "res"
+        assert row["details"] == "details"
+        assert row["timestamp"] is not None
+
+    def test_insert_audit_log_defaults(self, db):
+        row_id = insert_audit_log(db, "u", "act")
+        row = db.execute("SELECT * FROM audit_log WHERE id = ?", (row_id,)).fetchone()
+        assert row["resource"] == ""
+        assert row["details"] == ""
+
+    def test_query_audit_logs_empty(self, db):
+        result = query_audit_logs(db)
+        assert result["total"] == 0
+        assert result["items"] == []
+
+    def test_query_audit_logs_pagination(self, db):
+        for i in range(5):
+            insert_audit_log(db, "u", f"action_{i}")
+        result = query_audit_logs(db, page=1, per_page=2)
+        assert result["total"] == 5
+        assert len(result["items"]) == 2
+        assert result["pages"] == 3
+
+    def test_query_audit_logs_filter_by_action(self, db):
+        insert_audit_log(db, "u", "scan")
+        insert_audit_log(db, "u", "dispatch")
+        insert_audit_log(db, "u", "scan")
+        result = query_audit_logs(db, action_filter="scan")
+        assert result["total"] == 2
+
+    def test_query_audit_logs_filter_by_user(self, db):
+        insert_audit_log(db, "alice", "act")
+        insert_audit_log(db, "bob", "act")
+        result = query_audit_logs(db, user_filter="alice")
+        assert result["total"] == 1
+        assert result["items"][0]["user"] == "alice"
+
+    def test_query_audit_logs_order_desc(self, db):
+        insert_audit_log(db, "u", "first")
+        insert_audit_log(db, "u", "second")
+        result = query_audit_logs(db)
+        assert result["items"][0]["action"] == "second"
+
+    def test_export_audit_logs(self, db):
+        insert_audit_log(db, "u", "act1", "r1", "d1")
+        insert_audit_log(db, "u", "act2", "r2", "d2")
+        entries = export_audit_logs(db)
+        assert len(entries) == 2
+        assert entries[0]["action"] in ("act1", "act2")
