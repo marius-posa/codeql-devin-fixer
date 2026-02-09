@@ -1108,6 +1108,7 @@ def api_registry_update_repo(idx):
     repos[idx] = repo_entry
     registry["repos"] = repos
     _save_registry(registry)
+    _audit("update_registry_repo", resource=repo_entry.get("repo", ""), details=json.dumps({"idx": idx, "fields": list(body.keys())}))
     return jsonify(repo_entry)
 
 
