@@ -1,0 +1,474 @@
+{
+  "schema_version": "1.0",
+  "batches": [
+    {
+      "batch_id": 1,
+      "cwe_family": "injection",
+      "cwe_families": [
+        "injection"
+      ],
+      "cross_family": false,
+      "severity_tier": "critical",
+      "max_severity_score": 9.8,
+      "issue_count": 1,
+      "file_count": 1,
+      "issues": [
+        {
+          "id": "CQLF-R34-0001",
+          "rule_id": "py/command-line-injection",
+          "rule_name": "py/command-line-injection",
+          "rule_description": "Uncontrolled command line",
+          "rule_help": "# Uncontrolled command line\nCode that passes user input directly to `exec`, `eval`, or some other library routine that executes a command, allows the user to execute malicious code.\n\n\n## Recommendation\nIf possible, use hard-coded string literals to specify the command to run or the library to load. Instead of passing the user input directly to the process or library function, examine the user input and then choose among hard-coded string literals.\n\nIf the applicable libraries or commands cannot be determined at compile time, then add code to verify that the user input string is safe before using it.\n\n\n## Example\nThe following example shows two functions. The first is unsafe as it takes a shell script that can be changed by a user, and passes it straight to `subprocess.call()` without examining it first. The second is safe as it selects the command from a predefined allowlist.\n\n\n```python\n\nurlpatterns = [\n    # Route to command_execution\n    url(r'^command-ex1$', command_execution_unsaf",
+          "message": "This command line depends on a [user-provided value](1).",
+          "severity_score": 9.8,
+          "severity_tier": "critical",
+          "cwes": [
+            "cwe-78",
+            "cwe-88"
+          ],
+          "cwe_family": "injection",
+          "locations": [
+            {
+              "file": "github_app/scan_trigger.py",
+              "start_line": 164,
+              "end_line": 164,
+              "start_column": 13
+            }
+          ],
+          "level": "warning",
+          "partial_fingerprints": {
+            "primaryLocationLineHash": "7b46629eb075cff8:1",
+            "primaryLocationStartColumnFingerprint": "0"
+          },
+          "fingerprint": "73559aa8b9e1fc687fa1"
+        }
+      ]
+    },
+    {
+      "batch_id": 2,
+      "cwe_family": "ssrf",
+      "cwe_families": [
+        "ssrf"
+      ],
+      "cross_family": false,
+      "severity_tier": "critical",
+      "max_severity_score": 9.1,
+      "issue_count": 1,
+      "file_count": 1,
+      "issues": [
+        {
+          "id": "CQLF-R34-0002",
+          "rule_id": "py/partial-ssrf",
+          "rule_name": "py/partial-ssrf",
+          "rule_description": "Partial server-side request forgery",
+          "rule_help": "# Partial server-side request forgery\nDirectly incorporating user input into an HTTP request without validating the input can facilitate server-side request forgery (SSRF) attacks. In these attacks, the request may be changed, directed at a different server, or via a different protocol. This can allow the attacker to obtain sensitive information or perform actions with escalated privilege.\n\nWe make a distinctions between how much of the URL an attacker can control:\n\n* **Full SSRF**: where the full URL can be controlled.\n* **Partial SSRF**: where only part of the URL can be controlled, such as the path component of a URL to a hardcoded domain.\n\n\nPartial control of a URL is often much harder to exploit. Therefore we have created a separate query for each of these.\n\nThis query covers partial SSRF, to find full SSRF use the `py/full-ssrf` query.\n\n\n## Recommendation\nTo guard against SSRF attacks you should avoid putting user-provided input directly into a request URL. On the application lev",
+          "message": "Part of the URL of this request depends on a [user-provided value](1).\nPart of the URL of this request depends on a [user-provided value](2).",
+          "severity_score": 9.1,
+          "severity_tier": "critical",
+          "cwes": [
+            "cwe-918"
+          ],
+          "cwe_family": "ssrf",
+          "locations": [
+            {
+              "file": "github_app/auth.py",
+              "start_line": 60,
+              "end_line": 67,
+              "start_column": 16
+            }
+          ],
+          "level": "warning",
+          "partial_fingerprints": {
+            "primaryLocationLineHash": "9a46bc00d63bc49d:1",
+            "primaryLocationStartColumnFingerprint": "7"
+          },
+          "fingerprint": "1f2bd667e821b22a0884"
+        }
+      ]
+    },
+    {
+      "batch_id": 3,
+      "cwe_family": "logging",
+      "cwe_families": [
+        "logging"
+      ],
+      "cross_family": false,
+      "severity_tier": "high",
+      "max_severity_score": 7.8,
+      "issue_count": 5,
+      "file_count": 3,
+      "issues": [
+        {
+          "id": "CQLF-R34-0003",
+          "rule_id": "py/log-injection",
+          "rule_name": "py/log-injection",
+          "rule_description": "Log Injection",
+          "rule_help": "# Log Injection\nIf unsanitized user input is written to a log entry, a malicious user may be able to forge new log entries.\n\nForgery can occur if a user provides some input with characters that are interpreted when the log output is displayed. If the log is displayed as a plain text file, then new line characters can be used by a malicious user to create the appearance of multiple log entries. If the log is displayed as HTML, then arbitrary HTML may be included to spoof log entries.\n\n\n## Recommendation\nUser input should be suitably sanitized before it is logged.\n\nIf the log entries are plain text then line breaks should be removed from user input, using for example `replace(old, new)` or similar. Care should also be taken that user input is clearly marked in log entries, and that a malicious user cannot cause confusion in other ways.\n\nFor log entries that will be displayed in HTML, user input should be HTML encoded before being logged, to prevent forgery and other forms of HTML injecti",
+          "message": "This log entry depends on a [user-provided value](1).",
+          "severity_score": 7.8,
+          "severity_tier": "high",
+          "cwes": [
+            "cwe-117"
+          ],
+          "cwe_family": "logging",
+          "locations": [
+            {
+              "file": "github_app/app.py",
+              "start_line": 75,
+              "end_line": 75,
+              "start_column": 51
+            }
+          ],
+          "level": "warning",
+          "partial_fingerprints": {
+            "primaryLocationLineHash": "f9dac36272fe700e:1",
+            "primaryLocationStartColumnFingerprint": "42"
+          },
+          "fingerprint": "09a12550a2cefd4eee37"
+        },
+        {
+          "id": "CQLF-R34-0004",
+          "rule_id": "py/log-injection",
+          "rule_name": "py/log-injection",
+          "rule_description": "Log Injection",
+          "rule_help": "# Log Injection\nIf unsanitized user input is written to a log entry, a malicious user may be able to forge new log entries.\n\nForgery can occur if a user provides some input with characters that are interpreted when the log output is displayed. If the log is displayed as a plain text file, then new line characters can be used by a malicious user to create the appearance of multiple log entries. If the log is displayed as HTML, then arbitrary HTML may be included to spoof log entries.\n\n\n## Recommendation\nUser input should be suitably sanitized before it is logged.\n\nIf the log entries are plain text then line breaks should be removed from user input, using for example `replace(old, new)` or similar. Care should also be taken that user input is clearly marked in log entries, and that a malicious user cannot cause confusion in other ways.\n\nFor log entries that will be displayed in HTML, user input should be HTML encoded before being logged, to prevent forgery and other forms of HTML injecti",
+          "message": "This log entry depends on a [user-provided value](1).",
+          "severity_score": 7.8,
+          "severity_tier": "high",
+          "cwes": [
+            "cwe-117"
+          ],
+          "cwe_family": "logging",
+          "locations": [
+            {
+              "file": "github_app/app.py",
+              "start_line": 174,
+              "end_line": 174,
+              "start_column": 66
+            }
+          ],
+          "level": "warning",
+          "partial_fingerprints": {
+            "primaryLocationLineHash": "522ef26235cf11c7:1",
+            "primaryLocationStartColumnFingerprint": "57"
+          },
+          "fingerprint": "b3d1c9715d5fcc4417ed"
+        },
+        {
+          "id": "CQLF-R34-0005",
+          "rule_id": "py/log-injection",
+          "rule_name": "py/log-injection",
+          "rule_description": "Log Injection",
+          "rule_help": "# Log Injection\nIf unsanitized user input is written to a log entry, a malicious user may be able to forge new log entries.\n\nForgery can occur if a user provides some input with characters that are interpreted when the log output is displayed. If the log is displayed as a plain text file, then new line characters can be used by a malicious user to create the appearance of multiple log entries. If the log is displayed as HTML, then arbitrary HTML may be included to spoof log entries.\n\n\n## Recommendation\nUser input should be suitably sanitized before it is logged.\n\nIf the log entries are plain text then line breaks should be removed from user input, using for example `replace(old, new)` or similar. Care should also be taken that user input is clearly marked in log entries, and that a malicious user cannot cause confusion in other ways.\n\nFor log entries that will be displayed in HTML, user input should be HTML encoded before being logged, to prevent forgery and other forms of HTML injecti",
+          "message": "This log entry depends on a [user-provided value](1).",
+          "severity_score": 7.8,
+          "severity_tier": "high",
+          "cwes": [
+            "cwe-117"
+          ],
+          "cwe_family": "logging",
+          "locations": [
+            {
+              "file": "github_app/app.py",
+              "start_line": 189,
+              "end_line": 189,
+              "start_column": 63
+            }
+          ],
+          "level": "warning",
+          "partial_fingerprints": {
+            "primaryLocationLineHash": "a8031adb7e4bf3b3:1",
+            "primaryLocationStartColumnFingerprint": "58"
+          },
+          "fingerprint": "edbe275b939df5fb43c3"
+        },
+        {
+          "id": "CQLF-R34-0006",
+          "rule_id": "py/log-injection",
+          "rule_name": "py/log-injection",
+          "rule_description": "Log Injection",
+          "rule_help": "# Log Injection\nIf unsanitized user input is written to a log entry, a malicious user may be able to forge new log entries.\n\nForgery can occur if a user provides some input with characters that are interpreted when the log output is displayed. If the log is displayed as a plain text file, then new line characters can be used by a malicious user to create the appearance of multiple log entries. If the log is displayed as HTML, then arbitrary HTML may be included to spoof log entries.\n\n\n## Recommendation\nUser input should be suitably sanitized before it is logged.\n\nIf the log entries are plain text then line breaks should be removed from user input, using for example `replace(old, new)` or similar. Care should also be taken that user input is clearly marked in log entries, and that a malicious user cannot cause confusion in other ways.\n\nFor log entries that will be displayed in HTML, user input should be HTML encoded before being logged, to prevent forgery and other forms of HTML injecti",
+          "message": "This log entry depends on a [user-provided value](1).",
+          "severity_score": 7.8,
+          "severity_tier": "high",
+          "cwes": [
+            "cwe-117"
+          ],
+          "cwe_family": "logging",
+          "locations": [
+            {
+              "file": "github_app/scan_trigger.py",
+              "start_line": 57,
+              "end_line": 57,
+              "start_column": 44
+            }
+          ],
+          "level": "warning",
+          "partial_fingerprints": {
+            "primaryLocationLineHash": "388ebb271af4bd02:1",
+            "primaryLocationStartColumnFingerprint": "39"
+          },
+          "fingerprint": "7bb2bca9ae1f2d1bbe3e"
+        },
+        {
+          "id": "CQLF-R34-0007",
+          "rule_id": "py/log-injection",
+          "rule_name": "py/log-injection",
+          "rule_description": "Log Injection",
+          "rule_help": "# Log Injection\nIf unsanitized user input is written to a log entry, a malicious user may be able to forge new log entries.\n\nForgery can occur if a user provides some input with characters that are interpreted when the log output is displayed. If the log is displayed as a plain text file, then new line characters can be used by a malicious user to create the appearance of multiple log entries. If the log is displayed as HTML, then arbitrary HTML may be included to spoof log entries.\n\n\n## Recommendation\nUser input should be suitably sanitized before it is logged.\n\nIf the log entries are plain text then line breaks should be removed from user input, using for example `replace(old, new)` or similar. Care should also be taken that user input is clearly marked in log entries, and that a malicious user cannot cause confusion in other ways.\n\nFor log entries that will be displayed in HTML, user input should be HTML encoded before being logged, to prevent forgery and other forms of HTML injecti",
+          "message": "This log entry depends on a [user-provided value](1).",
+          "severity_score": 7.8,
+          "severity_tier": "high",
+          "cwes": [
+            "cwe-117"
+          ],
+          "cwe_family": "logging",
+          "locations": [
+            {
+              "file": "github_app/webhook_handler.py",
+              "start_line": 42,
+              "end_line": 42,
+              "start_column": 51
+            }
+          ],
+          "level": "warning",
+          "partial_fingerprints": {
+            "primaryLocationLineHash": "fe1e5753322a5738:1",
+            "primaryLocationStartColumnFingerprint": "42"
+          },
+          "fingerprint": "02144e7fc2c215cd4577"
+        }
+      ]
+    },
+    {
+      "batch_id": 4,
+      "cwe_family": "other",
+      "cwe_families": [
+        "other"
+      ],
+      "cross_family": false,
+      "severity_tier": "high",
+      "max_severity_score": 7.8,
+      "issue_count": 2,
+      "file_count": 1,
+      "issues": [
+        {
+          "id": "CQLF-R34-0008",
+          "rule_id": "py/incomplete-url-substring-sanitization",
+          "rule_name": "py/incomplete-url-substring-sanitization",
+          "rule_description": "Incomplete URL substring sanitization",
+          "rule_help": "# Incomplete URL substring sanitization\nSanitizing untrusted URLs is a common technique for preventing attacks such as request forgeries and malicious redirections. Usually, this is done by checking that the host of a URL is in a set of allowed hosts.\n\nHowever, treating the URL as a string and checking if one of the allowed hosts is a substring of the URL is very prone to errors. Malicious URLs can bypass such security checks by embedding one of the allowed hosts in an unexpected location.\n\nEven if the substring check is not used in a security-critical context, the incomplete check may still cause undesirable behaviors when the check succeeds accidentally.\n\n\n## Recommendation\nParse a URL before performing a check on its host value, and ensure that the check handles arbitrary subdomain sequences correctly.\n\n\n## Example\nThe following example code checks that a URL redirection will reach the `example.com` domain.\n\n\n```python\nfrom flask import Flask, request, redirect\nfrom urllib.parse imp",
+          "message": "The string [github.com/](1) may be at an arbitrary position in the sanitized URL.",
+          "severity_score": 7.8,
+          "severity_tier": "high",
+          "cwes": [
+            "cwe-20"
+          ],
+          "cwe_family": "other",
+          "locations": [
+            {
+              "file": "scripts/orchestrator/cli.py",
+              "start_line": 334,
+              "end_line": 334,
+              "start_column": 16
+            }
+          ],
+          "level": "warning",
+          "partial_fingerprints": {
+            "primaryLocationLineHash": "9551064725fd60fd:1",
+            "primaryLocationStartColumnFingerprint": "3"
+          },
+          "fingerprint": "fc0e5c79a7be670f614b"
+        },
+        {
+          "id": "CQLF-R34-0009",
+          "rule_id": "py/incomplete-url-substring-sanitization",
+          "rule_name": "py/incomplete-url-substring-sanitization",
+          "rule_description": "Incomplete URL substring sanitization",
+          "rule_help": "# Incomplete URL substring sanitization\nSanitizing untrusted URLs is a common technique for preventing attacks such as request forgeries and malicious redirections. Usually, this is done by checking that the host of a URL is in a set of allowed hosts.\n\nHowever, treating the URL as a string and checking if one of the allowed hosts is a substring of the URL is very prone to errors. Malicious URLs can bypass such security checks by embedding one of the allowed hosts in an unexpected location.\n\nEven if the substring check is not used in a security-critical context, the incomplete check may still cause undesirable behaviors when the check succeeds accidentally.\n\n\n## Recommendation\nParse a URL before performing a check on its host value, and ensure that the check handles arbitrary subdomain sequences correctly.\n\n\n## Example\nThe following example code checks that a URL redirection will reach the `example.com` domain.\n\n\n```python\nfrom flask import Flask, request, redirect\nfrom urllib.parse imp",
+          "message": "The string [github.com/](1) may be at an arbitrary position in the sanitized URL.",
+          "severity_score": 7.8,
+          "severity_tier": "high",
+          "cwes": [
+            "cwe-20"
+          ],
+          "cwe_family": "other",
+          "locations": [
+            {
+              "file": "scripts/orchestrator/cli.py",
+              "start_line": 405,
+              "end_line": 405,
+              "start_column": 16
+            }
+          ],
+          "level": "warning",
+          "partial_fingerprints": {
+            "primaryLocationLineHash": "47c0e8fb4c9efb09:1",
+            "primaryLocationStartColumnFingerprint": "3"
+          },
+          "fingerprint": "824c2f151e1209cf2dea"
+        }
+      ]
+    },
+    {
+      "batch_id": 5,
+      "cwe_family": "info-disclosure",
+      "cwe_families": [
+        "info-disclosure"
+      ],
+      "cross_family": false,
+      "severity_tier": "high",
+      "max_severity_score": 7.5,
+      "issue_count": 5,
+      "file_count": 2,
+      "issues": [
+        {
+          "id": "CQLF-R34-0010",
+          "rule_id": "py/clear-text-logging-sensitive-data",
+          "rule_name": "py/clear-text-logging-sensitive-data",
+          "rule_description": "Clear-text logging of sensitive information",
+          "rule_help": "# Clear-text logging of sensitive information\nIf sensitive data is written to a log entry it could be exposed to an attacker who gains access to the logs.\n\nPotential attackers can obtain sensitive user data when the log output is displayed. Additionally that data may expose system information such as full path names, system information, and sometimes usernames and passwords.\n\n\n## Recommendation\nSensitive data should not be logged.\n\n\n## Example\nIn the example the entire process environment is logged using \\`print\\`. Regular users of the production deployed application should not have access to this much information about the environment configuration.\n\n\n```python\n# BAD: Logging cleartext sensitive data\nimport os\nprint(f\"[INFO] Environment: {os.environ}\")\n```\nIn the second example the data that is logged is not sensitive.\n\n\n```python\nnot_sensitive_data = {'a': 1, 'b': 2}\n# GOOD: it is fine to log data that is not sensitive\nprint(f\"[INFO] Some object contains: {not_sensitive_data}\")\n```\n\n",
+          "message": "This expression logs [sensitive data (password)](1) as clear text.\nThis expression logs [sensitive data (password)](2) as clear text.",
+          "severity_score": 7.5,
+          "severity_tier": "high",
+          "cwes": [
+            "cwe-312",
+            "cwe-359",
+            "cwe-532"
+          ],
+          "cwe_family": "info-disclosure",
+          "locations": [
+            {
+              "file": "github_app/scan_trigger.py",
+              "start_line": 57,
+              "end_line": 57,
+              "start_column": 44
+            }
+          ],
+          "level": "warning",
+          "partial_fingerprints": {
+            "primaryLocationLineHash": "388ebb271af4bd02:1",
+            "primaryLocationStartColumnFingerprint": "39"
+          },
+          "fingerprint": "9983b00c8c4b6b74a1d8"
+        },
+        {
+          "id": "CQLF-R34-0016",
+          "rule_id": "py/stack-trace-exposure",
+          "rule_name": "py/stack-trace-exposure",
+          "rule_description": "Information exposure through an exception",
+          "rule_help": "# Information exposure through an exception\nSoftware developers often add stack traces to error messages, as a debugging aid. Whenever that error message occurs for an end user, the developer can use the stack trace to help identify how to fix the problem. In particular, stack traces can tell the developer more about the sequence of events that led to a failure, as opposed to merely the final state of the software when the error occurred.\n\nUnfortunately, the same information can be useful to an attacker. The sequence of class names in a stack trace can reveal the structure of the application as well as any internal components it relies on. Furthermore, the error message at the top of a stack trace can include information such as server-side file names and SQL code that the application relies on, allowing an attacker to fine-tune a subsequent injection attack.\n\n\n## Recommendation\nSend the user a more generic error message that reveals less information. Either suppress the stack trace en",
+          "message": "[Stack trace information](1) flows to this location and may be exposed to an external user.",
+          "severity_score": 5.4,
+          "severity_tier": "medium",
+          "cwes": [
+            "cwe-209",
+            "cwe-497"
+          ],
+          "cwe_family": "info-disclosure",
+          "locations": [
+            {
+              "file": "github_app/app.py",
+              "start_line": 61,
+              "end_line": 61,
+              "start_column": 28
+            }
+          ],
+          "level": "warning",
+          "partial_fingerprints": {
+            "primaryLocationLineHash": "a5ede6e465a3c347:1",
+            "primaryLocationStartColumnFingerprint": "15"
+          },
+          "fingerprint": "2f8c4c59f5d27d1354c8"
+        },
+        {
+          "id": "CQLF-R34-0017",
+          "rule_id": "py/stack-trace-exposure",
+          "rule_name": "py/stack-trace-exposure",
+          "rule_description": "Information exposure through an exception",
+          "rule_help": "# Information exposure through an exception\nSoftware developers often add stack traces to error messages, as a debugging aid. Whenever that error message occurs for an end user, the developer can use the stack trace to help identify how to fix the problem. In particular, stack traces can tell the developer more about the sequence of events that led to a failure, as opposed to merely the final state of the software when the error occurred.\n\nUnfortunately, the same information can be useful to an attacker. The sequence of class names in a stack trace can reveal the structure of the application as well as any internal components it relies on. Furthermore, the error message at the top of a stack trace can include information such as server-side file names and SQL code that the application relies on, allowing an attacker to fine-tune a subsequent injection attack.\n\n\n## Recommendation\nSend the user a more generic error message that reveals less information. Either suppress the stack trace en",
+          "message": "[Stack trace information](1) flows to this location and may be exposed to an external user.",
+          "severity_score": 5.4,
+          "severity_tier": "medium",
+          "cwes": [
+            "cwe-209",
+            "cwe-497"
+          ],
+          "cwe_family": "info-disclosure",
+          "locations": [
+            {
+              "file": "github_app/app.py",
+              "start_line": 98,
+              "end_line": 98,
+              "start_column": 28
+            }
+          ],
+          "level": "warning",
+          "partial_fingerprints": {
+            "primaryLocationLineHash": "73234d3183370e1d:1",
+            "primaryLocationStartColumnFingerprint": "15"
+          },
+          "fingerprint": "4c735d21d88bf22d43f9"
+        },
+        {
+          "id": "CQLF-R34-0018",
+          "rule_id": "py/stack-trace-exposure",
+          "rule_name": "py/stack-trace-exposure",
+          "rule_description": "Information exposure through an exception",
+          "rule_help": "# Information exposure through an exception\nSoftware developers often add stack traces to error messages, as a debugging aid. Whenever that error message occurs for an end user, the developer can use the stack trace to help identify how to fix the problem. In particular, stack traces can tell the developer more about the sequence of events that led to a failure, as opposed to merely the final state of the software when the error occurred.\n\nUnfortunately, the same information can be useful to an attacker. The sequence of class names in a stack trace can reveal the structure of the application as well as any internal components it relies on. Furthermore, the error message at the top of a stack trace can include information such as server-side file names and SQL code that the application relies on, allowing an attacker to fine-tune a subsequent injection attack.\n\n\n## Recommendation\nSend the user a more generic error message that reveals less information. Either suppress the stack trace en",
+          "message": "[Stack trace information](1) flows to this location and may be exposed to an external user.",
+          "severity_score": 5.4,
+          "severity_tier": "medium",
+          "cwes": [
+            "cwe-209",
+            "cwe-497"
+          ],
+          "cwe_family": "info-disclosure",
+          "locations": [
+            {
+              "file": "github_app/app.py",
+              "start_line": 136,
+              "end_line": 136,
+              "start_column": 28
+            }
+          ],
+          "level": "warning",
+          "partial_fingerprints": {
+            "primaryLocationLineHash": "91a6bfcf953ea57e:1",
+            "primaryLocationStartColumnFingerprint": "15"
+          },
+          "fingerprint": "cd72321eda4f0bda5118"
+        },
+        {
+          "id": "CQLF-R34-0019",
+          "rule_id": "py/stack-trace-exposure",
+          "rule_name": "py/stack-trace-exposure",
+          "rule_description": "Information exposure through an exception",
+          "rule_help": "# Information exposure through an exception\nSoftware developers often add stack traces to error messages, as a debugging aid. Whenever that error message occurs for an end user, the developer can use the stack trace to help identify how to fix the problem. In particular, stack traces can tell the developer more about the sequence of events that led to a failure, as opposed to merely the final state of the software when the error occurred.\n\nUnfortunately, the same information can be useful to an attacker. The sequence of class names in a stack trace can reveal the structure of the application as well as any internal components it relies on. Furthermore, the error message at the top of a stack trace can include information such as server-side file names and SQL code that the application relies on, allowing an attacker to fine-tune a subsequent injection attack.\n\n\n## Recommendation\nSend the user a more generic error message that reveals less information. Either suppress the stack trace en",
+          "message": "[Stack trace information](1) flows to this location and may be exposed to an external user.",
+          "severity_score": 5.4,
+          "severity_tier": "medium",
+          "cwes": [
+            "cwe-209",
+            "cwe-497"
+          ],
+          "cwe_family": "info-disclosure",
+          "locations": [
+            {
+              "file": "github_app/app.py",
+              "start_line": 156,
+              "end_line": 156,
+              "start_column": 28
+            }
+          ],
+          "level": "warning",
+          "partial_fingerprints": {
+            "primaryLocationLineHash": "399a730504f49485:1",
+            "primaryLocationStartColumnFingerprint": "15"
+          },
+          "fingerprint": "59745178434251c8b656"
+        }
+      ]
+    }
+  ]
+}

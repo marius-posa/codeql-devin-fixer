@@ -1,0 +1,156 @@
+Fix 5 CodeQL security issue(s) in https://github.com/marius-posa/codeql-devin-fixer (branch: main).
+
+Issue IDs: CQLF-R34-0003, CQLF-R34-0004, CQLF-R34-0005, CQLF-R34-0006, CQLF-R34-0007
+Category: logging | Severity: HIGH (max CVSS: 7.8)
+
+Issues to fix:
+
+### CQLF-R34-0003: py/log-injection (py/log-injection)
+- Severity: HIGH (7.8)
+- CWE: cwe-117
+- Location(s): github_app/app.py:75
+- Description: This log entry depends on a [user-provided value](1).
+- Rule: Log Injection
+- Guidance: # Log Injection
+If unsanitized user input is written to a log entry, a malicious user may be able to forge new log entries.
+
+Forgery can occur if a user provides some input with characters that are interpreted when the log output is displayed. If the log is displayed as a plain text file, then new line characters can be used by a malicious user to create the appearance of multiple log entries. If the log is displayed as HTML, then arbitrary HTML may be included to spoof log entries.
+
+
+## Recomme
+- Code context:
+```
+      70 | 
+      71 |         event_type = flask_request.headers.get("X-GitHub-Event", "")
+      72 |         delivery_id = flask_request.headers.get("X-GitHub-Delivery", "")
+      73 |         payload = flask_request.get_json(silent=True) or {}
+      74 | 
+>>>   75 |         log.info("Webhook: event=%s delivery=%s", event_type, delivery_id)
+      76 | 
+      77 |         result = route_event(event_type, payload)
+      78 | 
+      79 |         if result.get("status") == "scan_eligible":
+      80 |             _maybe_trigger_scan(config, auth, result)
+```
+
+### CQLF-R34-0004: py/log-injection (py/log-injection)
+- Severity: HIGH (7.8)
+- CWE: cwe-117
+- Location(s): github_app/app.py:174
+- Description: This log entry depends on a [user-provided value](1).
+- Rule: Log Injection
+- Guidance: # Log Injection
+If unsanitized user input is written to a log entry, a malicious user may be able to forge new log entries.
+
+Forgery can occur if a user provides some input with characters that are interpreted when the log output is displayed. If the log is displayed as a plain text file, then new line characters can be used by a malicious user to create the appearance of multiple log entries. If the log is displayed as HTML, then arbitrary HTML may be included to spoof log entries.
+
+
+## Recomme
+- Code context:
+```
+     169 |         return
+     170 | 
+     171 |     try:
+     172 |         token = auth.get_installation_token(installation_id)
+     173 |     except Exception as exc:
+>>>  174 |         log.error("Failed to get token for installation %s: %s", installation_id, exc)
+     175 |         return
+     176 | 
+     177 |     scan_config = {
+     178 |         "target_repo": f"https://github.com/{repo}",
+     179 |         "github_token": token,
+```
+
+### CQLF-R34-0005: py/log-injection (py/log-injection)
+- Severity: HIGH (7.8)
+- CWE: cwe-117
+- Location(s): github_app/app.py:189
+- Description: This log entry depends on a [user-provided value](1).
+- Rule: Log Injection
+- Guidance: # Log Injection
+If unsanitized user input is written to a log entry, a malicious user may be able to forge new log entries.
+
+Forgery can occur if a user provides some input with characters that are interpreted when the log output is displayed. If the log is displayed as a plain text file, then new line characters can be used by a malicious user to create the appearance of multiple log entries. If the log is displayed as HTML, then arbitrary HTML may be included to spoof log entries.
+
+
+## Recomme
+- Code context:
+```
+     184 |         "queries": config.default_queries,
+     185 |         "default_branch": default_branch,
+     186 |         "dry_run": False,
+     187 |     }
+     188 | 
+>>>  189 |     log.info("Auto-triggering scan for %s (installation %s)", repo, installation_id)
+     190 |     trigger_scan(scan_config)
+```
+
+### CQLF-R34-0006: py/log-injection (py/log-injection)
+- Severity: HIGH (7.8)
+- CWE: cwe-117
+- Location(s): github_app/scan_trigger.py:57
+- Description: This log entry depends on a [user-provided value](1).
+- Rule: Log Injection
+- Guidance: # Log Injection
+If unsanitized user input is written to a log entry, a malicious user may be able to forge new log entries.
+
+Forgery can occur if a user provides some input with characters that are interpreted when the log output is displayed. If the log is displayed as a plain text file, then new line characters can be used by a malicious user to create the appearance of multiple log entries. If the log is displayed as HTML, then arbitrary HTML may be included to spoof log entries.
+
+
+## Recomme
+- Code context:
+```
+      52 | 
+      53 |     work_dir = tempfile.mkdtemp(prefix="codeql-fixer-")
+      54 |     output_dir = os.path.join(work_dir, "output")
+      55 |     os.makedirs(output_dir, exist_ok=True)
+      56 | 
+>>>   57 |     log.info("Starting scan for %s in %s", target_repo, work_dir)
+      58 | 
+      59 |     steps: list[dict] = []
+      60 | 
+      61 |     fork_result = _run_fork(env, work_dir, target_repo, default_branch, github_token)
+      62 |     steps.append({"step": "fork", **fork_result})
+```
+
+### CQLF-R34-0007: py/log-injection (py/log-injection)
+- Severity: HIGH (7.8)
+- CWE: cwe-117
+- Location(s): github_app/webhook_handler.py:42
+- Description: This log entry depends on a [user-provided value](1).
+- Rule: Log Injection
+- Guidance: # Log Injection
+If unsanitized user input is written to a log entry, a malicious user may be able to forge new log entries.
+
+Forgery can occur if a user provides some input with characters that are interpreted when the log output is displayed. If the log is displayed as a plain text file, then new line characters can be used by a malicious user to create the appearance of multiple log entries. If the log is displayed as HTML, then arbitrary HTML may be included to spoof log entries.
+
+
+## Recomme
+- Code context:
+```
+      37 | 
+      38 | 
+      39 | def route_event(event_type: str, payload: dict) -> dict:
+      40 |     handler = _EVENT_HANDLERS.get(event_type)
+      41 |     if handler is None:
+>>>   42 |         log.debug("Ignoring unhandled event: %s", event_type)
+      43 |         return {"status": "ignored", "event": event_type}
+      44 |     return handler(payload)
+      45 | 
+      46 | 
+      47 | def handle_installation(payload: dict) -> dict:
+```
+
+Instructions:
+1. Clone https://github.com/marius-posa/codeql-devin-fixer and create a new branch from main.
+2. Fix ALL the issues listed above. Track which issue IDs you are fixing.
+3. Ensure fixes don't break existing functionality.
+4. Run existing tests if available to verify.
+5. Create a PR on https://github.com/marius-posa/codeql-devin-fixer with a clear description listing each issue ID fixed.
+6. Title the PR exactly: 'fix(CQLF-R34-0003,CQLF-R34-0004,CQLF-R34-0005,CQLF-R34-0006,CQLF-R34-0007): resolve logging security issues'
+7. In the PR body, list each issue ID (CQLF-R34-0003, CQLF-R34-0004, CQLF-R34-0005, CQLF-R34-0006, CQLF-R34-0007) and describe the fix applied.
+
+Files to focus on:
+- github_app/app.py
+- github_app/scan_trigger.py
+- github_app/webhook_handler.py

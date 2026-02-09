@@ -1,0 +1,157 @@
+Fix 5 CodeQL security issue(s) in https://github.com/marius-posa/codeql-devin-fixer (branch: main).
+
+Issue IDs: CQLF-R34-0010, CQLF-R34-0016, CQLF-R34-0017, CQLF-R34-0018, CQLF-R34-0019
+Category: info-disclosure | Severity: HIGH (max CVSS: 7.5)
+
+Fix pattern hint for info-disclosure: Remove sensitive data from error messages, logs, and HTTP responses.  Use generic error pages in production.  Ensure stack traces and debug information are suppressed outside development mode.
+
+Historical fix rate for info-disclosure: 100% (2/2 sessions completed)
+
+Issues to fix:
+
+### CQLF-R34-0010: py/clear-text-logging-sensitive-data (py/clear-text-logging-sensitive-data)
+- Severity: HIGH (7.5)
+- CWE: cwe-312, cwe-359, cwe-532
+- Location(s): github_app/scan_trigger.py:57
+- Description: This expression logs [sensitive data (password)](1) as clear text.
+This expression logs [sensitive data (password)](2) as clear text.
+- Rule: Clear-text logging of sensitive information
+- Guidance: # Clear-text logging of sensitive information
+If sensitive data is written to a log entry it could be exposed to an attacker who gains access to the logs.
+
+Potential attackers can obtain sensitive user data when the log output is displayed. Additionally that data may expose system information such as full path names, system information, and sometimes usernames and passwords.
+
+
+## Recommendation
+Sensitive data should not be logged.
+
+
+## Example
+In the example the entire process environment is log
+- Code context:
+```
+      52 | 
+      53 |     work_dir = tempfile.mkdtemp(prefix="codeql-fixer-")
+      54 |     output_dir = os.path.join(work_dir, "output")
+      55 |     os.makedirs(output_dir, exist_ok=True)
+      56 | 
+>>>   57 |     log.info("Starting scan for %s in %s", target_repo, work_dir)
+      58 | 
+      59 |     steps: list[dict] = []
+      60 | 
+      61 |     fork_result = _run_fork(env, work_dir, target_repo, default_branch, github_token)
+      62 |     steps.append({"step": "fork", **fork_result})
+```
+
+### CQLF-R34-0016: py/stack-trace-exposure (py/stack-trace-exposure)
+- Severity: MEDIUM (5.4)
+- CWE: cwe-209, cwe-497
+- Location(s): github_app/app.py:61
+- Description: [Stack trace information](1) flows to this location and may be exposed to an external user.
+- Rule: Information exposure through an exception
+- Guidance: # Information exposure through an exception
+Software developers often add stack traces to error messages, as a debugging aid. Whenever that error message occurs for an end user, the developer can use the stack trace to help identify how to fix the problem. In particular, stack traces can tell the developer more about the sequence of events that led to a failure, as opposed to merely the final state of the software when the error occurred.
+
+Unfortunately, the same information can be useful to an
+- Code context:
+```
+      56 |                 "app_name": info.get("name", ""),
+      57 |                 "app_id": config.app_id,
+      58 |             })
+      59 |         except Exception as exc:
+      60 |             log.error("Health check failed: %s", exc)
+>>>   61 |             return jsonify({"status": "error", "detail": str(exc)}), 503
+      62 | 
+      63 |     @app.route("/api/github/webhook", methods=["POST"])
+      64 |     def webhook():
+      65 |         signature = flask_request.headers.get("X-Hub-Signature-256", "")
+      66 |         if not verify_signature(
+```
+
+### CQLF-R34-0017: py/stack-trace-exposure (py/stack-trace-exposure)
+- Severity: MEDIUM (5.4)
+- CWE: cwe-209, cwe-497
+- Location(s): github_app/app.py:98
+- Description: [Stack trace information](1) flows to this location and may be exposed to an external user.
+- Rule: Information exposure through an exception
+- Guidance: # Information exposure through an exception
+Software developers often add stack traces to error messages, as a debugging aid. Whenever that error message occurs for an end user, the developer can use the stack trace to help identify how to fix the problem. In particular, stack traces can tell the developer more about the sequence of events that led to a failure, as opposed to merely the final state of the software when the error occurred.
+
+Unfortunately, the same information can be useful to an
+- Code context:
+```
+      93 |             return jsonify({"error": "installation_id is required"}), 400
+      94 | 
+      95 |         try:
+      96 |             token = auth.get_installation_token(int(installation_id))
+      97 |         except Exception as exc:
+>>>   98 |             return jsonify({"error": f"Token error: {exc}"}), 400
+      99 | 
+     100 |         scan_config = {
+     101 |             "target_repo": f"https://github.com/{repo}",
+     102 |             "github_token": token,
+     103 |             "devin_api_key": config.devin_api_key,
+```
+
+### CQLF-R34-0018: py/stack-trace-exposure (py/stack-trace-exposure)
+- Severity: MEDIUM (5.4)
+- CWE: cwe-209, cwe-497
+- Location(s): github_app/app.py:136
+- Description: [Stack trace information](1) flows to this location and may be exposed to an external user.
+- Rule: Information exposure through an exception
+- Guidance: # Information exposure through an exception
+Software developers often add stack traces to error messages, as a debugging aid. Whenever that error message occurs for an end user, the developer can use the stack trace to help identify how to fix the problem. In particular, stack traces can tell the developer more about the sequence of events that led to a failure, as opposed to merely the final state of the software when the error occurred.
+
+Unfortunately, the same information can be useful to an
+- Code context:
+```
+     131 |                     for inst in installations
+     132 |                 ],
+     133 |                 "total": len(installations),
+     134 |             })
+     135 |         except Exception as exc:
+>>>  136 |             return jsonify({"error": str(exc)}), 500
+     137 | 
+     138 |     @app.route("/api/github/installations/<int:installation_id>/repos")
+     139 |     def installation_repos(installation_id: int):
+     140 |         try:
+     141 |             repos = auth.get_installation_repos(installation_id)
+```
+
+### CQLF-R34-0019: py/stack-trace-exposure (py/stack-trace-exposure)
+- Severity: MEDIUM (5.4)
+- CWE: cwe-209, cwe-497
+- Location(s): github_app/app.py:156
+- Description: [Stack trace information](1) flows to this location and may be exposed to an external user.
+- Rule: Information exposure through an exception
+- Guidance: # Information exposure through an exception
+Software developers often add stack traces to error messages, as a debugging aid. Whenever that error message occurs for an end user, the developer can use the stack trace to help identify how to fix the problem. In particular, stack traces can tell the developer more about the sequence of events that led to a failure, as opposed to merely the final state of the software when the error occurred.
+
+Unfortunately, the same information can be useful to an
+- Code context:
+```
+     151 |                     for r in repos
+     152 |                 ],
+     153 |                 "total": len(repos),
+     154 |             })
+     155 |         except Exception as exc:
+>>>  156 |             return jsonify({"error": str(exc)}), 500
+     157 | 
+     158 |     return app
+     159 | 
+     160 | 
+     161 | def _maybe_trigger_scan(
+```
+
+Instructions:
+1. Clone https://github.com/marius-posa/codeql-devin-fixer and create a new branch from main.
+2. Fix ALL the issues listed above. Track which issue IDs you are fixing.
+3. Ensure fixes don't break existing functionality.
+4. Run existing tests if available to verify.
+5. Create a PR on https://github.com/marius-posa/codeql-devin-fixer with a clear description listing each issue ID fixed.
+6. Title the PR exactly: 'fix(CQLF-R34-0010,CQLF-R34-0016,CQLF-R34-0017,CQLF-R34-0018,CQLF-R34-0019): resolve info-disclosure security issues'
+7. In the PR body, list each issue ID (CQLF-R34-0010, CQLF-R34-0016, CQLF-R34-0017, CQLF-R34-0018, CQLF-R34-0019) and describe the fix applied.
+
+Files to focus on:
+- github_app/app.py
+- github_app/scan_trigger.py
