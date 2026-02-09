@@ -694,3 +694,79 @@ class TestRegistryRepoEndpoints:
                 )
                 assert resp.status_code == 400
             os.unlink(f.name)
+
+    def test_registry_add_repo_rejects_invalid_importance(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump({"version": "1.0", "repos": []}, f)
+            f.flush()
+            with patch("app.REGISTRY_PATH", Path(f.name)):
+                resp = client.post(
+                    "/api/registry/repos",
+                    headers={"X-API-Key": "test-key"},
+                    json={"repo": "https://github.com/t/r", "importance": "invalid"},
+                )
+                assert resp.status_code == 400
+                assert "importance" in resp.get_json()["error"]
+            os.unlink(f.name)
+
+    def test_registry_add_repo_rejects_invalid_score(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump({"version": "1.0", "repos": []}, f)
+            f.flush()
+            with patch("app.REGISTRY_PATH", Path(f.name)):
+                resp = client.post(
+                    "/api/registry/repos",
+                    headers={"X-API-Key": "test-key"},
+                    json={"repo": "https://github.com/t/r", "importance_score": 200},
+                )
+                assert resp.status_code == 400
+                assert "importance_score" in resp.get_json()["error"]
+            os.unlink(f.name)
+
+    def test_registry_update_repo_rejects_invalid_schedule(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump({"version": "1.0", "repos": [{"repo": "test"}]}, f)
+            f.flush()
+            with patch("app.REGISTRY_PATH", Path(f.name)):
+                resp = client.put(
+                    "/api/registry/repos/0",
+                    headers={"X-API-Key": "test-key"},
+                    json={"schedule": "every_minute"},
+                )
+                assert resp.status_code == 400
+                assert "schedule" in resp.get_json()["error"]
+            os.unlink(f.name)
+
+
+class TestOrchestratorObjectives:
+    def test_objectives_round_trip(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        import tempfile
+        objectives = [
+            {"objective": "Fix all critical XSS", "target_count": 10, "severity": "critical"},
+            {"objective": "Reduce injection backlog", "target_count": 5},
+        ]
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump({"orchestrator": {}, "repos": []}, f)
+            f.flush()
+            with patch("app._ORCHESTRATOR_REGISTRY_PATH", Path(f.name)), \
+                 patch("app._load_orchestrator_registry", return_value={"orchestrator": {}, "repos": []}):
+                resp = client.put(
+                    "/api/orchestrator/config",
+                    headers={"X-API-Key": "test-key"},
+                    json={"objectives": objectives},
+                )
+                assert resp.status_code == 200
+                data = resp.get_json()
+                assert len(data["objectives"]) == 2
+                assert data["objectives"][0]["objective"] == "Fix all critical XSS"
+                assert data["objectives"][0]["target_count"] == 10
+                assert data["objectives"][0]["severity"] == "critical"
+                assert data["objectives"][1]["objective"] == "Reduce injection backlog"
+            os.unlink(f.name)

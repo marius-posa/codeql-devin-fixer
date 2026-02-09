@@ -991,6 +991,29 @@ def api_registry_update():
     return jsonify(registry)
 
 
+_VALID_IMPORTANCE = ("low", "medium", "high", "critical")
+_VALID_SCHEDULE = ("hourly", "daily", "weekly", "monthly")
+
+
+def _validate_repo_fields(body: dict) -> str | None:
+    importance = body.get("importance")
+    if importance is not None and importance not in _VALID_IMPORTANCE:
+        return f"importance must be one of {', '.join(_VALID_IMPORTANCE)}"
+    score = body.get("importance_score")
+    if score is not None and (not isinstance(score, (int, float)) or score < 0 or score > 100):
+        return "importance_score must be a number between 0 and 100"
+    schedule = body.get("schedule")
+    if schedule is not None and schedule not in _VALID_SCHEDULE:
+        return f"schedule must be one of {', '.join(_VALID_SCHEDULE)}"
+    tags = body.get("tags")
+    if tags is not None and not isinstance(tags, list):
+        return "tags must be an array"
+    overrides = body.get("overrides")
+    if overrides is not None and not isinstance(overrides, dict):
+        return "overrides must be an object"
+    return None
+
+
 @app.route("/api/registry/repos", methods=["POST"])
 @require_api_key
 def api_registry_add_repo():
@@ -998,6 +1021,9 @@ def api_registry_add_repo():
     repo_url = body.get("repo", "").strip()
     if not repo_url:
         return jsonify({"error": "repo is required"}), 400
+    err = _validate_repo_fields(body)
+    if err:
+        return jsonify({"error": err}), 400
     registry = _load_registry()
     for existing in registry.get("repos", []):
         if existing.get("repo") == repo_url:
@@ -1025,6 +1051,9 @@ def api_registry_update_repo(idx):
     body = flask_request.get_json(silent=True)
     if not body:
         return jsonify({"error": "Request body is required"}), 400
+    err = _validate_repo_fields(body)
+    if err:
+        return jsonify({"error": err}), 400
     registry = _load_registry()
     repos = registry.get("repos", [])
     if idx < 0 or idx >= len(repos):
