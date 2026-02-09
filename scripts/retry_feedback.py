@@ -2,6 +2,7 @@
 """Retry-with-feedback for Devin sessions using the Send Message API."""
 
 import json
+import logging
 import os
 import sys
 import time
@@ -9,6 +10,8 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from devin_api import DEVIN_API_BASE, TERMINAL_STATUSES, request_with_retry
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_RETRY_ATTEMPTS = 2
 
@@ -188,9 +191,9 @@ def retry_with_feedback(
 
     if status not in TERMINAL_STATUSES:
         feedback = _build_feedback_message(verification_results, remaining_issues)
-        print(
-            f"  Sending feedback to active session {session_id} "
-            f"(attempt {attempt_number})"
+        logger.info(
+            "Sending feedback to active session %s (attempt %d)",
+            session_id, attempt_number,
         )
         send_message(api_key, session_id, feedback)
         return {
@@ -223,9 +226,9 @@ def retry_with_feedback(
         f"Batch {batch.get('batch_id', '')} (Attempt {attempt_number + 1})"
     )
 
-    print(
-        f"  Creating follow-up session for terminated session {session_id} "
-        f"(attempt {attempt_number + 1})"
+    logger.info(
+        "Creating follow-up session for terminated session %s (attempt %d)",
+        session_id, attempt_number + 1,
     )
     result = create_session(
         api_key=api_key,

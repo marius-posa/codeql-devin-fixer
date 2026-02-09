@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Shared Devin API utilities used by knowledge.py, retry_feedback.py, and dispatch_devin.py."""
 
+import logging
 import time
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 DEVIN_API_BASE = "https://api.devin.ai/v1"
 
@@ -45,7 +48,7 @@ def request_with_retry(
         except requests.exceptions.RequestException as e:
             last_err = e
             if attempt < MAX_RETRIES:
-                print(f"  Retry {attempt}/{MAX_RETRIES} after error: {e}")
+                logger.warning("Retry %d/%d after error: %s", attempt, MAX_RETRIES, e)
                 time.sleep(RETRY_DELAY * attempt)
     raise last_err  # type: ignore[misc]
 
@@ -76,5 +79,5 @@ def fetch_pr_diff(pr_url: str, github_token: str = "") -> str:
             diff_text = diff_text[:8000] + "\n... (diff truncated)"
         return diff_text
     except requests.exceptions.RequestException as e:
-        print(f"  WARNING: Failed to fetch PR diff from {pr_url}: {e}")
+        logger.warning("Failed to fetch PR diff from %s: %s", pr_url, e)
         return ""
