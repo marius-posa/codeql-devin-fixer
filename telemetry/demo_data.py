@@ -16,7 +16,7 @@ import sqlite3
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from database import get_connection, init_db, insert_run, upsert_pr
+from database import get_connection, init_db, insert_run, upsert_pr, save_orchestrator_state
 
 DEMO_DATA_DIR = pathlib.Path(__file__).parent / "demo_data"
 DEMO_MARKER_KEY = "demo_data_loaded"
@@ -587,6 +587,10 @@ def load_demo_data_into_db(conn: sqlite3.Connection | None = None) -> dict:
         except Exception:
             stats["errors"] += 1
 
+    orch_state = data.get("orchestrator_state")
+    if orch_state:
+        save_orchestrator_state(conn, orch_state)
+
     conn.execute(
         "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
         (DEMO_MARKER_KEY, datetime.now(timezone.utc).isoformat()),
@@ -628,6 +632,10 @@ def clear_demo_data_from_db(conn: sqlite3.Connection | None = None) -> dict:
         conn.execute(f"DELETE FROM prs WHERE id IN ({placeholders})", pr_ids)
         stats["prs_deleted"] = len(pr_ids)
 
+    conn.execute("DELETE FROM orchestrator_kv")
+    conn.execute("DELETE FROM dispatch_history")
+    conn.execute("DELETE FROM rate_limiter_timestamps")
+    conn.execute("DELETE FROM scan_schedule")
     conn.execute("DELETE FROM metadata WHERE key = ?", (DEMO_MARKER_KEY,))
     conn.commit()
 
