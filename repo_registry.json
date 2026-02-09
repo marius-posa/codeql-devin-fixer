@@ -48,7 +48,13 @@
       "repo": "https://github.com/marius-posa/codeql-devin-fixer",
       "enabled": true,
       "schedule": "daily",
-      "overrides": {}
+      "overrides": {},
+      "importance": "critical",
+      "importance_score": 90,
+      "max_sessions_per_cycle": 3,
+      "auto_scan": true,
+      "auto_dispatch": true,
+      "tags": []
     }
   ]
 }
