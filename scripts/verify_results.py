@@ -39,8 +39,10 @@ from typing import Any
 
 try:
     from parse_sarif import compute_fingerprint, parse_sarif
+    from pipeline_config import IssueFingerprint
 except ImportError:
     from scripts.parse_sarif import compute_fingerprint, parse_sarif
+    from scripts.pipeline_config import IssueFingerprint
 
 
 def extract_issue_ids_from_title(title: str) -> list[str]:
@@ -67,7 +69,7 @@ def extract_cwe_family_from_title(title: str) -> str:
     return match.group(1) if match else ""
 
 
-def load_original_fingerprints(issues_path: str) -> list[dict[str, Any]]:
+def load_original_fingerprints(issues_path: str) -> list[IssueFingerprint]:
     """Load original issue fingerprints from an issues.json file.
 
     Handles multiple formats:
@@ -90,7 +92,7 @@ def load_original_fingerprints(issues_path: str) -> list[dict[str, Any]]:
     else:
         return []
 
-    fingerprints = []
+    fingerprints: list[IssueFingerprint] = []
     for issue in issues:
         fp = issue.get("fingerprint", "")
         if not fp:
@@ -177,7 +179,7 @@ def find_original_issues_from_telemetry(
 
 
 def compare_fingerprints(
-    original_fps: list[dict[str, Any]],
+    original_fps: list[IssueFingerprint],
     new_fps: set[str],
     target_issue_ids: list[str] | None = None,
 ) -> dict[str, Any]:

@@ -52,9 +52,9 @@ from pathlib import PurePosixPath
 from typing import Any
 
 try:
-    from pipeline_config import PipelineConfig
+    from pipeline_config import Batch, ParsedIssue, PipelineConfig
 except ImportError:
-    from scripts.pipeline_config import PipelineConfig
+    from scripts.pipeline_config import Batch, ParsedIssue, PipelineConfig
 
 BATCHES_SCHEMA_VERSION = "1.0"
 ISSUES_SCHEMA_VERSION = "1.0"
@@ -251,7 +251,7 @@ def validate_sarif(sarif: dict[str, Any], path: str) -> None:
         raise ValueError(f"{path}: 'runs' must be a JSON array, got {type(runs).__name__}")
 
 
-def parse_sarif(sarif_path: str) -> list[dict[str, Any]]:
+def parse_sarif(sarif_path: str) -> list[ParsedIssue]:
     """Extract security issues from a single SARIF file.
 
     Iterates over every ``run`` / ``result`` in the SARIF and enriches each
@@ -277,7 +277,7 @@ def parse_sarif(sarif_path: str) -> list[dict[str, Any]]:
         print(f"WARNING: {exc}")
         return []
 
-    issues: list[dict[str, Any]] = []
+    issues: list[ParsedIssue] = []
 
     for run in sarif.get("runs", []):
         rules_by_id: dict[str, dict[str, Any]] = {}
@@ -355,7 +355,7 @@ def parse_sarif(sarif_path: str) -> list[dict[str, Any]]:
     return issues
 
 
-def deduplicate_issues(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def deduplicate_issues(issues: list[ParsedIssue]) -> list[ParsedIssue]:
     """Remove duplicate findings that share the same rule ID and location(s).
 
     CodeQL can report the same issue in multiple SARIF runs (e.g. when
@@ -363,7 +363,7 @@ def deduplicate_issues(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
     receiving the same fix request twice.
     """
     seen: set[str] = set()
-    unique: list[dict[str, Any]] = []
+    unique: list[ParsedIssue] = []
     for issue in issues:
         locs = tuple(
             (loc["file"], loc["start_line"]) for loc in issue.get("locations", [])
@@ -377,8 +377,8 @@ def deduplicate_issues(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def prioritize_issues(
-    issues: list[dict[str, Any]], threshold: str = "low"
-) -> list[dict[str, Any]]:
+    issues: list[ParsedIssue], threshold: str = "low"
+) -> list[ParsedIssue]:
     """Filter issues below *threshold* and sort by descending severity.
 
     Secondary sort key is ``cwe_family`` so that issues in the same family
@@ -391,7 +391,7 @@ def prioritize_issues(
     return filtered
 
 
-def _get_issue_dirs(issue: dict[str, Any]) -> set[str]:
+def _get_issue_dirs(issue: ParsedIssue) -> set[str]:
     """Return the set of parent directory paths for an issue's locations."""
     dirs: set[str] = set()
     for loc in issue.get("locations", []):
@@ -401,7 +401,7 @@ def _get_issue_dirs(issue: dict[str, Any]) -> set[str]:
     return dirs
 
 
-def _get_issue_files(issue: dict[str, Any]) -> set[str]:
+def _get_issue_files(issue: ParsedIssue) -> set[str]:
     """Return the set of file paths for an issue's locations."""
     return {
         loc["file"]
@@ -410,7 +410,7 @@ def _get_issue_files(issue: dict[str, Any]) -> set[str]:
     }
 
 
-def _file_proximity_score(issue_a: dict[str, Any], issue_b: dict[str, Any]) -> float:
+def _file_proximity_score(issue_a: ParsedIssue, issue_b: ParsedIssue) -> float:
     """Score how closely two issues are related by file locality.
 
     Returns a value between 0.0 and 1.0:
@@ -429,7 +429,7 @@ def _file_proximity_score(issue_a: dict[str, Any], issue_b: dict[str, Any]) -> f
     return 0.0
 
 
-def _sort_by_file_proximity(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _sort_by_file_proximity(issues: list[ParsedIssue]) -> list[ParsedIssue]:
     """Re-order issues within a family group so file-proximate issues are adjacent.
 
     Uses a greedy nearest-neighbour approach: start with the first issue,
@@ -439,7 +439,7 @@ def _sort_by_file_proximity(issues: list[dict[str, Any]]) -> list[dict[str, Any]
     if len(issues) <= 1:
         return list(issues)
     remaining = list(issues)
-    ordered: list[dict[str, Any]] = [remaining.pop(0)]
+    ordered: list[ParsedIssue] = [remaining.pop(0)]
     while remaining:
         last = ordered[-1]
         best_idx = 0
@@ -456,8 +456,8 @@ def _sort_by_file_proximity(issues: list[dict[str, Any]]) -> list[dict[str, Any]
 
 
 def batch_issues(
-    issues: list[dict[str, Any]], batch_size: int = 5, max_batches: int = 10
-) -> list[dict[str, Any]]:
+    issues: list[ParsedIssue], batch_size: int = 5, max_batches: int = 10
+) -> list[Batch]:
     """Group issues into batches by CWE family with file-proximity awareness.
 
     Within each CWE family, issues are re-ordered so that file-proximate
@@ -474,7 +474,7 @@ def batch_issues(
     issue above the severity threshold is left unaddressed.  Cross-family
     batches carry multiple playbooks.
     """
-    family_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    family_groups: dict[str, list[ParsedIssue]] = defaultdict(list)
     for issue in issues:
         family_groups[issue["cwe_family"]].append(issue)
 
@@ -487,7 +487,7 @@ def batch_issues(
 
     sorted_families = sorted(family_groups.keys(), key=lambda f: -family_severity[f])
 
-    batches: list[dict[str, Any]] = []
+    batches: list[Batch] = []
     batched_issue_ids: set[int] = set()
 
     for family in sorted_families:
@@ -560,8 +560,8 @@ def batch_issues(
 
 
 def generate_summary(
-    issues: list[dict[str, Any]],
-    batches: list[dict[str, Any]],
+    issues: list[ParsedIssue],
+    batches: list[Batch],
     total_raw: int = 0,
     dedup_removed: int = 0,
 ) -> str:
@@ -640,7 +640,7 @@ def _read_source_line(target_dir: str, file_path: str, line_number: int) -> str:
 
 
 def compute_fingerprint(
-    issue: dict[str, Any], target_dir: str = ""
+    issue: ParsedIssue, target_dir: str = ""
 ) -> str:
     """Compute a stable fingerprint for an issue across runs.
 
@@ -692,10 +692,10 @@ def compute_fingerprint(
 
 
 def assign_issue_ids(
-    issues: list[dict[str, Any]],
+    issues: list[ParsedIssue],
     run_number: str = "",
     id_prefix: str = "",
-) -> list[dict[str, Any]]:
+) -> list[ParsedIssue]:
     """Assign a unique ID and stable fingerprint to each issue.
 
     The run-specific ID uses the format ``CQLF-R{run}-{seq}`` so IDs are
@@ -746,7 +746,7 @@ def main() -> None:
         print(f"ERROR: No SARIF files found in {sarif_input}")
         sys.exit(1)
 
-    all_issues: list[dict[str, Any]] = []
+    all_issues: list[ParsedIssue] = []
     for sf in sorted(sarif_files):
         print(f"Parsing SARIF file: {sf}")
         all_issues.extend(parse_sarif(sf))
