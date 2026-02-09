@@ -6,6 +6,11 @@ import requests
 
 from config import DEVIN_API_BASE, devin_headers
 
+try:
+    from devin_api import clean_session_id
+except ImportError:
+    from scripts.devin_api import clean_session_id
+
 
 def _extract_structured_output(data: dict) -> dict:
     so = data.get("structured_output")
@@ -45,7 +50,7 @@ def poll_devin_sessions_db(
             updated.append(s)
             continue
         try:
-            clean_sid = sid.replace("devin-", "") if sid.startswith("devin-") else sid
+            clean_sid = clean_session_id(sid)
             resp = requests.get(
                 f"{DEVIN_API_BASE}/sessions/{clean_sid}",
                 headers=devin_headers(),

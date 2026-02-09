@@ -8,41 +8,39 @@ import subprocess
 from flask import Blueprint, jsonify, request as flask_request
 
 from config import RUNS_DIR
-from database import get_connection, init_db, query_issues, load_orchestrator_state, is_orchestrator_state_empty, save_orchestrator_state
+from database import db_connection, get_connection, init_db, query_issues, load_orchestrator_state, is_orchestrator_state_empty, save_orchestrator_state
 from verification import load_verification_records, build_fingerprint_fix_map
 from helpers import require_api_key, _audit, _paginate, _get_pagination
 from extensions import limiter
+from routes.registry import _load_registry as _load_orchestrator_registry, _save_registry as _save_orchestrator_registry, REGISTRY_PATH as _ORCHESTRATOR_REGISTRY_PATH
 
 orchestrator_bp = Blueprint("orchestrator", __name__)
 
 _ORCHESTRATOR_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / "scripts"
 _ORCHESTRATOR_STATE_PATH = pathlib.Path(__file__).resolve().parent.parent / "orchestrator_state.json"
-_ORCHESTRATOR_REGISTRY_PATH = pathlib.Path(__file__).resolve().parent.parent.parent / "repo_registry.json"
 
 
 def _load_orchestrator_state() -> dict:
-    conn = get_connection()
-    try:
-        init_db(conn)
-        if is_orchestrator_state_empty(conn):
-            if _ORCHESTRATOR_STATE_PATH.exists():
-                try:
-                    with open(_ORCHESTRATOR_STATE_PATH) as f:
-                        data = json.load(f)
-                    save_orchestrator_state(conn, data)
-                except (json.JSONDecodeError, OSError):
-                    pass
-        return load_orchestrator_state(conn)
-    except Exception:
-        return {
-            "last_cycle": None,
-            "rate_limiter": {},
-            "dispatch_history": {},
-            "objective_progress": [],
-            "scan_schedule": {},
-        }
-    finally:
-        conn.close()
+    with db_connection() as conn:
+        try:
+            init_db(conn)
+            if is_orchestrator_state_empty(conn):
+                if _ORCHESTRATOR_STATE_PATH.exists():
+                    try:
+                        with open(_ORCHESTRATOR_STATE_PATH) as f:
+                            data = json.load(f)
+                        save_orchestrator_state(conn, data)
+                    except (json.JSONDecodeError, OSError):
+                        pass
+            return load_orchestrator_state(conn)
+        except Exception:
+            return {
+                "last_cycle": None,
+                "rate_limiter": {},
+                "dispatch_history": {},
+                "objective_progress": [],
+                "scan_schedule": {},
+            }
 
 
 def _serialize_orch_config(orch_config: dict) -> dict:
@@ -56,12 +54,6 @@ def _serialize_orch_config(orch_config: dict) -> dict:
         "alert_severities": orch_config.get("alert_severities", ["critical", "high"]),
     }
 
-
-def _load_orchestrator_registry() -> dict:
-    if not _ORCHESTRATOR_REGISTRY_PATH.exists():
-        return {"version": "2.0", "defaults": {}, "orchestrator": {}, "repos": []}
-    with open(_ORCHESTRATOR_REGISTRY_PATH) as f:
-        return json.load(f)
 
 
 @orchestrator_bp.route("/api/orchestrator/status")
@@ -300,9 +292,7 @@ def api_orchestrator_config_update():
             orch_config[key] = body[key]
 
     registry["orchestrator"] = orch_config
-    with open(_ORCHESTRATOR_REGISTRY_PATH, "w") as f:
-        json.dump(registry, f, indent=2)
-        f.write("\n")
+    _save_orchestrator_registry(registry)
 
     _audit("update_orchestrator_config", details=json.dumps({k: body[k] for k in allowed_keys if k in body}))
     return jsonify(_serialize_orch_config(orch_config))
@@ -310,8 +300,7 @@ def api_orchestrator_config_update():
 
 @orchestrator_bp.route("/api/orchestrator/fix-rates")
 def api_orchestrator_fix_rates():
-    conn = get_connection()
-    try:
+    with db_connection() as conn:
         issues = query_issues(conn)
         verification_records = load_verification_records(RUNS_DIR)
         fp_fix_map = build_fingerprint_fix_map(verification_records)
@@ -361,5 +350,3 @@ def api_orchestrator_fix_rates():
             "by_repo": _compute_rates(by_repo),
             "by_severity": _compute_rates(by_severity),
         })
-    finally:
-        conn.close()

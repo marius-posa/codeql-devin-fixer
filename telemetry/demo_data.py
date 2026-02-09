@@ -18,6 +18,11 @@ from datetime import datetime, timedelta, timezone
 
 from database import get_connection, init_db, insert_run, upsert_pr, save_orchestrator_state
 
+try:
+    from devin_api import clean_session_id
+except ImportError:
+    from scripts.devin_api import clean_session_id
+
 DEMO_DATA_DIR = pathlib.Path(__file__).parent / "demo_data"
 DEMO_MARKER_KEY = "demo_data_loaded"
 
@@ -164,8 +169,7 @@ def _pr_url(fork: str, num: int) -> str:
 
 
 def _session_url(sid: str) -> str:
-    clean = sid.replace("devin-", "")
-    return f"https://app.devin.ai/sessions/{clean}"
+    return f"https://app.devin.ai/sessions/{clean_session_id(sid)}"
 
 
 def _generate_issues_for_run(

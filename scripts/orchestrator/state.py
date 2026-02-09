@@ -29,6 +29,7 @@ if str(_TELEMETRY_DIR) not in sys.path:
 
 from database import get_connection, init_db, is_db_empty, query_all_sessions, query_all_prs, query_issues  # noqa: E402
 from database import load_orchestrator_state, save_orchestrator_state, is_orchestrator_state_empty  # noqa: E402
+from devin_api import clean_session_id  # noqa: E402
 from migrate_json_to_sqlite import migrate_json_files  # noqa: E402
 from issue_tracking import _parse_ts  # noqa: E402
 from verification import load_verification_records, build_fingerprint_fix_map  # noqa: E402
@@ -290,7 +291,7 @@ def _collect_pr_ids(
             continue
         if s.get("pr_url") == pr_url:
             ids.update(s.get("issue_ids", []))
-        clean_sid = sid.replace("devin-", "") if sid.startswith("devin-") else sid
+        clean_sid = clean_session_id(sid)
         if session_id and clean_sid == session_id:
             ids.update(s.get("issue_ids", []))
     return ids

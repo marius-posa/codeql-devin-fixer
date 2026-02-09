@@ -60,6 +60,10 @@ except ImportError:
     jinja2 = None  # type: ignore[assignment]
 
 try:
+    from devin_api import (
+        DEVIN_API_BASE, MAX_RETRIES, TERMINAL_STATUSES, clean_session_id,
+        headers as devin_headers, request_with_retry,
+    )
     from fix_learning import CWE_FIX_HINTS, FixLearning
     from github_utils import validate_repo_url
     from knowledge import build_knowledge_context, store_fix_knowledge
@@ -73,6 +77,10 @@ try:
     from retry_feedback import process_retry_batch
     from retry_utils import exponential_backoff_delay
 except ImportError:
+    from scripts.devin_api import (
+        DEVIN_API_BASE, MAX_RETRIES, TERMINAL_STATUSES, clean_session_id,
+        headers as devin_headers, request_with_retry,
+    )
     from scripts.fix_learning import CWE_FIX_HINTS, FixLearning
     from scripts.github_utils import validate_repo_url
     from scripts.knowledge import build_knowledge_context, store_fix_knowledge
@@ -87,10 +95,6 @@ except ImportError:
     from scripts.retry_utils import exponential_backoff_delay
 
 logger = setup_logging(__name__)
-
-DEVIN_API_BASE = "https://api.devin.ai/v1"
-
-MAX_RETRIES = 3
 
 
 def _load_prompt_template(template_path: str) -> "jinja2.Template | None":
@@ -466,11 +470,6 @@ def create_devin_session(
     playbook_id: str = "",
 ) -> dict:
     """POST to the Devin API to create a new fix session with retry logic."""
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-
     issue_ids = [iss.get("id", "") for iss in batch.get("issues", []) if iss.get("id")]
     ids_tag = ",".join(issue_ids[:6]) if issue_ids else f"batch-{batch['batch_id']}"
 
@@ -509,25 +508,7 @@ def create_devin_session(
     if playbook_id:
         payload["playbook_id"] = playbook_id
 
-    last_err = None
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            resp = requests.post(
-                f"{DEVIN_API_BASE}/sessions",
-                headers=headers,
-                json=payload,
-                timeout=30,
-            )
-            resp.raise_for_status()
-            return resp.json()
-        except requests.exceptions.RequestException as e:
-            last_err = e
-            if attempt < MAX_RETRIES:
-                delay = exponential_backoff_delay(attempt)
-                logger.warning("Retry %d/%d after error: %s (waiting %.1fs)",
-                               attempt, MAX_RETRIES, e, delay)
-                time.sleep(delay)
-    raise last_err  # type: ignore[misc]
+    return request_with_retry("POST", f"{DEVIN_API_BASE}/sessions", api_key, payload)
 
 
 SEVERITY_ORDER = ["critical", "high", "medium", "low"]
@@ -564,13 +545,12 @@ def poll_sessions_until_done(
     timeout: int = 3600,
 ) -> list[DispatchSession]:
     """Poll Devin sessions until all are finished or timeout is reached."""
-    terminal_statuses = {"finished", "stopped", "error", "failed"}
     deadline = time.time() + timeout
 
     while time.time() < deadline:
         pending = [
             s for s in sessions
-            if s["status"] not in terminal_statuses
+            if s["status"] not in TERMINAL_STATUSES
             and s["session_id"]
             and s["session_id"] != "dry-run"
         ]
@@ -578,12 +558,11 @@ def poll_sessions_until_done(
             break
 
         for s in pending:
-            sid = s["session_id"]
-            clean_sid = sid.replace("devin-", "") if sid.startswith("devin-") else sid
+            clean_sid = clean_session_id(s["session_id"])
             try:
                 resp = requests.get(
                     f"{DEVIN_API_BASE}/sessions/{clean_sid}",
-                    headers={"Authorization": f"Bearer {api_key}"},
+                    headers=devin_headers(api_key),
                     timeout=15,
                 )
                 if resp.status_code == 200:

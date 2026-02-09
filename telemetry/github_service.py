@@ -6,6 +6,11 @@ import requests
 
 from config import gh_headers
 
+try:
+    from devin_api import clean_session_id
+except ImportError:
+    from scripts.devin_api import clean_session_id
+
 
 def match_pr_to_session(pr_body: str, session_ids: set[str]) -> str:
     for sid in session_ids:
@@ -94,7 +99,7 @@ def link_prs_to_sessions_db(conn: sqlite3.Connection) -> None:
     ).fetchall()
     for s in sessions:
         sid = s["session_id"]
-        clean = sid.replace("devin-", "") if sid.startswith("devin-") else sid
+        clean = clean_session_id(sid)
         pr_url = pr_by_session.get(clean, "")
         if not pr_url:
             iid_rows = conn.execute(
