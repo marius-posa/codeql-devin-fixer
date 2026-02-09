@@ -1,0 +1,43 @@
+{
+  "target_repo": "https://github.com/acme-corp/web-platform",
+  "fork_url": "https://github.com/acme-corp-forks/web-platform",
+  "run_number": 7,
+  "run_id": "50608951738",
+  "run_url": "https://github.com/acme-corp/codeql-devin-fixer/actions/runs/77510049482",
+  "run_label": "run-7-2026-01-04-150100",
+  "timestamp": "2026-01-04T15:01:00+00:00",
+  "issues_found": 1,
+  "severity_breakdown": {
+    "medium": 1
+  },
+  "category_breakdown": {
+    "crypto": 1
+  },
+  "batches_created": 1,
+  "sessions": [
+    {
+      "session_id": "devin-67bf9799378e4d58a2b20f32768a093c",
+      "session_url": "https://app.devin.ai/sessions/67bf9799378e4d58a2b20f32768a093c",
+      "batch_id": 1,
+      "status": "error",
+      "issue_ids": [
+        "ISSUE-007-001"
+      ],
+      "pr_url": ""
+    }
+  ],
+  "issue_fingerprints": [
+    {
+      "id": "ISSUE-007-001",
+      "fingerprint": "90fb50e32c98706f3f81df1bacb287f7",
+      "rule_id": "js/weak-crypto",
+      "severity_tier": "medium",
+      "cwe_family": "crypto",
+      "file": "src/auth/token_manager.py",
+      "start_line": 94,
+      "description": "Potential crypto vulnerability in token_manager.py",
+      "resolution": "",
+      "code_churn": 3
+    }
+  ]
+}

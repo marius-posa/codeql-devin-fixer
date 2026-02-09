@@ -1,0 +1,372 @@
+[
+  {
+    "pr_number": 1,
+    "title": "fix: resolve weak crypto vulnerability",
+    "html_url": "https://github.com/acme-corp-forks/web-platform/pull/1",
+    "state": "open",
+    "merged": false,
+    "created_at": "2025-11-04T17:39:00+00:00",
+    "repo": "https://github.com/acme-corp-forks/web-platform",
+    "user": "devin-ai-integration[bot]",
+    "session_id": "devin-702c538f6ea24aceb1997abeceadcc14",
+    "issue_ids": [
+      "ISSUE-001-001",
+      "ISSUE-001-002",
+      "ISSUE-001-003"
+    ]
+  },
+  {
+    "pr_number": 2,
+    "title": "fix: resolve XSS vulnerability",
+    "html_url": "https://github.com/acme-corp-forks/web-platform/pull/2",
+    "state": "closed",
+    "merged": true,
+    "created_at": "2025-11-12T10:06:00+00:00",
+    "repo": "https://github.com/acme-corp-forks/web-platform",
+    "user": "devin-ai-integration[bot]",
+    "session_id": "devin-b1ac631f59e74e3a9cc2c0b76188dda3",
+    "issue_ids": [
+      "ISSUE-002-001"
+    ]
+  },
+  {
+    "pr_number": 3,
+    "title": "fix: resolve SSRF vulnerability",
+    "html_url": "https://github.com/acme-corp-forks/web-platform/pull/3",
+    "state": "closed",
+    "merged": false,
+    "created_at": "2025-12-24T09:38:00+00:00",
+    "repo": "https://github.com/acme-corp-forks/web-platform",
+    "user": "devin-ai-integration[bot]",
+    "session_id": "devin-17d1067d81644ff491360a4f84ed5e67",
+    "issue_ids": [
+      "ISSUE-005-001"
+    ]
+  },
+  {
+    "pr_number": 4,
+    "title": "fix: resolve weak crypto vulnerability",
+    "html_url": "https://github.com/acme-corp-forks/web-platform/pull/4",
+    "state": "closed",
+    "merged": true,
+    "created_at": "2026-01-11T09:55:00+00:00",
+    "repo": "https://github.com/acme-corp-forks/web-platform",
+    "user": "devin-ai-integration[bot]",
+    "session_id": "devin-38101e842bc44063b90cb3b7ee833fda",
+    "issue_ids": [
+      "ISSUE-009-001"
+    ]
+  },
+  {
+    "pr_number": 5,
+    "title": "fix: resolve SQL injection vulnerability",
+    "html_url": "https://github.com/acme-corp-forks/web-platform/pull/5",
+    "state": "closed",
+    "merged": true,
+    "created_at": "2026-01-23T18:17:00+00:00",
+    "repo": "https://github.com/acme-corp-forks/web-platform",
+    "user": "devin-ai-integration[bot]",
+    "session_id": "devin-eac912054c0c426d9b60ca5230791608",
+    "issue_ids": [
+      "ISSUE-010-001"
+    ]
+  },
+  {
+    "pr_number": 6,
+    "title": "fix: resolve SSRF vulnerability",
+    "html_url": "https://github.com/acme-corp-forks/api-gateway/pull/6",
+    "state": "closed",
+    "merged": false,
+    "created_at": "2025-11-10T15:02:00+00:00",
+    "repo": "https://github.com/acme-corp-forks/api-gateway",
+    "user": "devin-ai-integration[bot]",
+    "session_id": "devin-7a1e7b82c1964671956b6411545cab63",
+    "issue_ids": [
+      "ISSUE-001-001",
+      "ISSUE-001-002",
+      "ISSUE-001-003",
+      "ISSUE-001-004"
+    ]
+  },
+  {
+    "pr_number": 7,
+    "title": "fix: resolve info disclosure vulnerability",
+    "html_url": "https://github.com/acme-corp-forks/api-gateway/pull/7",
+    "state": "closed",
+    "merged": true,
+    "created_at": "2025-11-21T14:35:00+00:00",
+    "repo": "https://github.com/acme-corp-forks/api-gateway",
+    "user": "devin-ai-integration[bot]",
+    "session_id": "devin-06d6013c02144af3b062f8113d0b184c",
+    "issue_ids": [
+      "ISSUE-002-001",
+      "ISSUE-002-002",
+      "ISSUE-002-003"
+    ]
+  },
+  {
+    "pr_number": 8,
+    "title": "fix: resolve path traversal vulnerability",
+    "html_url": "https://github.com/acme-corp-forks/api-gateway/pull/8",
+    "state": "open",
+    "merged": false,
+    "created_at": "2025-12-02T12:14:00+00:00",
+    "repo": "https://github.com/acme-corp-forks/api-gateway",
+    "user": "devin-ai-integration[bot]",
+    "session_id": "devin-1e72c192f9a849c9945d26716e22ef57",
+    "issue_ids": [
+      "ISSUE-003-001",
+      "ISSUE-003-002",
+      "ISSUE-003-003"
+    ]
+  },
+  {
+    "pr_number": 9,
+    "title": "fix: resolve weak crypto vulnerability",
+    "html_url": "https://github.com/acme-corp-forks/api-gateway/pull/9",
+    "state": "closed",
+    "merged": false,
+    "created_at": "2025-12-15T08:10:00+00:00",
+    "repo": "https://github.com/acme-corp-forks/api-gateway",
+    "user": "devin-ai-integration[bot]",
+    "session_id": "devin-6da912c6c63a44d0b9294dcdcc4ee546",
+    "issue_ids": [
+      "ISSUE-004-001",
+      "ISSUE-004-002",
+      "ISSUE-004-003",
+      "ISSUE-004-004"
+    ]
+  },
+  {
+    "pr_number": 10,
+    "title": "fix: resolve SSRF vulnerability",
+    "html_url": "https://github.com/acme-corp-forks/api-gateway/pull/10",
+    "state": "closed",
+    "merged": false,
+    "created_at": "2026-01-18T18:51:00+00:00",
+    "repo": "https://github.com/acme-corp-forks/api-gateway",
+    "user": "devin-ai-integration[bot]",
+    "session_id": "devin-cb7b9e370cd54502a3ea65dc2e385e89",
+    "issue_ids": [
+      "ISSUE-007-001",
+      "ISSUE-007-002"
+    ]
+  },
+  {
+    "pr_number": 11,
+    "title": "fix: resolve auth bypass vulnerability",
+    "html_url": "https://github.com/acme-corp-forks/mobile-backend/pull/11",
+    "state": "closed",
+    "merged": true,
+    "created_at": "2025-11-03T16:08:00+00:00",
+    "repo": "https://github.com/acme-corp-forks/mobile-backend",
+    "user": "devin-ai-integration[bot]",
+    "session_id": "devin-9f22ab4018a44f2bb50117570cfe3bb2",
+    "issue_ids": [
+      "ISSUE-001-005",
+      "ISSUE-001-006",
+      "ISSUE-001-007",
+      "ISSUE-001-008"
+    ]
+  },
+  {
+    "pr_number": 12,
+    "title": "fix: resolve deserialization vulnerability",
+    "html_url": "https://github.com/acme-corp-forks/mobile-backend/pull/12",
+    "state": "closed",
+    "merged": false,
+    "created_at": "2025-11-03T18:25:00+00:00",
+    "repo": "https://github.com/acme-corp-forks/mobile-backend",
+    "user": "devin-ai-integration[bot]",
+    "session_id": "devin-a405f5fec685433d8a4428e988982284",
+    "issue_ids": [
+      "ISSUE-002-001"
+    ]
+  },
+  {
+    "pr_number": 13,
+    "title": "fix: resolve XSS vulnerability",
+    "html_url": "https://github.com/acme-corp-forks/mobile-backend/pull/13",
+    "state": "closed",
+    "merged": true,
+    "created_at": "2025-11-04T09:41:00+00:00",
+    "repo": "https://github.com/acme-corp-forks/mobile-backend",
+    "user": "devin-ai-integration[bot]",
+    "session_id": "devin-9b7fd223682640bc916714dc39144511",
+    "issue_ids": [
+      "ISSUE-003-001",
+      "ISSUE-003-002",
+      "ISSUE-003-003"
+    ]
+  },
+  {
+    "pr_number": 14,
+    "title": "fix: resolve auth bypass vulnerability",
+    "html_url": "https://github.com/acme-corp-forks/mobile-backend/pull/14",
+    "state": "closed",
+    "merged": true,
+    "created_at": "2026-01-23T07:46:00+00:00",
+    "repo": "https://github.com/acme-corp-forks/mobile-backend",
+    "user": "devin-ai-integration[bot]",
+    "session_id": "devin-12c39e216b944e1ca61ed4cea0957509",
+    "issue_ids": [
+      "ISSUE-008-001",
+      "ISSUE-008-002"
+    ]
+  },
+  {
+    "pr_number": 15,
+    "title": "fix: resolve XSS vulnerability",
+    "html_url": "https://github.com/acme-corp-forks/mobile-backend/pull/15",
+    "state": "closed",
+    "merged": true,
+    "created_at": "2026-01-23T08:39:00+00:00",
+    "repo": "https://github.com/acme-corp-forks/mobile-backend",
+    "user": "devin-ai-integration[bot]",
+    "session_id": "devin-faf7005193a6410284c0806cd7cce342",
+    "issue_ids": [
+      "ISSUE-009-001"
+    ]
+  },
+  {
+    "pr_number": 16,
+    "title": "fix: resolve info disclosure vulnerability",
+    "html_url": "https://github.com/acme-corp-forks/data-pipeline/pull/16",
+    "state": "closed",
+    "merged": true,
+    "created_at": "2025-11-01T11:05:00+00:00",
+    "repo": "https://github.com/acme-corp-forks/data-pipeline",
+    "user": "devin-ai-integration[bot]",
+    "session_id": "devin-95f32a729b6c4c2eb95fad16de73b06c",
+    "issue_ids": [
+      "ISSUE-001-007",
+      "ISSUE-001-008",
+      "ISSUE-001-009",
+      "ISSUE-001-010",
+      "ISSUE-001-011",
+      "ISSUE-001-012"
+    ]
+  },
+  {
+    "pr_number": 17,
+    "title": "fix: resolve XSS vulnerability",
+    "html_url": "https://github.com/acme-corp-forks/data-pipeline/pull/17",
+    "state": "closed",
+    "merged": false,
+    "created_at": "2025-11-25T16:32:00+00:00",
+    "repo": "https://github.com/acme-corp-forks/data-pipeline",
+    "user": "devin-ai-integration[bot]",
+    "session_id": "devin-ee5c39883fa94a83a7d4493ee4c61947",
+    "issue_ids": [
+      "ISSUE-003-001",
+      "ISSUE-003-002"
+    ]
+  },
+  {
+    "pr_number": 18,
+    "title": "fix: resolve auth bypass vulnerability",
+    "html_url": "https://github.com/acme-corp-forks/data-pipeline/pull/18",
+    "state": "closed",
+    "merged": true,
+    "created_at": "2025-12-24T12:33:00+00:00",
+    "repo": "https://github.com/acme-corp-forks/data-pipeline",
+    "user": "devin-ai-integration[bot]",
+    "session_id": "devin-679dffc8509e48048602bab3eacc560f",
+    "issue_ids": [
+      "ISSUE-005-001",
+      "ISSUE-005-002"
+    ]
+  },
+  {
+    "pr_number": 19,
+    "title": "fix: resolve weak crypto vulnerability",
+    "html_url": "https://github.com/acme-corp-forks/data-pipeline/pull/19",
+    "state": "closed",
+    "merged": true,
+    "created_at": "2026-01-04T11:19:00+00:00",
+    "repo": "https://github.com/acme-corp-forks/data-pipeline",
+    "user": "devin-ai-integration[bot]",
+    "session_id": "devin-4fc37752e86c416a9446b4dc3da38973",
+    "issue_ids": [
+      "ISSUE-006-001"
+    ]
+  },
+  {
+    "pr_number": 20,
+    "title": "fix: resolve XSS vulnerability",
+    "html_url": "https://github.com/acme-corp-forks/data-pipeline/pull/20",
+    "state": "closed",
+    "merged": true,
+    "created_at": "2026-01-24T14:44:00+00:00",
+    "repo": "https://github.com/acme-corp-forks/data-pipeline",
+    "user": "devin-ai-integration[bot]",
+    "session_id": "devin-afd2761a0cb54bdda69723cc1cb90bf5",
+    "issue_ids": [
+      "ISSUE-007-001",
+      "ISSUE-007-002"
+    ]
+  },
+  {
+    "pr_number": 21,
+    "title": "fix: resolve weak crypto vulnerability",
+    "html_url": "https://github.com/acme-corp-forks/internal-tools/pull/21",
+    "state": "closed",
+    "merged": true,
+    "created_at": "2025-11-07T18:36:00+00:00",
+    "repo": "https://github.com/acme-corp-forks/internal-tools",
+    "user": "devin-ai-integration[bot]",
+    "session_id": "devin-7d4cc8f4d1ba421eba6a90e61eb71374",
+    "issue_ids": [
+      "ISSUE-001-009",
+      "ISSUE-001-010",
+      "ISSUE-001-011",
+      "ISSUE-001-012"
+    ]
+  },
+  {
+    "pr_number": 22,
+    "title": "fix: resolve info disclosure vulnerability",
+    "html_url": "https://github.com/acme-corp-forks/internal-tools/pull/22",
+    "state": "closed",
+    "merged": true,
+    "created_at": "2025-12-02T09:19:00+00:00",
+    "repo": "https://github.com/acme-corp-forks/internal-tools",
+    "user": "devin-ai-integration[bot]",
+    "session_id": "devin-b371bf195c3d46c38a86f35383a164e7",
+    "issue_ids": [
+      "ISSUE-002-004",
+      "ISSUE-002-005",
+      "ISSUE-002-006"
+    ]
+  },
+  {
+    "pr_number": 23,
+    "title": "fix: resolve weak crypto vulnerability",
+    "html_url": "https://github.com/acme-corp-forks/internal-tools/pull/23",
+    "state": "closed",
+    "merged": false,
+    "created_at": "2026-01-10T10:17:00+00:00",
+    "repo": "https://github.com/acme-corp-forks/internal-tools",
+    "user": "devin-ai-integration[bot]",
+    "session_id": "devin-03c4cb573dc94f8a909300202ad61596",
+    "issue_ids": [
+      "ISSUE-003-001",
+      "ISSUE-003-002",
+      "ISSUE-003-003"
+    ]
+  },
+  {
+    "pr_number": 24,
+    "title": "fix: resolve SQL injection vulnerability",
+    "html_url": "https://github.com/acme-corp-forks/internal-tools/pull/24",
+    "state": "closed",
+    "merged": true,
+    "created_at": "2026-01-12T10:02:00+00:00",
+    "repo": "https://github.com/acme-corp-forks/internal-tools",
+    "user": "devin-ai-integration[bot]",
+    "session_id": "devin-38ab3e45cc304c34b3f726e68615cd91",
+    "issue_ids": [
+      "ISSUE-004-001"
+    ]
+  }
+]

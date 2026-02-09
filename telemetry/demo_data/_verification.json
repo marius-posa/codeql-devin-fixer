@@ -1,0 +1,197 @@
+[
+  {
+    "pr_url": "https://github.com/acme-corp-forks/web-platform/pull/2",
+    "pr_number": 2,
+    "session_id": "devin-b1ac631f59e74e3a9cc2c0b76188dda3",
+    "verified_at": "2025-11-12T10:14:00+00:00",
+    "label": "verified-fix",
+    "summary": {
+      "total_targeted": 1,
+      "fixed_count": 1,
+      "still_present": 0,
+      "fix_rate": 100.0
+    }
+  },
+  {
+    "pr_url": "https://github.com/acme-corp-forks/web-platform/pull/4",
+    "pr_number": 4,
+    "session_id": "devin-38101e842bc44063b90cb3b7ee833fda",
+    "verified_at": "2026-01-11T13:45:00+00:00",
+    "label": "verified-fix",
+    "summary": {
+      "total_targeted": 1,
+      "fixed_count": 1,
+      "still_present": 0,
+      "fix_rate": 100.0
+    }
+  },
+  {
+    "pr_url": "https://github.com/acme-corp-forks/web-platform/pull/5",
+    "pr_number": 5,
+    "session_id": "devin-eac912054c0c426d9b60ca5230791608",
+    "verified_at": "2026-01-24T05:34:00+00:00",
+    "label": "verified-fix",
+    "summary": {
+      "total_targeted": 1,
+      "fixed_count": 1,
+      "still_present": 0,
+      "fix_rate": 100.0
+    }
+  },
+  {
+    "pr_url": "https://github.com/acme-corp-forks/api-gateway/pull/7",
+    "pr_number": 7,
+    "session_id": "devin-06d6013c02144af3b062f8113d0b184c",
+    "verified_at": "2025-11-22T01:53:00+00:00",
+    "label": "codeql-partial-fix",
+    "summary": {
+      "total_targeted": 3,
+      "fixed_count": 1,
+      "still_present": 2,
+      "fix_rate": 33.3
+    }
+  },
+  {
+    "pr_url": "https://github.com/acme-corp-forks/mobile-backend/pull/11",
+    "pr_number": 11,
+    "session_id": "devin-9f22ab4018a44f2bb50117570cfe3bb2",
+    "verified_at": "2025-11-03T17:09:00+00:00",
+    "label": "codeql-partial-fix",
+    "summary": {
+      "total_targeted": 4,
+      "fixed_count": 3,
+      "still_present": 1,
+      "fix_rate": 75.0
+    }
+  },
+  {
+    "pr_url": "https://github.com/acme-corp-forks/mobile-backend/pull/13",
+    "pr_number": 13,
+    "session_id": "devin-9b7fd223682640bc916714dc39144511",
+    "verified_at": "2025-11-04T10:12:00+00:00",
+    "label": "codeql-partial-fix",
+    "summary": {
+      "total_targeted": 3,
+      "fixed_count": 1,
+      "still_present": 2,
+      "fix_rate": 33.3
+    }
+  },
+  {
+    "pr_url": "https://github.com/acme-corp-forks/mobile-backend/pull/14",
+    "pr_number": 14,
+    "session_id": "devin-12c39e216b944e1ca61ed4cea0957509",
+    "verified_at": "2026-01-23T10:48:00+00:00",
+    "label": "codeql-partial-fix",
+    "summary": {
+      "total_targeted": 2,
+      "fixed_count": 1,
+      "still_present": 1,
+      "fix_rate": 50.0
+    }
+  },
+  {
+    "pr_url": "https://github.com/acme-corp-forks/mobile-backend/pull/15",
+    "pr_number": 15,
+    "session_id": "devin-faf7005193a6410284c0806cd7cce342",
+    "verified_at": "2026-01-23T17:49:00+00:00",
+    "label": "verified-fix",
+    "summary": {
+      "total_targeted": 1,
+      "fixed_count": 1,
+      "still_present": 0,
+      "fix_rate": 100.0
+    }
+  },
+  {
+    "pr_url": "https://github.com/acme-corp-forks/data-pipeline/pull/16",
+    "pr_number": 16,
+    "session_id": "devin-95f32a729b6c4c2eb95fad16de73b06c",
+    "verified_at": "2025-11-01T14:46:00+00:00",
+    "label": "codeql-partial-fix",
+    "summary": {
+      "total_targeted": 6,
+      "fixed_count": 4,
+      "still_present": 2,
+      "fix_rate": 66.7
+    }
+  },
+  {
+    "pr_url": "https://github.com/acme-corp-forks/data-pipeline/pull/18",
+    "pr_number": 18,
+    "session_id": "devin-679dffc8509e48048602bab3eacc560f",
+    "verified_at": "2025-12-24T23:59:00+00:00",
+    "label": "codeql-partial-fix",
+    "summary": {
+      "total_targeted": 2,
+      "fixed_count": 1,
+      "still_present": 1,
+      "fix_rate": 50.0
+    }
+  },
+  {
+    "pr_url": "https://github.com/acme-corp-forks/data-pipeline/pull/19",
+    "pr_number": 19,
+    "session_id": "devin-4fc37752e86c416a9446b4dc3da38973",
+    "verified_at": "2026-01-04T14:52:00+00:00",
+    "label": "verified-fix",
+    "summary": {
+      "total_targeted": 1,
+      "fixed_count": 1,
+      "still_present": 0,
+      "fix_rate": 100.0
+    }
+  },
+  {
+    "pr_url": "https://github.com/acme-corp-forks/data-pipeline/pull/20",
+    "pr_number": 20,
+    "session_id": "devin-afd2761a0cb54bdda69723cc1cb90bf5",
+    "verified_at": "2026-01-24T18:55:00+00:00",
+    "label": "codeql-partial-fix",
+    "summary": {
+      "total_targeted": 2,
+      "fixed_count": 1,
+      "still_present": 1,
+      "fix_rate": 50.0
+    }
+  },
+  {
+    "pr_url": "https://github.com/acme-corp-forks/internal-tools/pull/21",
+    "pr_number": 21,
+    "session_id": "devin-7d4cc8f4d1ba421eba6a90e61eb71374",
+    "verified_at": "2025-11-07T19:21:00+00:00",
+    "label": "codeql-partial-fix",
+    "summary": {
+      "total_targeted": 4,
+      "fixed_count": 3,
+      "still_present": 1,
+      "fix_rate": 75.0
+    }
+  },
+  {
+    "pr_url": "https://github.com/acme-corp-forks/internal-tools/pull/22",
+    "pr_number": 22,
+    "session_id": "devin-b371bf195c3d46c38a86f35383a164e7",
+    "verified_at": "2025-12-02T11:50:00+00:00",
+    "label": "codeql-partial-fix",
+    "summary": {
+      "total_targeted": 3,
+      "fixed_count": 2,
+      "still_present": 1,
+      "fix_rate": 66.7
+    }
+  },
+  {
+    "pr_url": "https://github.com/acme-corp-forks/internal-tools/pull/24",
+    "pr_number": 24,
+    "session_id": "devin-38ab3e45cc304c34b3f726e68615cd91",
+    "verified_at": "2026-01-12T15:04:00+00:00",
+    "label": "verified-fix",
+    "summary": {
+      "total_targeted": 1,
+      "fixed_count": 1,
+      "still_present": 0,
+      "fix_rate": 100.0
+    }
+  }
+]

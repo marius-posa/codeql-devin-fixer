@@ -1,0 +1,43 @@
+{
+  "target_repo": "https://github.com/acme-corp/web-platform",
+  "fork_url": "https://github.com/acme-corp-forks/web-platform",
+  "run_number": 8,
+  "run_id": "33756005883",
+  "run_url": "https://github.com/acme-corp/codeql-devin-fixer/actions/runs/20771041378",
+  "run_label": "run-8-2026-01-09-073700",
+  "timestamp": "2026-01-09T07:37:00+00:00",
+  "issues_found": 1,
+  "severity_breakdown": {
+    "high": 1
+  },
+  "category_breakdown": {
+    "injection": 1
+  },
+  "batches_created": 1,
+  "sessions": [
+    {
+      "session_id": "devin-aacaa182321e425f8188046f4681110d",
+      "session_url": "https://app.devin.ai/sessions/aacaa182321e425f8188046f4681110d",
+      "batch_id": 1,
+      "status": "finished",
+      "issue_ids": [
+        "ISSUE-008-001"
+      ],
+      "pr_url": ""
+    }
+  ],
+  "issue_fingerprints": [
+    {
+      "id": "ISSUE-008-001",
+      "fingerprint": "2037ea67355b88012c4efcc3bbcd1f1d",
+      "rule_id": "js/sql-injection",
+      "severity_tier": "high",
+      "cwe_family": "injection",
+      "file": "src/services/QueryBuilder.java",
+      "start_line": 39,
+      "description": "Potential injection vulnerability in QueryBuilder.java",
+      "resolution": "",
+      "code_churn": 0
+    }
+  ]
+}

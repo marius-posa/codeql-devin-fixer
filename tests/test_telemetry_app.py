@@ -744,6 +744,105 @@ class TestRegistryRepoEndpoints:
             os.unlink(f.name)
 
 
+class TestDemoDataEndpoints:
+    def test_demo_data_status_returns_json(self, client):
+        resp = client.get("/api/demo-data")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "loaded" in data
+        assert data["loaded"] is False
+
+    def test_demo_data_load_requires_auth(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        resp = client.post("/api/demo-data")
+        assert resp.status_code == 401
+
+    def test_demo_data_load_and_clear_cycle(self, client):
+        resp = client.post("/api/demo-data")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["loaded"] is True
+        assert "stats" in data
+        assert data["stats"]["runs"] > 0
+
+        status_resp = client.get("/api/demo-data")
+        assert status_resp.get_json()["loaded"] is True
+
+        del_resp = client.delete("/api/demo-data")
+        assert del_resp.status_code == 200
+        del_data = del_resp.get_json()
+        assert del_data["loaded"] is False
+        assert del_data["stats"]["runs_deleted"] > 0
+
+    def test_demo_data_load_twice_returns_conflict(self, client):
+        client.post("/api/demo-data")
+        resp = client.post("/api/demo-data")
+        assert resp.status_code == 409
+        data = resp.get_json()
+        assert "error" in data
+
+    def test_demo_data_clear_requires_auth(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        resp = client.delete("/api/demo-data")
+        assert resp.status_code == 401
+
+    def test_demo_data_reset_requires_auth(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        resp = client.post("/api/demo-data/reset")
+        assert resp.status_code == 401
+
+    def test_demo_data_reset_regenerates(self, client):
+        resp = client.post("/api/demo-data/reset")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["loaded"] is True
+        assert data["stats"]["runs"] > 0
+
+    def test_demo_data_files_returns_json(self, client):
+        resp = client.get("/api/demo-data/files")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "runs" in data
+        assert isinstance(data["runs"], list)
+
+    def test_demo_data_files_update_requires_auth(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        resp = client.put("/api/demo-data/files", json={"runs": []})
+        assert resp.status_code == 401
+
+    def test_demo_data_files_update_requires_body(self, client):
+        resp = client.put("/api/demo-data/files")
+        assert resp.status_code == 400
+
+    def test_demo_data_files_update_requires_runs(self, client):
+        resp = client.put(
+            "/api/demo-data/files",
+            json={"prs": []},
+        )
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert "'runs' array is required" in data["error"]
+
+    def test_demo_data_files_update_saves(self, client):
+        resp = client.put(
+            "/api/demo-data/files",
+            json={
+                "runs": [{
+                    "run_number": 1,
+                    "run_label": "run-1",
+                    "timestamp": "2026-01-01T00:00:00Z",
+                    "target_repo": "https://github.com/test/repo",
+                    "issues_found": 0,
+                    "sessions": [],
+                }],
+                "prs": [],
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["saved"] is True
+
+
 class TestOrchestratorObjectives:
     def test_objectives_round_trip(self, client, monkeypatch):
         monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")

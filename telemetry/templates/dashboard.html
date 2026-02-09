@@ -17,6 +17,7 @@
       <button class="btn btn-primary" onclick="pollSessions()" id="btn-poll">Poll Sessions</button>
       <button class="btn btn-primary" onclick="openDispatchModal()" id="btn-dispatch" style="background:#1f6feb;border-color:#388bfd">Trigger Action</button>
       <a class="btn" href="/api/report/pdf" id="btn-pdf">PDF Report</a>
+      <button class="btn" id="btn-demo-toggle" onclick="toggleDemoData()" title="Toggle demo data" style="font-size:12px">Demo Data</button>
       <button class="density-toggle" id="density-toggle" title="Toggle compact mode">Compact</button>
       <button class="theme-toggle" id="theme-toggle"></button>
       <span id="user-info"></span>
@@ -160,6 +161,19 @@
 
   <div class="tab-content" id="tab-settings">
     <div class="panel">
+      <div class="panel-header">Demo Data</div>
+      <div class="panel-body" id="demo-data-panel">
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+          <span id="demo-status-text" style="font-size:13px;color:var(--text-muted)">Checking...</span>
+          <button class="btn btn-sm" id="btn-demo-load" onclick="loadDemoData()">Load Demo Data</button>
+          <button class="btn btn-sm" id="btn-demo-clear" onclick="clearDemoData()" style="background:var(--accent-red);border-color:var(--accent-red);color:#fff">Clear Demo Data</button>
+          <button class="btn btn-sm" id="btn-demo-reset" onclick="resetDemoData()">Regenerate</button>
+          <button class="btn btn-sm" id="btn-demo-edit" onclick="openDemoEditor()">Edit JSON</button>
+        </div>
+        <div id="demo-summary" style="margin-top:8px;font-size:12px;color:var(--text-muted)"></div>
+      </div>
+    </div>
+    <div class="panel">
       <div class="panel-header">Export &amp; Reports</div>
       <div class="panel-body">
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
@@ -299,6 +313,24 @@
     <div class="modal-footer">
       <button class="btn" onclick="_closeRepoEditModal()">Cancel</button>
       <button class="btn btn-primary" onclick="_submitRepoEdit()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="demo-editor-modal">
+  <div class="modal" style="max-width:900px">
+    <div class="modal-header">
+      <h2>Edit Demo Data</h2>
+      <button class="modal-close" onclick="closeDemoEditor()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="hint" style="margin-bottom:8px">Edit the raw JSON demo data below. Changes are saved to disk and reloaded into the database if demo data is currently active.</div>
+      <textarea class="form-input" id="demo-editor-textarea" rows="24" style="font-family:monospace;font-size:11px;white-space:pre;overflow:auto"></textarea>
+      <div class="dispatch-result" id="demo-editor-result"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeDemoEditor()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveDemoEditorData()">Save</button>
     </div>
   </div>
 </div>
@@ -1458,9 +1490,154 @@ async function checkConfig() {
   } catch (e) {}
 }
 
+let _demoLoaded = false;
+
+async function checkDemoDataStatus() {
+  try {
+    var res = await fetch(API + '/api/demo-data');
+    var data = await res.json();
+    _demoLoaded = data.loaded;
+    updateDemoUI(data);
+  } catch (e) {}
+}
+
+function updateDemoUI(data) {
+  var btn = document.getElementById('btn-demo-toggle');
+  var statusEl = document.getElementById('demo-status-text');
+  var loadBtn = document.getElementById('btn-demo-load');
+  var clearBtn = document.getElementById('btn-demo-clear');
+  if (btn) {
+    btn.style.background = data.loaded ? 'var(--accent-orange)' : '';
+    btn.style.borderColor = data.loaded ? 'var(--accent-orange)' : '';
+    btn.style.color = data.loaded ? '#fff' : '';
+    btn.title = data.loaded ? 'Demo data active - click to clear' : 'Click to load demo data';
+  }
+  if (loadBtn) loadBtn.style.display = data.loaded ? 'none' : '';
+  if (clearBtn) clearBtn.style.display = data.loaded ? '' : 'none';
+  if (statusEl) {
+    statusEl.textContent = data.loaded ? 'Demo data is loaded' : 'No demo data loaded';
+    statusEl.style.color = data.loaded ? 'var(--accent-green)' : 'var(--text-muted)';
+  }
+  var summaryEl = document.getElementById('demo-summary');
+  if (summaryEl && data.summary) {
+    var s = data.summary;
+    summaryEl.textContent = s.repos + ' repos, ' + s.runs + ' runs, ' + s.prs + ' PRs, ' + s.total_sessions + ' sessions (' + s.date_range + ')';
+  }
+}
+
+async function toggleDemoData() {
+  if (_demoLoaded) {
+    await clearDemoData();
+  } else {
+    await loadDemoData();
+  }
+}
+
+async function loadDemoData() {
+  var btn = document.getElementById('btn-demo-load');
+  if (btn) { btn.disabled = true; btn.textContent = 'Loading...'; }
+  setStatus('Loading demo data...');
+  try {
+    var res = await fetch(API + '/api/demo-data', { method: 'POST', headers: _authHeaders() });
+    var data = await res.json();
+    if (data.error) {
+      setStatus('Demo: ' + data.error);
+    } else {
+      setStatus('Demo data loaded: ' + data.stats.runs + ' runs, ' + data.stats.prs + ' PRs');
+    }
+    await checkDemoDataStatus();
+    await fetchAll();
+  } catch (e) {
+    setStatus('Error loading demo data: ' + e.message);
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Load Demo Data'; }
+}
+
+async function clearDemoData() {
+  var btn = document.getElementById('btn-demo-clear');
+  if (btn) { btn.disabled = true; btn.textContent = 'Clearing...'; }
+  setStatus('Clearing demo data...');
+  try {
+    var res = await fetch(API + '/api/demo-data', { method: 'DELETE', headers: _authHeaders() });
+    var data = await res.json();
+    setStatus('Demo data cleared: ' + data.stats.runs_deleted + ' runs removed');
+    await checkDemoDataStatus();
+    await fetchAll();
+  } catch (e) {
+    setStatus('Error clearing demo data: ' + e.message);
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Clear Demo Data'; }
+}
+
+async function resetDemoData() {
+  var btn = document.getElementById('btn-demo-reset');
+  if (btn) { btn.disabled = true; btn.textContent = 'Regenerating...'; }
+  setStatus('Regenerating demo data...');
+  try {
+    var res = await fetch(API + '/api/demo-data/reset', { method: 'POST', headers: _authHeaders() });
+    var data = await res.json();
+    setStatus('Demo data regenerated: ' + data.stats.runs + ' runs');
+    await checkDemoDataStatus();
+    await fetchAll();
+  } catch (e) {
+    setStatus('Error: ' + e.message);
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Regenerate'; }
+}
+
+async function openDemoEditor() {
+  setStatus('Loading demo data for editing...');
+  try {
+    var res = await fetch(API + '/api/demo-data/files');
+    var data = await res.json();
+    var modal = document.getElementById('demo-editor-modal');
+    if (modal) {
+      document.getElementById('demo-editor-textarea').value = JSON.stringify(data, null, 2);
+      modal.classList.add('active');
+    }
+  } catch (e) {
+    setStatus('Error loading demo data: ' + e.message);
+  }
+}
+
+function closeDemoEditor() {
+  var modal = document.getElementById('demo-editor-modal');
+  if (modal) modal.classList.remove('active');
+}
+
+async function saveDemoEditorData() {
+  var textarea = document.getElementById('demo-editor-textarea');
+  var resultEl = document.getElementById('demo-editor-result');
+  var parsed;
+  try {
+    parsed = JSON.parse(textarea.value);
+  } catch (e) {
+    if (resultEl) { resultEl.className = 'dispatch-result error'; resultEl.textContent = 'Invalid JSON: ' + e.message; }
+    return;
+  }
+  try {
+    var res = await fetch(API + '/api/demo-data/files', {
+      method: 'PUT',
+      headers: Object.assign({}, _authHeaders(), { 'Content-Type': 'application/json' }),
+      body: JSON.stringify(parsed),
+    });
+    var data = await res.json();
+    if (data.error) {
+      if (resultEl) { resultEl.className = 'dispatch-result error'; resultEl.textContent = data.error; }
+    } else {
+      if (resultEl) { resultEl.className = 'dispatch-result success'; resultEl.textContent = 'Saved' + (data.reloaded ? ' & reloaded into DB' : ''); }
+      await checkDemoDataStatus();
+      await fetchAll();
+    }
+  } catch (e) {
+    if (resultEl) { resultEl.className = 'dispatch-result error'; resultEl.textContent = e.message; }
+  }
+}
+
 async function init() {
   await checkConfig();
   renderUserInfo();
+  await checkDemoDataStatus();
   await fetchAll();
   if (configWarning) setStatus(configWarning);
   startLivePolling(30000);
