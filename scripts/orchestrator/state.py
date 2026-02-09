@@ -27,7 +27,7 @@ if str(_SCRIPTS_DIR) not in sys.path:
 if str(_TELEMETRY_DIR) not in sys.path:
     sys.path.insert(0, str(_TELEMETRY_DIR))
 
-from database import get_connection, init_db, insert_run, is_db_empty, query_all_sessions, query_all_prs, query_issues  # noqa: E402
+from database import get_connection, init_db, is_db_empty, query_all_sessions, query_all_prs, query_issues  # noqa: E402
 from migrate_json_to_sqlite import migrate_json_files  # noqa: E402
 from issue_tracking import _parse_ts  # noqa: E402
 from verification import load_verification_records, build_fingerprint_fix_map  # noqa: E402

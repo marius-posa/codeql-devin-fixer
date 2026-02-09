@@ -1,4 +1,4 @@
-"""Unit tests for scripts/orchestrator.py — orchestrator engine CLI."""
+"""Unit tests for scripts/orchestrator — orchestrator engine CLI."""
 
 import json
 import os
@@ -41,10 +41,8 @@ from scripts.orchestrator import (
 from scripts.fix_learning import FixLearning
 import database as database_mod
 from database import get_connection, init_db, insert_run
-import scripts.orchestrator as orchestrator_mod
 import scripts.orchestrator.state as orchestrator_state_mod
 import scripts.orchestrator.dispatcher as orchestrator_dispatcher_mod
-import scripts.orchestrator.scanner as orchestrator_scanner_mod
 
 
 @pytest.fixture
@@ -1044,7 +1042,6 @@ class TestScheduleIntervals:
         assert "monthly" in SCHEDULE_INTERVALS
 
     def test_ordering(self):
-        from datetime import timedelta
         assert SCHEDULE_INTERVALS["hourly"] < SCHEDULE_INTERVALS["daily"]
         assert SCHEDULE_INTERVALS["daily"] < SCHEDULE_INTERVALS["weekly"]
         assert SCHEDULE_INTERVALS["weekly"] < SCHEDULE_INTERVALS["monthly"]
