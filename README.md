@@ -551,6 +551,8 @@ Sessions are tagged with severity tier, batch ID, CWE families, run number, and 
 
 ## Configuration
 
+> **Full reference:** [`docs/CONFIG_REFERENCE.md`](docs/CONFIG_REFERENCE.md) documents every option, type, default, and precedence rule across all configuration surfaces.
+
 Configuration is spread across several surfaces depending on the component:
 
 | Surface | Scope | Key Settings |
