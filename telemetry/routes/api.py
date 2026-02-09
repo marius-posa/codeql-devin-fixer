@@ -45,6 +45,7 @@ from helpers import (
     _paginate,
     _get_pagination,
 )
+from extensions import limiter
 
 api_bp = Blueprint("api", __name__)
 
@@ -494,6 +495,7 @@ def api_dispatch_preflight():
 
 
 @api_bp.route("/api/dispatch", methods=["POST"])
+@limiter.limit("10/minute")
 @require_api_key
 def api_dispatch():
     token = os.environ.get("GITHUB_TOKEN", "")

@@ -50,6 +50,9 @@ _cors_origins: list[str] | str = (
 )
 CORS(app, origins=_cors_origins, supports_credentials=True)
 
+from extensions import limiter
+limiter.init_app(app)
+
 app.register_blueprint(oauth_bp)
 app.register_blueprint(api_bp)
 app.register_blueprint(orchestrator_bp)
