@@ -284,20 +284,6 @@ function renderIssuesTable(issues, containerId, countId) {
   _renderIssuesContent(issues, issues, containerId, countId);
 }
 
-async function fetchAllPages(endpoint) {
-  let all = [];
-  let page = 1;
-  while (true) {
-    const res = await _authedFetch(API + endpoint + '?page=' + page + '&per_page=200');
-    if (!res.ok) throw new Error('API returned ' + res.status);
-    const data = await res.json();
-    all = all.concat(data.items || []);
-    if (page >= (data.pages || 1)) break;
-    page++;
-  }
-  return all;
-}
-
 let preflightTimer = null;
 function openDispatchModal(targetRepo) {
   const modal = document.getElementById('dispatch-modal');
