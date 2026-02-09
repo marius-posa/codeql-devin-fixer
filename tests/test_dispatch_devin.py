@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from scripts.dispatch_devin import (
     build_batch_prompt,
     compute_wave_fix_rate,
+    dispatch_wave,
     group_batches_by_wave,
     poll_sessions_until_done,
     validate_repo_url,
@@ -1017,3 +1018,181 @@ class TestStructuredOutputSchemaDefinition:
         assert "id" in item_schema["properties"]
         assert "reason" in item_schema["properties"]
         assert item_schema["required"] == ["id", "reason"]
+
+
+class TestKnowledgeContextInPrompt:
+    def _batch(self):
+        return {
+            "batch_id": 1,
+            "cwe_family": "injection",
+            "severity_tier": "critical",
+            "max_severity_score": 9.8,
+            "issue_count": 1,
+            "file_count": 1,
+            "issues": [{
+                "id": "CQLF-R1-0001",
+                "rule_id": "js/sql-injection",
+                "rule_name": "SqlInjection",
+                "rule_description": "SQL injection vulnerability",
+                "rule_help": "Use parameterized queries.",
+                "message": "User input flows to SQL query.",
+                "severity_score": 9.8,
+                "severity_tier": "critical",
+                "cwes": ["cwe-89"],
+                "cwe_family": "injection",
+                "locations": [{"file": "src/db.js", "start_line": 5}],
+            }],
+        }
+
+    def test_knowledge_context_included_when_provided(self):
+        ctx = "\n## Reference: Verified Fix Patterns\nUse parameterized queries."
+        prompt = build_batch_prompt(
+            self._batch(), "https://github.com/o/r", "main",
+            knowledge_context=ctx,
+        )
+        assert "Verified Fix Patterns" in prompt
+        assert "parameterized queries" in prompt
+
+    def test_knowledge_context_before_structured_output(self):
+        ctx = "\n## Knowledge Section\nSome knowledge here."
+        prompt = build_batch_prompt(
+            self._batch(), "https://github.com/o/r", "main",
+            knowledge_context=ctx,
+        )
+        knowledge_pos = prompt.index("Knowledge Section")
+        structured_pos = prompt.index("Structured Output")
+        assert knowledge_pos < structured_pos
+
+    def test_empty_knowledge_context_not_in_prompt(self):
+        prompt = build_batch_prompt(
+            self._batch(), "https://github.com/o/r", "main",
+            knowledge_context="",
+        )
+        assert "Verified Fix Patterns" not in prompt
+
+    def test_knowledge_context_default_empty(self):
+        prompt = build_batch_prompt(
+            self._batch(), "https://github.com/o/r", "main",
+        )
+        assert "Verified Fix Patterns" not in prompt
+
+
+class TestDispatchWaveKnowledge:
+    def _batch(self, batch_id=1, family="injection"):
+        return {
+            "batch_id": batch_id,
+            "cwe_family": family,
+            "cwe_families": [family],
+            "severity_tier": "critical",
+            "max_severity_score": 9.8,
+            "issue_count": 1,
+            "file_count": 1,
+            "cross_family": False,
+            "issues": [{
+                "id": "CQLF-R1-0001",
+                "rule_id": "js/sql-injection",
+                "rule_name": "SqlInjection",
+                "rule_description": "SQL injection vulnerability",
+                "rule_help": "Use parameterized queries.",
+                "message": "User input flows to SQL query.",
+                "severity_score": 9.8,
+                "severity_tier": "critical",
+                "cwes": ["cwe-89"],
+                "cwe_family": "injection",
+                "locations": [{"file": "src/db.js", "start_line": 5}],
+            }],
+        }
+
+    @patch("scripts.dispatch_devin.create_devin_session")
+    @patch("scripts.dispatch_devin.build_knowledge_context")
+    @patch("scripts.dispatch_devin._send_session_webhook")
+    @patch("scripts.dispatch_devin.time.sleep")
+    def test_knowledge_context_fetched_when_enabled(
+        self, mock_sleep, mock_webhook, mock_knowledge, mock_create
+    ):
+        mock_knowledge.return_value = "\n## Reference: Fix Patterns\nUse safe queries."
+        mock_create.return_value = {"session_id": "s1", "url": "u1"}
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sessions = dispatch_wave(
+                [self._batch()],
+                api_key="key",
+                repo_url="https://github.com/o/r",
+                default_branch="main",
+                is_own_repo=True,
+                target_dir="",
+                fix_learn=None,
+                playbook_mgr=None,
+                repo_ctx=None,
+                prompt_template="",
+                output_dir=tmpdir,
+                run_id="run-1",
+                max_acu=None,
+                dry_run=False,
+                enable_knowledge=True,
+            )
+        mock_knowledge.assert_called_once_with("key", "injection")
+        assert len(sessions) == 1
+        assert sessions[0]["session_id"] == "s1"
+        prompt_arg = mock_create.call_args[0][1]
+        assert "Fix Patterns" in prompt_arg
+
+    @patch("scripts.dispatch_devin.create_devin_session")
+    @patch("scripts.dispatch_devin.build_knowledge_context")
+    @patch("scripts.dispatch_devin._send_session_webhook")
+    @patch("scripts.dispatch_devin.time.sleep")
+    def test_knowledge_not_fetched_when_disabled(
+        self, mock_sleep, mock_webhook, mock_knowledge, mock_create
+    ):
+        mock_create.return_value = {"session_id": "s1", "url": "u1"}
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dispatch_wave(
+                [self._batch()],
+                api_key="key",
+                repo_url="https://github.com/o/r",
+                default_branch="main",
+                is_own_repo=True,
+                target_dir="",
+                fix_learn=None,
+                playbook_mgr=None,
+                repo_ctx=None,
+                prompt_template="",
+                output_dir=tmpdir,
+                run_id="run-1",
+                max_acu=None,
+                dry_run=False,
+                enable_knowledge=False,
+            )
+        mock_knowledge.assert_not_called()
+
+    @patch("scripts.dispatch_devin.create_devin_session")
+    @patch("scripts.dispatch_devin.build_knowledge_context")
+    @patch("scripts.dispatch_devin._send_session_webhook")
+    @patch("scripts.dispatch_devin.time.sleep")
+    def test_knowledge_fetch_failure_does_not_block_dispatch(
+        self, mock_sleep, mock_webhook, mock_knowledge, mock_create
+    ):
+        mock_knowledge.side_effect = RuntimeError("API unavailable")
+        mock_create.return_value = {"session_id": "s1", "url": "u1"}
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sessions = dispatch_wave(
+                [self._batch()],
+                api_key="key",
+                repo_url="https://github.com/o/r",
+                default_branch="main",
+                is_own_repo=True,
+                target_dir="",
+                fix_learn=None,
+                playbook_mgr=None,
+                repo_ctx=None,
+                prompt_template="",
+                output_dir=tmpdir,
+                run_id="run-1",
+                max_acu=None,
+                dry_run=False,
+                enable_knowledge=True,
+            )
+        assert len(sessions) == 1
+        assert sessions[0]["session_id"] == "s1"
