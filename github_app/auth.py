@@ -48,9 +48,23 @@ class GitHubAppAuth:
         }
         return jwt.encode(payload, self._private_key, algorithm="RS256")
 
+    @staticmethod
+    def _validate_installation_id(installation_id: object) -> int:
+        if not isinstance(installation_id, int) or isinstance(installation_id, bool):
+            raise ValueError(
+                f"installation_id must be a positive integer, got {type(installation_id).__name__}"
+            )
+        if installation_id <= 0:
+            raise ValueError(
+                f"installation_id must be a positive integer, got {installation_id}"
+            )
+        return installation_id
+
     def get_installation_token(self, installation_id: int) -> str:
+        safe_id = self._validate_installation_id(installation_id)
+
         with self._lock:
-            cached = self._token_cache.get(installation_id)
+            cached = self._token_cache.get(safe_id)
             if cached:
                 token, expires_at = cached
                 if time.time() < expires_at - TOKEN_EXPIRY_MARGIN_SECONDS:
@@ -58,7 +72,7 @@ class GitHubAppAuth:
 
         token_jwt = self.generate_jwt()
         resp = requests.post(
-            f"{GITHUB_API_BASE}/app/installations/{installation_id}/access_tokens",
+            f"{GITHUB_API_BASE}/app/installations/{safe_id}/access_tokens",
             headers={
                 "Authorization": f"Bearer {token_jwt}",
                 "Accept": "application/vnd.github+json",
@@ -79,7 +93,7 @@ class GitHubAppAuth:
             expires_at = time.time() + 3600
 
         with self._lock:
-            self._token_cache[installation_id] = (token, expires_at)
+            self._token_cache[safe_id] = (token, expires_at)
 
         return token
 
@@ -121,6 +135,7 @@ class GitHubAppAuth:
         return installations
 
     def get_installation_repos(self, installation_id: int) -> list[dict]:
+        self._validate_installation_id(installation_id)
         token = self.get_installation_token(installation_id)
         repos: list[dict] = []
         page = 1
@@ -146,5 +161,6 @@ class GitHubAppAuth:
         return repos
 
     def invalidate_token(self, installation_id: int) -> None:
+        safe_id = self._validate_installation_id(installation_id)
         with self._lock:
-            self._token_cache.pop(installation_id, None)
+            self._token_cache.pop(safe_id, None)
