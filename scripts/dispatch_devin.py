@@ -41,6 +41,8 @@ DRY_RUN : str
     If ``true``, prompts are generated but no sessions are created.
 """
 
+from __future__ import annotations
+
 import json
 import os
 import re
@@ -48,6 +50,7 @@ import subprocess
 import sys
 import time
 from pathlib import PurePosixPath
+from typing import Any
 
 import requests
 
@@ -59,6 +62,7 @@ except ImportError:
 try:
     from fix_learning import CWE_FIX_HINTS, FixLearning
     from github_utils import validate_repo_url
+    from knowledge import build_knowledge_context, store_fix_knowledge
     from logging_config import setup_logging
     from parse_sarif import BATCHES_SCHEMA_VERSION
     from pipeline_config import (
@@ -66,10 +70,12 @@ try:
     )
     from playbook_manager import PlaybookManager
     from repo_context import RepoContext, analyze_repo
+    from retry_feedback import process_retry_batch
     from retry_utils import exponential_backoff_delay
 except ImportError:
     from scripts.fix_learning import CWE_FIX_HINTS, FixLearning
     from scripts.github_utils import validate_repo_url
+    from scripts.knowledge import build_knowledge_context, store_fix_knowledge
     from scripts.logging_config import setup_logging
     from scripts.parse_sarif import BATCHES_SCHEMA_VERSION
     from scripts.pipeline_config import (
@@ -77,6 +83,7 @@ except ImportError:
     )
     from scripts.playbook_manager import PlaybookManager
     from scripts.repo_context import RepoContext, analyze_repo
+    from scripts.retry_feedback import process_retry_batch
     from scripts.retry_utils import exponential_backoff_delay
 
 logger = setup_logging(__name__)
@@ -245,6 +252,7 @@ def build_batch_prompt(
     fix_learning: FixLearning | None = None,
     playbook_mgr: PlaybookManager | None = None,
     repo_context: RepoContext | None = None,
+    knowledge_context: str = "",
 ) -> str:
     """Construct a detailed, Markdown-formatted prompt for a Devin session.
 
@@ -409,6 +417,9 @@ def build_batch_prompt(
     if playbooks and playbook_mgr:
         for _fam, pb in playbooks:
             prompt_parts.extend(["", playbook_mgr.format_improvement_request(pb)])
+
+    if knowledge_context:
+        prompt_parts.append(knowledge_context)
 
     prompt_parts.extend([
         "",
@@ -622,6 +633,7 @@ def dispatch_wave(
     run_id: str,
     max_acu: int | None,
     dry_run: bool,
+    enable_knowledge: bool = False,
 ) -> list[DispatchSession]:
     """Dispatch all batches in a single wave, returning session records."""
     sessions: list[DispatchSession] = []
@@ -639,11 +651,18 @@ def dispatch_wave(
                 is_own_repo, fix_learn,
             )
         else:
+            kctx = ""
+            if enable_knowledge and api_key:
+                try:
+                    kctx = build_knowledge_context(api_key, family)
+                except Exception as exc:
+                    logger.warning("Knowledge context fetch failed for %s: %s", family, exc)
             prompt = build_batch_prompt(
                 batch, repo_url, default_branch, is_own_repo,
                 target_dir=target_dir, fix_learning=fix_learn,
                 playbook_mgr=playbook_mgr,
                 repo_context=repo_ctx,
+                knowledge_context=kctx,
             )
         batch_id = batch["batch_id"]
 
@@ -805,6 +824,17 @@ def main() -> None:
     if playbook_mgr:
         logger.info("Playbooks dir: %s", playbooks_dir)
 
+    enable_knowledge = os.environ.get("ENABLE_KNOWLEDGE", "false").lower() == "true"
+    enable_retry = os.environ.get("ENABLE_RETRY_FEEDBACK", "false").lower() == "true"
+    max_retry_attempts = int(os.environ.get("MAX_RETRY_ATTEMPTS", "2"))
+    knowledge_folder_id = os.environ.get("KNOWLEDGE_FOLDER_ID", "") or None
+    github_token = os.environ.get("GITHUB_TOKEN", "")
+
+    if enable_knowledge:
+        logger.info("Knowledge API enabled")
+    if enable_retry:
+        logger.info("Retry-with-feedback enabled (max %d attempts)", max_retry_attempts)
+
     run_id = os.environ.get("RUN_ID", "")
     sessions: list[DispatchSession] = []
 
@@ -822,6 +852,7 @@ def main() -> None:
         "run_id": run_id,
         "max_acu": max_acu,
         "dry_run": dry_run,
+        "enable_knowledge": enable_knowledge,
     }
 
     if cfg.wave_dispatch:
@@ -904,6 +935,65 @@ def main() -> None:
             f.write(f"session_urls={session_urls}\n")
             f.write(f"sessions_created={sessions_created}\n")
             f.write(f"sessions_failed={sessions_failed}\n")
+
+    if enable_knowledge and not dry_run:
+        created_sessions = [s for s in sessions if s["status"] == "created"]
+        for sess in created_sessions:
+            batch = next((b for b in batches if b["batch_id"] == sess["batch_id"]), None)
+            if not batch:
+                continue
+            try:
+                store_fix_knowledge(
+                    api_key=api_key,
+                    cwe_family=batch["cwe_family"],
+                    batch_id=sess["batch_id"],
+                    pr_url=sess.get("url", ""),
+                    diff_summary=f"Automated fix for {batch['issue_count']} {batch['cwe_family']} issues",
+                    issue_count=batch["issue_count"],
+                    severity_tier=batch.get("severity_tier", "medium"),
+                    repo_url=repo_url,
+                    parent_folder_id=knowledge_folder_id,
+                    github_token=github_token,
+                )
+                logger.info("Stored knowledge for batch %s (%s)", sess["batch_id"], batch["cwe_family"])
+            except Exception as exc:
+                logger.warning("Failed to store knowledge for batch %s: %s", sess["batch_id"], exc)
+
+    if enable_retry and not dry_run:
+        created_sessions = [s for s in sessions if s["status"] == "created"]
+        if created_sessions:
+            outcomes = [
+                {
+                    "batch_id": s["batch_id"],
+                    "session_id": s["session_id"],
+                    "status": s["status"],
+                    "pr_url": s.get("url", ""),
+                }
+                for s in created_sessions
+            ]
+            prompts: dict[int | str, str] = {}
+            for batch in batches:
+                bid = batch["batch_id"]
+                prompt_path = os.path.join(output_dir, f"prompt_batch_{bid}.txt")
+                if os.path.isfile(prompt_path):
+                    with open(prompt_path) as pf:
+                        prompts[bid] = pf.read()
+            try:
+                retry_results = process_retry_batch(
+                    api_key=api_key,
+                    outcomes=outcomes,
+                    batches=batches,
+                    prompts=prompts,
+                    max_retry_attempts=max_retry_attempts,
+                    max_acu=max_acu,
+                )
+                if retry_results:
+                    logger.info("Retry-with-feedback processed %d session(s)", len(retry_results))
+                    retry_path = os.path.join(output_dir, "retry_results.json")
+                    with open(retry_path, "w") as rf:
+                        json.dump(retry_results, rf, indent=2)
+            except Exception as exc:
+                logger.warning("Retry-with-feedback failed: %s", exc)
 
     max_failure_rate = cfg.max_failure_rate
     if sessions and not dry_run and sessions_failed > 0:

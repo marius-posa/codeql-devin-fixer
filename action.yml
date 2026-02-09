@@ -84,6 +84,22 @@ inputs:
     description: "Pipeline mode: basic (scan+dispatch, default), orchestrator (scan only, defer dispatch)"
     required: false
     default: "basic"
+  enable_knowledge:
+    description: "Enable Devin Knowledge API to store/reference successful fix patterns"
+    required: false
+    default: "false"
+  enable_retry_feedback:
+    description: "Enable retry-with-feedback: send verification results back to sessions or create follow-ups"
+    required: false
+    default: "false"
+  max_retry_attempts:
+    description: "Maximum retry attempts per session when retry-with-feedback is enabled"
+    required: false
+    default: "2"
+  knowledge_folder_id:
+    description: "Optional Devin Knowledge folder ID to organize fix knowledge entries"
+    required: false
+    default: ""
 
 outputs:
   total_issues:
@@ -506,6 +522,10 @@ runs:
         PROMPT_TEMPLATE: ${{ inputs.prompt_template }}
         WEBHOOK_URL: ${{ inputs.webhook_url }}
         WEBHOOK_SECRET: ${{ inputs.webhook_secret }}
+        ENABLE_KNOWLEDGE: ${{ inputs.enable_knowledge }}
+        ENABLE_RETRY_FEEDBACK: ${{ inputs.enable_retry_feedback }}
+        MAX_RETRY_ATTEMPTS: ${{ inputs.max_retry_attempts }}
+        KNOWLEDGE_FOLDER_ID: ${{ inputs.knowledge_folder_id }}
       run: |
         python "${{ github.action_path }}/scripts/dispatch_devin.py"\
           "${{ runner.temp }}/codeql-output/batches.json" \
