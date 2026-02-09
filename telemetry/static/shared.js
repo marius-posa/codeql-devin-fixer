@@ -696,6 +696,7 @@ function renderRegistryTable(registry, containerId, countId, callbacks) {
     el.innerHTML = toolbar + '<div class="empty-state">No repos registered for scheduled scanning.</div>';
     return;
   }
+  var hasActions = !!(_registryCallbacks.onRemove || _registryCallbacks.onEditRepo);
   var rows = '';
   repos.forEach(function(r, idx) {
     var short = escapeHtml(repoShort(r.repo));
@@ -761,7 +762,7 @@ function renderRegistryTable(registry, containerId, countId, callbacks) {
   el.innerHTML = toolbar + '<table><thead><tr>'
     + '<th>Repository</th><th>Status</th><th>Importance</th><th>Score</th><th>Schedule</th>'
     + '<th>Max Sessions</th><th>Auto Scan</th><th>Auto Dispatch</th><th>Tags</th><th>Overrides</th>'
-    + (actionsCell ? '<th></th>' : '')
+    + (hasActions ? '<th></th>' : '')
     + '</tr></thead><tbody>' + rows + '</tbody></table>';
 }
 
