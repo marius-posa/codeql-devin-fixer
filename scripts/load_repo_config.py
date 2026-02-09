@@ -30,6 +30,13 @@ import os
 import sys
 
 try:
+    from logging_config import setup_logging
+except ImportError:
+    from scripts.logging_config import setup_logging
+
+logger = setup_logging(__name__)
+
+try:
     import yaml
 except ImportError:
     yaml = None  # type: ignore[assignment]
@@ -72,12 +79,12 @@ def load_config(path: str) -> dict:
     config = _parse_yaml(path)
 
     if not isinstance(config, dict):
-        print(f"WARNING: {path} did not parse as a mapping; ignoring")
+        logger.warning("%s did not parse as a mapping; ignoring", path)
         return {}
 
     severity = config.get("severity_threshold", "")
     if severity and severity not in VALID_SEVERITIES:
-        print(f"WARNING: invalid severity_threshold '{severity}' in {path}; ignoring")
+        logger.warning("invalid severity_threshold '%s' in %s; ignoring", severity, path)
         config.pop("severity_threshold", None)
 
     batch_size = config.get("batch_size")
@@ -85,10 +92,10 @@ def load_config(path: str) -> dict:
         try:
             batch_size = int(batch_size)
             if batch_size < 1 or batch_size > 50:
-                print(f"WARNING: batch_size {batch_size} out of range [1,50]; ignoring")
+                logger.warning("batch_size %d out of range [1,50]; ignoring", batch_size)
                 config.pop("batch_size", None)
         except (ValueError, TypeError):
-            print(f"WARNING: invalid batch_size '{batch_size}' in {path}; ignoring")
+            logger.warning("invalid batch_size '%s' in %s; ignoring", batch_size, path)
             config.pop("batch_size", None)
 
     max_sessions = config.get("max_sessions")
@@ -96,20 +103,20 @@ def load_config(path: str) -> dict:
         try:
             max_sessions = int(max_sessions)
             if max_sessions < 1 or max_sessions > 100:
-                print(f"WARNING: max_sessions {max_sessions} out of range [1,100]; ignoring")
+                logger.warning("max_sessions %d out of range [1,100]; ignoring", max_sessions)
                 config.pop("max_sessions", None)
         except (ValueError, TypeError):
-            print(f"WARNING: invalid max_sessions '{max_sessions}' in {path}; ignoring")
+            logger.warning("invalid max_sessions '%s' in %s; ignoring", max_sessions, path)
             config.pop("max_sessions", None)
 
     exclude_paths = config.get("exclude_paths")
     if exclude_paths is not None and not isinstance(exclude_paths, list):
-        print(f"WARNING: exclude_paths must be a list in {path}; ignoring")
+        logger.warning("exclude_paths must be a list in %s; ignoring", path)
         config.pop("exclude_paths", None)
 
     cwe_families = config.get("cwe_families")
     if cwe_families is not None and not isinstance(cwe_families, dict):
-        print(f"WARNING: cwe_families must be a mapping in {path}; ignoring")
+        logger.warning("cwe_families must be a mapping in %s; ignoring", path)
         config.pop("cwe_families", None)
 
     return config
@@ -117,16 +124,16 @@ def load_config(path: str) -> dict:
 
 def main() -> None:
     if len(sys.argv) < 2:
-        print("Usage: load_repo_config.py <config_path>")
+        logger.error("Usage: load_repo_config.py <config_path>")
         sys.exit(1)
 
     config_path = sys.argv[1]
     if not os.path.isfile(config_path):
-        print(f"Config file not found: {config_path}")
+        logger.error("Config file not found: %s", config_path)
         sys.exit(1)
 
     config = load_config(config_path)
-    print(f"Loaded config from {config_path}: {json.dumps(config, indent=2)}")
+    logger.info("Loaded config from %s: %s", config_path, json.dumps(config, indent=2))
 
     github_output = os.environ.get("GITHUB_OUTPUT", "")
     if not github_output:

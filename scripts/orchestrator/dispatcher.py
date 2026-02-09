@@ -18,9 +18,16 @@ from typing import Any
 
 from . import state as _state
 
+try:
+    from logging_config import setup_logging
+except ImportError:
+    from scripts.logging_config import setup_logging
+
 from database import get_connection, init_db, insert_run  # noqa: E402
 from fix_learning import CWE_FIX_HINTS, FixLearning  # noqa: E402
 from github_utils import gh_headers, parse_repo_url  # noqa: E402
+
+logger = setup_logging(__name__)
 
 try:
     from dispatch_devin import create_devin_session  # noqa: E402
@@ -42,10 +49,10 @@ def cmd_ingest(args: argparse.Namespace) -> int:
     target_repo = args.target_repo
 
     if not batches_path or not os.path.isfile(batches_path):
-        print(f"ERROR: Batches file not found: {batches_path}")
+        logger.error("Batches file not found: %s", batches_path)
         return 1
     if not issues_path or not os.path.isfile(issues_path):
-        print(f"ERROR: Issues file not found: {issues_path}")
+        logger.error("Issues file not found: %s", issues_path)
         return 1
 
     with open(batches_path) as f:
@@ -112,11 +119,12 @@ def cmd_ingest(args: argparse.Namespace) -> int:
         conn.commit()
 
         if result is not None:
-            print(f"Ingested {len(issues)} issues ({len(batches)} batches) for {target_repo}")
-            print(f"Run label: {run_label}")
-            print(f"DB row ID: {result}")
+            logger.info("Ingested %d issues (%d batches) for %s",
+                        len(issues), len(batches), target_repo)
+            logger.info("Run label: %s", run_label)
+            logger.info("DB row ID: %s", result)
         else:
-            print(f"Run {run_label} already exists in DB (skipped)")
+            logger.info("Run %s already exists in DB (skipped)", run_label)
 
         state = _state.load_state()
         state["last_cycle"] = datetime.now(timezone.utc).isoformat()
@@ -352,11 +360,11 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
 
     api_key = os.environ.get("DEVIN_API_KEY", "")
     if not api_key and not dry_run:
-        print("ERROR: DEVIN_API_KEY environment variable is required (use --dry-run to skip)", file=sys.stderr)
+        logger.error("DEVIN_API_KEY environment variable is required (use --dry-run to skip)")
         return 1
 
     if not _HAS_DISPATCH and not dry_run:
-        print("ERROR: dispatch_devin module not available (missing requests library)", file=sys.stderr)
+        logger.error("dispatch_devin module not available (missing requests library)")
         return 1
 
     data = _state._compute_eligible_issues(repo_filter)
@@ -375,7 +383,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         if output_json:
             print(json.dumps({"status": "no_issues", "message": msg, "sessions_created": 0, "sessions_failed": 0, "sessions_dry_run": 0, "total_eligible": 0, "batches_formed": 0, "rate_limit_remaining": remaining, "results": [], "timestamp": datetime.now(timezone.utc).isoformat(), "repo_filter": repo_filter, "dry_run": dry_run}))
         else:
-            print(msg)
+            logger.info("%s", msg)
         return 0
 
     batches = _form_dispatch_batches(eligible, registry, rate_limiter, remaining)
@@ -385,7 +393,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         if output_json:
             print(json.dumps({"status": "rate_limited", "message": msg, "sessions_created": 0}))
         else:
-            print(msg)
+            logger.info("%s", msg)
         return 0
 
     results: list[dict[str, Any]] = []
@@ -399,9 +407,10 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
 
         if dry_run:
             if not output_json:
-                print(
-                    f"[DRY RUN] Would dispatch batch {batch['batch_id']}: "
-                    f"{batch['cwe_family']} ({batch['issue_count']} issues) for {repo_url}"
+                logger.info(
+                    "[DRY RUN] Would dispatch batch %d: %s (%d issues) for %s",
+                    batch['batch_id'], batch['cwe_family'],
+                    batch['issue_count'], repo_url,
                 )
             results.append({
                 "batch_id": batch["batch_id"],
@@ -416,7 +425,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
 
         if not rate_limiter.can_create_session():
             if not output_json:
-                print(f"Rate limit reached, skipping batch {batch['batch_id']}", file=sys.stderr)
+                logger.warning("Rate limit reached, skipping batch %d", batch['batch_id'])
             results.append({
                 "batch_id": batch["batch_id"],
                 "target_repo": repo_url,
@@ -435,7 +444,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             session_id = result["session_id"]
             session_url = result["url"]
             if not output_json:
-                print(f"Session created for batch {batch['batch_id']}: {session_url}")
+                logger.info("Session created for batch %d: %s", batch['batch_id'], session_url)
 
             rate_limiter.record_session()
 
@@ -466,7 +475,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
 
         except Exception as e:
             if not output_json:
-                print(f"ERROR creating session for batch {batch['batch_id']}: {e}", file=sys.stderr)
+                logger.error("ERROR creating session for batch %d: %s", batch['batch_id'], e)
             for issue in batch["issues"]:
                 fp = issue.get("fingerprint", "")
                 if not fp:

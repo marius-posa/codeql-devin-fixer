@@ -52,9 +52,13 @@ from pathlib import PurePosixPath
 from typing import Any
 
 try:
+    from logging_config import setup_logging
     from pipeline_config import Batch, ParsedIssue, PipelineConfig
 except ImportError:
+    from scripts.logging_config import setup_logging
     from scripts.pipeline_config import Batch, ParsedIssue, PipelineConfig
+
+logger = setup_logging(__name__)
 
 BATCHES_SCHEMA_VERSION = "1.0"
 ISSUES_SCHEMA_VERSION = "1.0"
@@ -157,10 +161,10 @@ def _load_custom_cwe_families() -> None:
     try:
         custom: dict[str, list[str]] = json.loads(raw)
     except (json.JSONDecodeError, TypeError):
-        print(f"WARNING: CUSTOM_CWE_FAMILIES is not valid JSON; ignoring")
+        logger.warning("CUSTOM_CWE_FAMILIES is not valid JSON; ignoring")
         return
     if not isinstance(custom, dict):
-        print("WARNING: CUSTOM_CWE_FAMILIES must be a JSON object; ignoring")
+        logger.warning("CUSTOM_CWE_FAMILIES must be a JSON object; ignoring")
         return
     for family, members in custom.items():
         if not isinstance(members, list):
@@ -238,11 +242,11 @@ def validate_sarif(sarif: dict[str, Any], path: str) -> None:
     if version is None:
         raise ValueError(f"{path}: missing required 'version' field")
     if not version.startswith("2.1"):
-        print(f"WARNING: {path}: unexpected SARIF version '{version}' (expected 2.1.x)")
+        logger.warning("%s: unexpected SARIF version '%s' (expected 2.1.x)", path, version)
 
     schema = sarif.get("$schema", "")
     if schema and "sarif" not in schema.lower():
-        print(f"WARNING: {path}: '$schema' does not reference a SARIF schema: {schema}")
+        logger.warning("%s: '$schema' does not reference a SARIF schema: %s", path, schema)
 
     runs = sarif.get("runs")
     if runs is None:
@@ -274,7 +278,7 @@ def parse_sarif(sarif_path: str) -> list[ParsedIssue]:
     try:
         validate_sarif(sarif, sarif_path)
     except ValueError as exc:
-        print(f"WARNING: {exc}")
+        logger.warning("%s", exc)
         return []
 
     issues: list[ParsedIssue] = []
@@ -715,7 +719,7 @@ def assign_issue_ids(
 
 def main() -> None:
     if len(sys.argv) < 2:
-        print("Usage: parse_sarif.py <sarif_path_or_dir> <output_dir>")
+        logger.error("Usage: parse_sarif.py <sarif_path_or_dir> <output_dir>")
         sys.exit(1)
 
     sarif_input = sys.argv[1]
@@ -739,34 +743,34 @@ def main() -> None:
     elif os.path.isfile(sarif_input):
         sarif_files.append(sarif_input)
     else:
-        print(f"ERROR: SARIF path not found: {sarif_input}")
+        logger.error("SARIF path not found: %s", sarif_input)
         sys.exit(1)
 
     if not sarif_files:
-        print(f"ERROR: No SARIF files found in {sarif_input}")
+        logger.error("No SARIF files found in %s", sarif_input)
         sys.exit(1)
 
     all_issues: list[ParsedIssue] = []
     for sf in sorted(sarif_files):
-        print(f"Parsing SARIF file: {sf}")
+        logger.info("Parsing SARIF file: %s", sf)
         all_issues.extend(parse_sarif(sf))
 
     total_raw = len(all_issues)
-    print(f"Found {total_raw} total issues across {len(sarif_files)} SARIF file(s)")
+    logger.info("Found %d total issues across %d SARIF file(s)", total_raw, len(sarif_files))
 
     all_issues = deduplicate_issues(all_issues)
     dedup_removed = total_raw - len(all_issues)
     if dedup_removed > 0:
-        print(f"Removed {dedup_removed} duplicate issues")
-    print(f"Unique issues: {len(all_issues)}")
+        logger.info("Removed %d duplicate issues", dedup_removed)
+    logger.info("Unique issues: %d", len(all_issues))
 
     prioritized = prioritize_issues(all_issues, threshold)
-    print(f"After filtering (threshold={threshold}): {len(prioritized)} issues")
+    logger.info("After filtering (threshold=%s): %d issues", threshold, len(prioritized))
 
     prioritized = assign_issue_ids(prioritized, run_number)
 
     batches = batch_issues(prioritized, batch_size, max_batches)
-    print(f"Created {len(batches)} batches")
+    logger.info("Created %d batches", len(batches))
 
     all_issues_with_ids = assign_issue_ids(
         [dict(i) for i in all_issues], run_number, id_prefix="ALL"
@@ -796,7 +800,7 @@ def main() -> None:
     with open(os.path.join(output_dir, "summary.md"), "w") as f:
         f.write(summary)
 
-    print(summary)
+    logger.info("Summary:\n%s", summary)
 
     github_output = os.environ.get("GITHUB_OUTPUT")
     if github_output:

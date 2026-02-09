@@ -26,6 +26,13 @@ import sys
 from dataclasses import dataclass
 from typing import NotRequired, TypedDict
 
+try:
+    from logging_config import setup_logging
+except ImportError:
+    from scripts.logging_config import setup_logging
+
+logger = setup_logging(__name__)
+
 
 class IssueLocation(TypedDict):
     file: str
@@ -220,8 +227,9 @@ class PipelineConfig:
         ]
         if missing:
             env_names = [name.upper() for name in missing]
-            print(
-                f"ERROR: Missing required configuration: {', '.join(env_names)}\n"
-                "Set these environment variables before running the pipeline."
+            logger.error(
+                "Missing required configuration: %s. "
+                "Set these environment variables before running the pipeline.",
+                ', '.join(env_names),
             )
             sys.exit(1)

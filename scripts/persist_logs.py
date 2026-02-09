@@ -41,7 +41,14 @@ import shutil
 import subprocess
 import sys
 
-from retry_utils import run_git_with_retry
+try:
+    from logging_config import setup_logging
+    from retry_utils import run_git_with_retry
+except ImportError:
+    from scripts.logging_config import setup_logging
+    from scripts.retry_utils import run_git_with_retry
+
+logger = setup_logging(__name__)
 
 
 def run_git(*args: str, cwd: str) -> str:
@@ -54,7 +61,7 @@ def run_git(*args: str, cwd: str) -> str:
         timeout=60,
     )
     if result.returncode != 0:
-        print(f"git {' '.join(args)} failed: {result.stderr}")
+        logger.error("git %s failed: %s", ' '.join(args), result.stderr)
     return result.stdout.strip()
 
 
@@ -66,10 +73,10 @@ def main() -> None:
     target_repo = os.environ.get("TARGET_REPO", "")
 
     if not repo_dir:
-        print("ERROR: REPO_DIR is required")
+        logger.error("REPO_DIR is required")
         sys.exit(1)
     if not run_label:
-        print("ERROR: RUN_LABEL is required")
+        logger.error("RUN_LABEL is required")
         sys.exit(1)
 
     logs_base = os.path.join(repo_dir, "logs")
@@ -89,7 +96,7 @@ def main() -> None:
         src = os.path.join(output_dir, fname)
         if os.path.isfile(src):
             shutil.copy2(src, os.path.join(run_dir, fname))
-            print(f"Copied {fname}")
+            logger.info("Copied %s", fname)
 
     for entry in os.listdir(output_dir):
         if entry.startswith("prompt_batch_") and entry.endswith(".txt"):
@@ -97,7 +104,7 @@ def main() -> None:
                 os.path.join(output_dir, entry),
                 os.path.join(run_dir, entry),
             )
-            print(f"Copied {entry}")
+            logger.info("Copied %s", entry)
 
     manifest = {
         "run_label": run_label,
@@ -107,7 +114,7 @@ def main() -> None:
         json.dump(manifest, f, indent=2)
 
     if not github_token:
-        print("WARNING: GITHUB_TOKEN not set; skipping git push")
+        logger.warning("GITHUB_TOKEN not set; skipping git push")
         return
 
     run_git("config", "user.email", "codeql-devin-fixer[bot]@users.noreply.github.com", cwd=repo_dir)
@@ -116,7 +123,7 @@ def main() -> None:
 
     status = run_git("status", "--porcelain", cwd=repo_dir)
     if not status:
-        print("No changes to commit")
+        logger.info("No changes to commit")
         return
 
     run_git("commit", "-m", f"chore: persist run logs for {run_label}", cwd=repo_dir)
@@ -145,11 +152,11 @@ def main() -> None:
             )
     logs_persisted = result.returncode == 0
     if not logs_persisted:
-        print(f"WARNING: git push failed after retries: {result.stderr}")
-        print("The default GITHUB_TOKEN may not have permission to push to the target repo.")
-        print("Logs were committed locally but could not be pushed.")
+        logger.warning("git push failed after retries: %s", result.stderr)
+        logger.warning("The default GITHUB_TOKEN may not have permission to push to the target repo.")
+        logger.warning("Logs were committed locally but could not be pushed.")
     else:
-        print(f"Logs pushed to {branch}")
+        logger.info("Logs pushed to %s", branch)
 
     github_output = os.environ.get("GITHUB_OUTPUT")
     if github_output:
