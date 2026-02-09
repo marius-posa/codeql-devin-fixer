@@ -1429,7 +1429,7 @@ async function loadDemoData() {
   if (btn) { btn.disabled = true; btn.textContent = 'Loading...'; }
   setStatus('Loading demo data...');
   try {
-    var res = await fetch(API + '/api/demo-data', { method: 'POST' });
+    var res = await fetch(API + '/api/demo-data', { method: 'POST', headers: _authHeaders() });
     var data = await res.json();
     if (data.error) {
       setStatus('Demo: ' + data.error);
@@ -1449,7 +1449,7 @@ async function clearDemoData() {
   if (btn) { btn.disabled = true; btn.textContent = 'Clearing...'; }
   setStatus('Clearing demo data...');
   try {
-    var res = await fetch(API + '/api/demo-data', { method: 'DELETE' });
+    var res = await fetch(API + '/api/demo-data', { method: 'DELETE', headers: _authHeaders() });
     var data = await res.json();
     setStatus('Demo data cleared: ' + data.stats.runs_deleted + ' runs removed');
     await checkDemoDataStatus();
@@ -1465,7 +1465,7 @@ async function resetDemoData() {
   if (btn) { btn.disabled = true; btn.textContent = 'Regenerating...'; }
   setStatus('Regenerating demo data...');
   try {
-    var res = await fetch(API + '/api/demo-data/reset', { method: 'POST' });
+    var res = await fetch(API + '/api/demo-data/reset', { method: 'POST', headers: _authHeaders() });
     var data = await res.json();
     setStatus('Demo data regenerated: ' + data.stats.runs + ' runs');
     await checkDemoDataStatus();
@@ -1509,7 +1509,7 @@ async function saveDemoEditorData() {
   try {
     var res = await fetch(API + '/api/demo-data/files', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: Object.assign({}, _authHeaders(), { 'Content-Type': 'application/json' }),
       body: JSON.stringify(parsed),
     });
     var data = await res.json();

@@ -53,7 +53,6 @@ from demo_data import (
     load_demo_data_from_files,
     save_demo_data_to_files,
     build_all_demo_data,
-    DEMO_DATA_DIR,
 )
 
 REGISTRY_PATH = pathlib.Path(__file__).resolve().parent.parent / "repo_registry.json"
@@ -1113,6 +1112,7 @@ def api_demo_data_status():
 
 
 @app.route("/api/demo-data", methods=["POST"])
+@require_api_key
 def api_demo_data_load():
     conn = get_connection()
     try:
@@ -1125,6 +1125,7 @@ def api_demo_data_load():
 
 
 @app.route("/api/demo-data", methods=["DELETE"])
+@require_api_key
 def api_demo_data_clear():
     conn = get_connection()
     try:
@@ -1135,6 +1136,7 @@ def api_demo_data_clear():
 
 
 @app.route("/api/demo-data/reset", methods=["POST"])
+@require_api_key
 def api_demo_data_reset():
     conn = get_connection()
     try:
@@ -1158,6 +1160,7 @@ def api_demo_data_files():
 
 
 @app.route("/api/demo-data/files", methods=["PUT"])
+@require_api_key
 def api_demo_data_files_update():
     body = flask_request.get_json(silent=True)
     if not body:

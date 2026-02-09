@@ -547,13 +547,13 @@ def save_demo_data_to_files(data: dict | None = None) -> pathlib.Path:
         fp.write_text(json.dumps(run, indent=2) + "\n")
 
     prs_path = DEMO_DATA_DIR / "_prs.json"
-    prs_path.write_text(json.dumps(data["prs"], indent=2) + "\n")
+    prs_path.write_text(json.dumps(data.get("prs", []), indent=2) + "\n")
 
     verification_path = DEMO_DATA_DIR / "_verification.json"
-    verification_path.write_text(json.dumps(data["verification_records"], indent=2) + "\n")
+    verification_path.write_text(json.dumps(data.get("verification_records", []), indent=2) + "\n")
 
     orch_path = DEMO_DATA_DIR / "_orchestrator_state.json"
-    orch_path.write_text(json.dumps(data["orchestrator_state"], indent=2) + "\n")
+    orch_path.write_text(json.dumps(data.get("orchestrator_state", {}), indent=2) + "\n")
 
     return DEMO_DATA_DIR
 
