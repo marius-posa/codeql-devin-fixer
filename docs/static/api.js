@@ -907,6 +907,18 @@ function buildOrchestratorStatus(state, registry, issues, verificationRecords) {
   };
 }
 
+function _normalizeDispatchEntry(entry) {
+  var out = Object.assign({}, entry);
+  if (!out.dispatched_at && out.last_dispatched) out.dispatched_at = out.last_dispatched;
+  if (!out.session_id && out.last_session_id) out.session_id = out.last_session_id;
+  if (!out.session_url && out.session_id) {
+    var sid = out.session_id;
+    if (sid.indexOf('devin-') === 0) sid = sid.slice(6);
+    out.session_url = 'https://app.devin.ai/sessions/' + sid;
+  }
+  return out;
+}
+
 function buildOrchestratorHistory(state) {
   if (!state) return { items: [] };
   var dispatchHistory = state.dispatch_history || {};
@@ -915,12 +927,12 @@ function buildOrchestratorHistory(state) {
     var history = dispatchHistory[fp];
     if (Array.isArray(history)) {
       for (var i = 0; i < history.length; i++) {
-        var entry = Object.assign({}, history[i]);
+        var entry = _normalizeDispatchEntry(history[i]);
         entry.fingerprint = fp;
         allEntries.push(entry);
       }
     } else if (history && typeof history === 'object') {
-      var single = Object.assign({}, history);
+      var single = _normalizeDispatchEntry(history);
       single.fingerprint = fp;
       allEntries.push(single);
     }

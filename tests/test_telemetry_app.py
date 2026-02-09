@@ -387,6 +387,56 @@ class TestOrchestratorEndpoints:
         assert data["fingerprint"] == "abc123"
         assert "entries" in data
 
+    def test_orchestrator_history_normalizes_fields(self, client):
+        from database import save_orchestrator_state
+        conn = get_connection(pathlib.Path(_test_db_path))
+        init_db(conn)
+        save_orchestrator_state(conn, {
+            "dispatch_history": {
+                "fp1": {
+                    "dispatch_count": 2,
+                    "fingerprint": "fp1",
+                    "last_dispatched": "2026-01-15T10:00:00+00:00",
+                    "last_session_id": "devin-aabbccdd",
+                    "consecutive_failures": 0,
+                },
+            },
+        })
+        resp = client.get("/api/orchestrator/history")
+        assert resp.status_code == 200
+        items = resp.get_json()["items"]
+        assert len(items) == 1
+        item = items[0]
+        assert item["fingerprint"] == "fp1"
+        assert item["dispatched_at"] == "2026-01-15T10:00:00+00:00"
+        assert item["session_id"] == "devin-aabbccdd"
+        assert item["session_url"] == "https://app.devin.ai/sessions/aabbccdd"
+
+    def test_orchestrator_history_fingerprint_filter_normalizes(self, client):
+        from database import save_orchestrator_state
+        conn = get_connection(pathlib.Path(_test_db_path))
+        init_db(conn)
+        save_orchestrator_state(conn, {
+            "dispatch_history": {
+                "fp2": {
+                    "dispatch_count": 1,
+                    "fingerprint": "fp2",
+                    "last_dispatched": "2026-01-20T12:00:00+00:00",
+                    "last_session_id": "devin-11223344",
+                    "consecutive_failures": 0,
+                },
+            },
+        })
+        resp = client.get("/api/orchestrator/history?fingerprint=fp2")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert len(data["entries"]) == 1
+        entry = data["entries"][0]
+        assert entry["fingerprint"] == "fp2"
+        assert entry["dispatched_at"] == "2026-01-20T12:00:00+00:00"
+        assert entry["session_id"] == "devin-11223344"
+        assert entry["session_url"] == "https://app.devin.ai/sessions/11223344"
+
     def test_orchestrator_plan_runs(self, client):
         with patch("routes.orchestrator.subprocess.run") as mock_run:
             mock_run.return_value = type("R", (), {

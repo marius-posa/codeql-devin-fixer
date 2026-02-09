@@ -56,6 +56,20 @@ def _serialize_orch_config(orch_config: dict) -> dict:
 
 
 
+def _normalize_dispatch_entry(entry: dict) -> dict:
+    out = dict(entry)
+    if not out.get("dispatched_at") and out.get("last_dispatched"):
+        out["dispatched_at"] = out["last_dispatched"]
+    if not out.get("session_id") and out.get("last_session_id"):
+        out["session_id"] = out["last_session_id"]
+    if not out.get("session_url") and out.get("session_id"):
+        sid = out["session_id"]
+        if sid.startswith("devin-"):
+            sid = sid[6:]
+        out["session_url"] = f"https://app.devin.ai/sessions/{sid}"
+    return out
+
+
 @orchestrator_bp.route("/api/orchestrator/status")
 def api_orchestrator_status():
     state = _load_orchestrator_state()
@@ -211,6 +225,7 @@ def api_orchestrator_history():
         entries = dispatch_history.get(fingerprint, [])
         if not isinstance(entries, list):
             entries = [entries] if entries else []
+        entries = [_normalize_dispatch_entry({**e, "fingerprint": fingerprint}) for e in entries]
         return jsonify({"fingerprint": fingerprint, "entries": entries})
 
     page, per_page = _get_pagination()
@@ -218,9 +233,9 @@ def api_orchestrator_history():
     for fp, history in dispatch_history.items():
         if isinstance(history, list):
             for entry in history:
-                all_entries.append({**entry, "fingerprint": fp})
+                all_entries.append(_normalize_dispatch_entry({**entry, "fingerprint": fp}))
         elif isinstance(history, dict):
-            all_entries.append({**history, "fingerprint": fp})
+            all_entries.append(_normalize_dispatch_entry({**history, "fingerprint": fp}))
 
     all_entries.sort(key=lambda e: e.get("dispatched_at", ""), reverse=True)
     return jsonify(_paginate(all_entries, page, per_page))
