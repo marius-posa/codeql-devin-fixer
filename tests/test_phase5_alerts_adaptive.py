@@ -191,7 +191,7 @@ class TestAdaptiveScanFrequency:
         }
         assert _is_scan_due(repo_config, {}) is True
 
-    @patch("scripts.orchestrator._check_commit_velocity", return_value=60)
+    @patch("scripts.orchestrator.scanner._check_commit_velocity", return_value=60)
     def test_adaptive_scan_high_velocity(self, mock_velocity):
         repo_config = {
             "repo": "https://github.com/owner/repo",
@@ -203,7 +203,7 @@ class TestAdaptiveScanFrequency:
         schedule = {"https://github.com/owner/repo": {"last_scan": recent}}
         assert _is_scan_due(repo_config, schedule, "token") is True
 
-    @patch("scripts.orchestrator._check_commit_velocity", return_value=10)
+    @patch("scripts.orchestrator.scanner._check_commit_velocity", return_value=10)
     def test_adaptive_scan_low_velocity(self, mock_velocity):
         repo_config = {
             "repo": "https://github.com/owner/repo",
@@ -220,7 +220,7 @@ class TestCheckCommitVelocity:
     def test_returns_none_without_token(self):
         assert _check_commit_velocity("https://github.com/o/r", "2026-01-01", "") is None
 
-    @patch("scripts.orchestrator._HAS_REQUESTS", False)
+    @patch("scripts.orchestrator.scanner._HAS_REQUESTS", False)
     def test_returns_none_without_requests(self):
         assert _check_commit_velocity("https://github.com/o/r", "2026-01-01", "tok") is None
 
