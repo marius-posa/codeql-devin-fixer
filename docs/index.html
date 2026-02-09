@@ -16,6 +16,7 @@
       <button class="btn" onclick="refreshData()" id="btn-refresh">Refresh Data</button>
       <button class="btn btn-primary" onclick="pollSessions()" id="btn-poll">Poll Sessions</button>
       <button class="btn btn-primary" onclick="openDispatchModal()" id="btn-dispatch" style="background:#1f6feb;border-color:#388bfd">Trigger Action</button>
+      <button class="btn" id="btn-demo-toggle" onclick="toggleDemoData()" title="Toggle demo data" style="font-size:12px">Demo Data</button>
       <button class="density-toggle" id="density-toggle" title="Toggle compact mode">Compact</button>
       <button class="theme-toggle" id="theme-toggle"></button>
       <button class="btn" onclick="openSettingsModal()" id="btn-settings" style="font-size:16px" title="Settings">&#9881;</button>
@@ -128,6 +129,18 @@
   </div>
 
   <div class="tab-content" id="tab-settings">
+    <div class="panel">
+      <div class="panel-header">Demo Data</div>
+      <div class="panel-body" id="demo-data-panel">
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+          <span id="demo-status-text" style="font-size:13px;color:var(--text-muted)">Checking...</span>
+          <button class="btn btn-sm" id="btn-demo-load" onclick="loadDemoData()">Load Demo Data</button>
+          <button class="btn btn-sm" id="btn-demo-clear" onclick="clearDemoData()" style="background:var(--accent-red);border-color:var(--accent-red);color:#fff">Clear Demo Data</button>
+          <button class="btn btn-sm" id="btn-demo-edit" onclick="openDemoEditor()">Edit JSON</button>
+        </div>
+        <div id="demo-summary" style="margin-top:8px;font-size:12px;color:var(--text-muted)"></div>
+      </div>
+    </div>
     <div class="panel">
       <div class="panel-header">Export &amp; Reports</div>
       <div class="panel-body">
@@ -353,6 +366,25 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="demo-editor-modal">
+  <div class="modal" style="max-width:900px">
+    <div class="modal-header">
+      <h2>Edit Demo Data</h2>
+      <button class="modal-close" onclick="closeDemoEditor()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="hint" style="margin-bottom:8px">Edit the raw JSON demo data below. Changes are stored in your browser's localStorage.</div>
+      <textarea class="form-input" id="demo-editor-textarea" rows="24" style="font-family:monospace;font-size:11px;white-space:pre;overflow:auto"></textarea>
+      <div class="dispatch-result" id="demo-editor-result"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeDemoEditor()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveDemoEditorData()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="static/demo_data.js"></script>
 <script src="static/api.js"></script>
 <script src="static/shared.js"></script>
 <script>
@@ -916,12 +948,126 @@ async function refreshData() {
   btn.textContent = 'Refresh Data';
 }
 
+let _demoLoaded = false;
+
+function _isDemoActive() {
+  return localStorage.getItem('demo_data_active') === '1';
+}
+
+function updateDemoUI() {
+  var btn = document.getElementById('btn-demo-toggle');
+  var statusEl = document.getElementById('demo-status-text');
+  var loadBtn = document.getElementById('btn-demo-load');
+  var clearBtn = document.getElementById('btn-demo-clear');
+  var active = _isDemoActive();
+  _demoLoaded = active;
+  if (btn) {
+    btn.style.background = active ? 'var(--accent-orange)' : '';
+    btn.style.borderColor = active ? 'var(--accent-orange)' : '';
+    btn.style.color = active ? '#fff' : '';
+    btn.title = active ? 'Demo data active - click to clear' : 'Click to load demo data';
+  }
+  if (loadBtn) loadBtn.style.display = active ? 'none' : '';
+  if (clearBtn) clearBtn.style.display = active ? '' : 'none';
+  if (statusEl) {
+    statusEl.textContent = active ? 'Demo data is loaded' : 'No demo data loaded';
+    statusEl.style.color = active ? 'var(--accent-green)' : 'var(--text-muted)';
+  }
+  var summaryEl = document.getElementById('demo-summary');
+  if (summaryEl && active && typeof DEMO_DATA !== 'undefined') {
+    var d = _getLocalDemoData();
+    var repos = new Set();
+    var totalIssues = 0;
+    var totalSessions = 0;
+    for (var r of d.runs) {
+      repos.add(r.target_repo || '');
+      totalIssues += r.issues_found || 0;
+      totalSessions += (r.sessions || []).length;
+    }
+    summaryEl.textContent = repos.size + ' repos, ' + d.runs.length + ' runs, ' + (d.prs || []).length + ' PRs, ' + totalSessions + ' sessions';
+  } else if (summaryEl) {
+    summaryEl.textContent = '';
+  }
+}
+
+function _getLocalDemoData() {
+  var custom = localStorage.getItem('demo_data_custom');
+  if (custom) {
+    try { return JSON.parse(custom); } catch (e) {}
+  }
+  return typeof DEMO_DATA !== 'undefined' ? DEMO_DATA : { runs: [], prs: [] };
+}
+
+function toggleDemoData() {
+  if (_isDemoActive()) { clearDemoData(); } else { loadDemoData(); }
+}
+
+function loadDemoData() {
+  localStorage.setItem('demo_data_active', '1');
+  setStatus('Demo data loaded');
+  updateDemoUI();
+  fetchAll();
+}
+
+function clearDemoData() {
+  localStorage.removeItem('demo_data_active');
+  setStatus('Demo data cleared');
+  updateDemoUI();
+  fetchAll();
+}
+
+function openDemoEditor() {
+  var data = _getLocalDemoData();
+  var modal = document.getElementById('demo-editor-modal');
+  if (modal) {
+    document.getElementById('demo-editor-textarea').value = JSON.stringify(data, null, 2);
+    modal.classList.add('active');
+  }
+}
+
+function closeDemoEditor() {
+  var modal = document.getElementById('demo-editor-modal');
+  if (modal) modal.classList.remove('active');
+}
+
+function saveDemoEditorData() {
+  var textarea = document.getElementById('demo-editor-textarea');
+  var resultEl = document.getElementById('demo-editor-result');
+  try {
+    var parsed = JSON.parse(textarea.value);
+    localStorage.setItem('demo_data_custom', JSON.stringify(parsed));
+    if (resultEl) { resultEl.className = 'dispatch-result success'; resultEl.textContent = 'Saved to browser storage'; }
+    if (_isDemoActive()) { fetchAll(); updateDemoUI(); }
+  } catch (e) {
+    if (resultEl) { resultEl.className = 'dispatch-result error'; resultEl.textContent = 'Invalid JSON: ' + e.message; }
+  }
+}
+
+var _origLoadRuns = loadRuns;
+loadRuns = async function(forceRefresh) {
+  if (_isDemoActive()) {
+    var d = _getLocalDemoData();
+    return d.runs || [];
+  }
+  return _origLoadRuns(forceRefresh);
+};
+
+var _origFetchPrs = fetchPrsFromGitHub;
+fetchPrsFromGitHub = async function(runs) {
+  if (_isDemoActive()) {
+    var d = _getLocalDemoData();
+    return d.prs || [];
+  }
+  return _origFetchPrs(runs);
+};
+
 async function init() {
   var cfg = getConfig();
   var warnings = [];
   if (!cfg.githubToken) warnings.push('GitHub token not set - PR discovery and refresh limited');
+  updateDemoUI();
   await fetchAll();
-  if (warnings.length > 0) setStatus(warnings.join(' | ') + ' (click Settings to configure)');
+  if (warnings.length > 0 && !_isDemoActive()) setStatus(warnings.join(' | ') + ' (click Settings to configure)');
   startLivePolling(30000);
 }
 init();

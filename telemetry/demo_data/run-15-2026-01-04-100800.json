@@ -1,0 +1,43 @@
+{
+  "target_repo": "https://github.com/acme-corp/api-gateway",
+  "fork_url": "https://github.com/acme-corp-forks/api-gateway",
+  "run_number": 15,
+  "run_id": "84814126733",
+  "run_url": "https://github.com/acme-corp/codeql-devin-fixer/actions/runs/75371715916",
+  "run_label": "run-15-2026-01-04-100800",
+  "timestamp": "2026-01-04T10:08:00+00:00",
+  "issues_found": 1,
+  "severity_breakdown": {
+    "medium": 1
+  },
+  "category_breakdown": {
+    "injection": 1
+  },
+  "batches_created": 1,
+  "sessions": [
+    {
+      "session_id": "devin-0d374a5c91e0445c9a2b8903fa384913",
+      "session_url": "https://app.devin.ai/sessions/0d374a5c91e0445c9a2b8903fa384913",
+      "batch_id": 1,
+      "status": "finished",
+      "issue_ids": [
+        "ISSUE-005-001"
+      ],
+      "pr_url": ""
+    }
+  ],
+  "issue_fingerprints": [
+    {
+      "id": "ISSUE-005-001",
+      "fingerprint": "22a64ac91cb5a8508d5d53fe9f1df460",
+      "rule_id": "py/command-injection",
+      "severity_tier": "medium",
+      "cwe_family": "injection",
+      "file": "src/db/queries.py",
+      "start_line": 13,
+      "description": "Potential injection vulnerability in queries.py",
+      "resolution": "",
+      "code_churn": 2
+    }
+  ]
+}

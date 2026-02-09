@@ -1,0 +1,72 @@
+{
+  "target_repo": "https://github.com/acme-corp/mobile-backend",
+  "fork_url": "https://github.com/acme-corp-forks/mobile-backend",
+  "run_number": 22,
+  "run_id": "99297729107",
+  "run_url": "https://github.com/acme-corp/codeql-devin-fixer/actions/runs/66684201906",
+  "run_label": "run-22-2025-11-28-134400",
+  "timestamp": "2025-11-28T13:44:00+00:00",
+  "issues_found": 3,
+  "severity_breakdown": {
+    "high": 2,
+    "medium": 1
+  },
+  "category_breakdown": {
+    "crypto": 1,
+    "xss": 1,
+    "insecure-deserialization": 1
+  },
+  "batches_created": 1,
+  "sessions": [
+    {
+      "session_id": "devin-5a874f36dbed46fc97bd531ad5664b84",
+      "session_url": "https://app.devin.ai/sessions/5a874f36dbed46fc97bd531ad5664b84",
+      "batch_id": 1,
+      "status": "finished",
+      "issue_ids": [
+        "ISSUE-005-001",
+        "ISSUE-005-002",
+        "ISSUE-005-003"
+      ],
+      "pr_url": ""
+    }
+  ],
+  "issue_fingerprints": [
+    {
+      "id": "ISSUE-005-001",
+      "fingerprint": "c924e4a655e70ff0559321a81db4846e",
+      "rule_id": "js/weak-crypto",
+      "severity_tier": "high",
+      "cwe_family": "crypto",
+      "file": "src/security/CryptoHelper.java",
+      "start_line": 51,
+      "description": "Potential crypto vulnerability in CryptoHelper.java",
+      "resolution": "",
+      "code_churn": 1
+    },
+    {
+      "id": "ISSUE-005-002",
+      "fingerprint": "be73a40e691fa046ce46748a45bbf3a6",
+      "rule_id": "js/xss",
+      "severity_tier": "high",
+      "cwe_family": "xss",
+      "file": "src/views/components/UserProfile.jsx",
+      "start_line": 220,
+      "description": "Potential xss vulnerability in UserProfile.jsx",
+      "resolution": "",
+      "code_churn": 3
+    },
+    {
+      "id": "ISSUE-005-003",
+      "fingerprint": "01964216dc5322ec11d62975339b5c01",
+      "rule_id": "java/unsafe-deserialization",
+      "severity_tier": "medium",
+      "cwe_family": "insecure-deserialization",
+      "file": "src/api/import_handler.py",
+      "start_line": 130,
+      "description": "Potential insecure deserialization vulnerability in import_handler.py",
+      "resolution": "",
+      "code_churn": 2
+    }
+  ]
+}

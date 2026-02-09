@@ -1,0 +1,43 @@
+{
+  "target_repo": "https://github.com/acme-corp/internal-tools",
+  "fork_url": "https://github.com/acme-corp-forks/internal-tools",
+  "run_number": 38,
+  "run_id": "32869705212",
+  "run_url": "https://github.com/acme-corp/codeql-devin-fixer/actions/runs/72784369933",
+  "run_label": "run-38-2026-01-12-090400",
+  "timestamp": "2026-01-12T09:04:00+00:00",
+  "issues_found": 1,
+  "severity_breakdown": {
+    "low": 1
+  },
+  "category_breakdown": {
+    "auth-bypass": 1
+  },
+  "batches_created": 1,
+  "sessions": [
+    {
+      "session_id": "devin-38ab3e45cc304c34b3f726e68615cd91",
+      "session_url": "https://app.devin.ai/sessions/38ab3e45cc304c34b3f726e68615cd91",
+      "batch_id": 1,
+      "status": "finished",
+      "issue_ids": [
+        "ISSUE-004-001"
+      ],
+      "pr_url": "https://github.com/acme-corp-forks/internal-tools/pull/24"
+    }
+  ],
+  "issue_fingerprints": [
+    {
+      "id": "ISSUE-004-001",
+      "fingerprint": "26c11fba4cea05ac0369ec7885b2eb24",
+      "rule_id": "js/missing-auth-check",
+      "severity_tier": "low",
+      "cwe_family": "auth-bypass",
+      "file": "src/api/middleware/auth.js",
+      "start_line": 373,
+      "description": "Potential auth bypass vulnerability in auth.js",
+      "resolution": "",
+      "code_churn": 3
+    }
+  ]
+}
