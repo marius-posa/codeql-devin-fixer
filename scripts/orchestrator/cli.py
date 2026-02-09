@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 import io
 import json
-import logging
 import os
 import sys
 from contextlib import redirect_stdout
