@@ -143,6 +143,36 @@
       </div>
       <div class="panel-body" style="overflow-x:auto;" id="registry-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
     </div>
+    <div class="panel">
+      <div class="panel-header">
+        Audit Log
+        <span id="audit-log-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+        <button class="btn btn-sm" onclick="exportAuditLog()" style="margin-left:auto">Export JSON</button>
+      </div>
+      <div class="panel-body">
+        <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
+          <select class="form-input" id="audit-action-filter" onchange="fetchAuditLog()" style="width:auto;padding:4px 8px;font-size:12px">
+            <option value="">All actions</option>
+            <option value="poll_sessions">poll_sessions</option>
+            <option value="poll_prs">poll_prs</option>
+            <option value="refresh_runs">refresh_runs</option>
+            <option value="backfill">backfill</option>
+            <option value="dispatch_workflow">dispatch_workflow</option>
+            <option value="orchestrator_dispatch">orchestrator_dispatch</option>
+            <option value="orchestrator_scan">orchestrator_scan</option>
+            <option value="orchestrator_cycle">orchestrator_cycle</option>
+            <option value="update_orchestrator_config">update_orchestrator_config</option>
+            <option value="update_registry">update_registry</option>
+            <option value="add_registry_repo">add_registry_repo</option>
+            <option value="update_registry_repo">update_registry_repo</option>
+            <option value="remove_registry_repo">remove_registry_repo</option>
+            <option value="export_audit_log">export_audit_log</option>
+          </select>
+          <input class="form-input" id="audit-user-filter" placeholder="Filter by user" onchange="fetchAuditLog()" style="width:auto;padding:4px 8px;font-size:12px">
+        </div>
+      </div>
+      <div class="panel-body" style="overflow-x:auto;" id="audit-log-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
+    </div>
   </div>
 </div>
 
@@ -368,6 +398,7 @@ let verificationRecords = [];
 let _chartInstances = {};
 let _livePoller = null;
 let slaData = {};
+let auditLogData = null;
 
 function switchTab(tabId) {
   document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.toggle('active', b.dataset.tab === tabId); });
@@ -670,6 +701,7 @@ function renderAll() {
   renderIssuesTable(allIssues, 'issues-table-container', 'issues-count');
   renderVerificationPanel(verificationRecords);
   renderRegistryPanel();
+  renderAuditLogPanel();
   updateLiveStatus();
 }
 
@@ -914,6 +946,24 @@ async function refreshData() {
   }
   btn.disabled = false;
   btn.textContent = 'Refresh Data';
+}
+
+function fetchAuditLog() {
+  var el = document.getElementById('audit-log-container');
+  if (el) el.innerHTML = '<div class="empty-state">Audit log is available when running the Flask telemetry server.</div>';
+}
+
+function renderAuditLogPanel() {
+  var el = document.getElementById('audit-log-container');
+  if (!el) return;
+  if (!auditLogData) {
+    el.innerHTML = '<div class="empty-state">Audit log is available when running the Flask telemetry server.</div>';
+    return;
+  }
+}
+
+function exportAuditLog() {
+  setStatus('Audit log export is available when running the Flask telemetry server.');
 }
 
 async function init() {

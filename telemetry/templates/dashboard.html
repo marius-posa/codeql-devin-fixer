@@ -179,6 +179,36 @@
       </div>
       <div class="panel-body table-scroll-wrapper" id="registry-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
     </div>
+    <div class="panel">
+      <div class="panel-header">
+        Audit Log
+        <span id="audit-log-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+        <button class="btn btn-sm" onclick="exportAuditLog()" style="margin-left:auto">Export JSON</button>
+      </div>
+      <div class="panel-body">
+        <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
+          <select class="form-input" id="audit-action-filter" onchange="fetchAuditLog()" style="width:auto;padding:4px 8px;font-size:12px">
+            <option value="">All actions</option>
+            <option value="poll_sessions">poll_sessions</option>
+            <option value="poll_prs">poll_prs</option>
+            <option value="refresh_runs">refresh_runs</option>
+            <option value="backfill">backfill</option>
+            <option value="dispatch_workflow">dispatch_workflow</option>
+            <option value="orchestrator_dispatch">orchestrator_dispatch</option>
+            <option value="orchestrator_scan">orchestrator_scan</option>
+            <option value="orchestrator_cycle">orchestrator_cycle</option>
+            <option value="update_orchestrator_config">update_orchestrator_config</option>
+            <option value="update_registry">update_registry</option>
+            <option value="add_registry_repo">add_registry_repo</option>
+            <option value="update_registry_repo">update_registry_repo</option>
+            <option value="remove_registry_repo">remove_registry_repo</option>
+            <option value="export_audit_log">export_audit_log</option>
+          </select>
+          <input class="form-input" id="audit-user-filter" placeholder="Filter by user" onchange="fetchAuditLog()" style="width:auto;padding:4px 8px;font-size:12px">
+        </div>
+      </div>
+      <div class="panel-body table-scroll-wrapper" id="audit-log-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
+    </div>
   </div>
 </div>
 
@@ -292,6 +322,7 @@ let orchestratorConfig = null;
 let fixRatesData = null;
 let _chartInstances = {};
 let _livePoller = null;
+let auditLogData = null;
 
 function switchTab(tabId) {
   document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.toggle('active', b.dataset.tab === tabId); });
@@ -586,6 +617,7 @@ async function fetchAll() {
   if (results.orchestratorConfig !== undefined) orchestratorConfig = results.orchestratorConfig;
   if (results.fixRates !== undefined) fixRatesData = results.fixRates;
   renderAll();
+  fetchAuditLog();
   setStatus(hasError ? 'Loaded with some errors (check console)' : 'Ready');
   setUpdated();
 }
@@ -652,6 +684,7 @@ function renderAll() {
   renderOrchestratorPriorityTable();
   renderFixRatesPanel();
   renderRegistryPanel();
+  renderAuditLogPanel();
   renderRegistryDefaultsPanel();
   updateLiveStatus();
 }
@@ -1291,6 +1324,82 @@ async function _flaskRegistryAdd(url, schedule) {
   } catch (e) {
     resultEl.textContent = 'Error: ' + e.message;
     resultEl.className = 'dispatch-result error';
+  }
+}
+
+async function fetchAuditLog() {
+  var actionFilter = (document.getElementById('audit-action-filter') || {}).value || '';
+  var userFilter = (document.getElementById('audit-user-filter') || {}).value || '';
+  var qs = '?per_page=100';
+  if (actionFilter) qs += '&action=' + encodeURIComponent(actionFilter);
+  if (userFilter) qs += '&user=' + encodeURIComponent(userFilter);
+  try {
+    var res = await _authedFetch(API + '/api/audit-log' + qs);
+    if (res.ok) {
+      auditLogData = await res.json();
+      renderAuditLogPanel();
+    }
+  } catch (e) {
+    console.error('Failed to fetch audit log:', e);
+  }
+}
+
+function renderAuditLogPanel() {
+  var el = document.getElementById('audit-log-container');
+  var countEl = document.getElementById('audit-log-count');
+  if (!auditLogData) return;
+  var items = auditLogData.items || [];
+  if (countEl) countEl.textContent = auditLogData.total || 0;
+  if (items.length === 0) {
+    el.innerHTML = '<div class="empty-state">No audit log entries yet.</div>';
+    return;
+  }
+  var actionColors = {
+    'orchestrator_cycle': '#238636', 'orchestrator_scan': '#1f6feb', 'orchestrator_dispatch': '#a371f7',
+    'dispatch_workflow': '#f0883e', 'poll_sessions': '#58a6ff', 'poll_prs': '#58a6ff',
+    'refresh_runs': '#d29922', 'add_registry_repo': '#238636', 'remove_registry_repo': '#f85149',
+    'update_registry': '#d29922', 'update_registry_repo': '#d29922', 'update_orchestrator_config': '#d29922',
+    'backfill': '#8b949e', 'export_audit_log': '#8b949e'
+  };
+  var rows = items.map(function(e) {
+    var color = actionColors[e.action] || '#8b949e';
+    var detailsStr = '';
+    if (e.details) {
+      try {
+        var d = typeof e.details === 'string' ? JSON.parse(e.details) : e.details;
+        detailsStr = Object.keys(d).map(function(k) { return k + '=' + JSON.stringify(d[k]); }).join(', ');
+      } catch (_) { detailsStr = escapeHtml(String(e.details)); }
+    }
+    var resourceStr = e.resource ? '<span style="color:var(--text-secondary)">' + escapeHtml(e.resource) + '</span>' : '';
+    return '<tr>'
+      + '<td style="white-space:nowrap">' + formatDate(e.timestamp) + '</td>'
+      + '<td>' + escapeHtml(e.user || '-') + '</td>'
+      + '<td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + color + ';margin-right:4px"></span>' + escapeHtml(e.action) + '</td>'
+      + '<td>' + resourceStr + '</td>'
+      + '<td style="font-size:11px;color:var(--text-muted);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtml(detailsStr) + '">' + escapeHtml(detailsStr) + '</td>'
+      + '</tr>';
+  }).join('');
+  el.innerHTML = '<table><thead><tr>'
+    + '<th>Timestamp</th><th>User</th><th>Action</th><th>Resource</th><th>Details</th>'
+    + '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+async function exportAuditLog() {
+  setStatus('Exporting audit log...');
+  try {
+    var res = await _authedFetch(API + '/api/audit-log/export', {
+      method: 'POST',
+      headers: Object.assign({}, _authHeaders(), { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({}),
+    });
+    var data = await res.json();
+    if (data.error) {
+      setStatus('Export error: ' + data.error);
+    } else {
+      setStatus('Exported ' + (data.entries || 0) + ' entries to ' + (data.file || 'logs/'));
+    }
+  } catch (e) {
+    setStatus('Export error: ' + e.message);
   }
 }
 

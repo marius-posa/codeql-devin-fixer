@@ -23,7 +23,7 @@ try:
 except ImportError:
     from scripts.logging_config import setup_logging
 
-from database import get_connection, init_db, insert_run  # noqa: E402
+from database import get_connection, init_db, insert_run, insert_audit_log, auto_export_audit_log  # noqa: E402
 from fix_learning import CWE_FIX_HINTS, FixLearning  # noqa: E402
 from github_utils import gh_headers, parse_repo_url  # noqa: E402
 
@@ -516,6 +516,19 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         "rate_limit_remaining": rate_limiter.max_sessions - rate_limiter.recent_count(),
         "results": results,
     }
+
+    conn = get_connection()
+    try:
+        insert_audit_log(
+            conn, "orchestrator-cli", "orchestrator_dispatch",
+            resource=repo_filter,
+            details=json.dumps({"dry_run": dry_run, "sessions_created": sessions_created, "batches": len(batches)}),
+        )
+        auto_export_audit_log(conn)
+    except Exception:
+        logger.warning("audit log write/export failed", exc_info=True)
+    finally:
+        conn.close()
 
     if output_json:
         print(json.dumps(summary, indent=2))
