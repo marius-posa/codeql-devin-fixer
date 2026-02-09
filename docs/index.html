@@ -41,6 +41,9 @@
     <button class="tab-btn" data-tab="activity" onclick="switchTab('activity')">
       <span class="tab-icon">&#x1F680;</span>Activity
     </button>
+    <button class="tab-btn" data-tab="orchestrator" onclick="switchTab('orchestrator')">
+      <span class="tab-icon">&#x2699;</span>Orchestrator
+    </button>
     <button class="tab-btn" data-tab="settings" onclick="switchTab('settings')">
       <span class="tab-icon">&#x2692;</span>Settings
     </button>
@@ -68,6 +71,10 @@
         <div class="panel-header">Category Breakdown</div>
         <div class="panel-body chart-canvas-wrap" id="category-chart"><div class="skeleton skeleton-chart" style="height:200px"></div></div>
       </div>
+    </div>
+    <div class="panel" style="cursor:pointer" onclick="switchTab('orchestrator')">
+      <div class="panel-header">Orchestrator Quick View <span style="font-size:11px;color:var(--text-muted);font-weight:400">click to open full view &rarr;</span></div>
+      <div class="panel-body" id="orchestrator-quick-view"><div class="skeleton skeleton-chart" style="height:60px"></div></div>
     </div>
   </div>
 
@@ -126,6 +133,27 @@
       <div class="panel-body" style="overflow-x:auto;" id="prs-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
     </div>
 
+  </div>
+
+  <div class="tab-content" id="tab-orchestrator">
+    <div class="panel">
+      <div class="panel-header">
+        Orchestrator
+        <span id="orchestrator-status-label" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+        <button class="btn btn-sm" onclick="triggerOrchestratorCycleStatic()" style="margin-left:auto" id="btn-orch-cycle" title="Dispatches the orchestrator.yml workflow">Run Cycle</button>
+      </div>
+      <div class="panel-body" id="orchestrator-panel-container"><div class="skeleton skeleton-chart" style="height:120px"></div></div>
+      <div class="panel-body" id="orchestrator-config-container"></div>
+      <div class="panel-body table-scroll-wrapper" id="orchestrator-history-container"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">Issue Prioritization<span id="priority-count" style="color:var(--text-muted);font-weight:400;font-size:12px;margin-left:8px"></span></div>
+      <div class="panel-body table-scroll-wrapper" id="orchestrator-priority-container"><div class="skeleton skeleton-chart" style="height:120px"></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">Fix Rates</div>
+      <div class="panel-body" id="orchestrator-fix-rates-container"><div class="skeleton skeleton-chart" style="height:120px"></div></div>
+    </div>
   </div>
 
   <div class="tab-content" id="tab-settings">
@@ -431,6 +459,12 @@ let _chartInstances = {};
 let _livePoller = null;
 let slaData = {};
 let auditLogData = null;
+let orchestratorStatus = null;
+let orchestratorHistory = null;
+let orchestratorPlan = null;
+let orchestratorConfig = null;
+let fixRatesData = null;
+let _orchestratorState = null;
 
 function switchTab(tabId) {
   document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.toggle('active', b.dataset.tab === tabId); });
@@ -732,9 +766,235 @@ function renderAll() {
   renderSlaPanel(slaData);
   renderIssuesTable(allIssues, 'issues-table-container', 'issues-count');
   renderVerificationPanel(verificationRecords);
+  renderOrchestratorPanel();
+  renderOrchestratorConfigPanel();
+  renderOrchestratorQuickView();
+  renderOrchestratorPriorityTable();
+  renderFixRatesPanel();
   renderRegistryPanel();
   renderAuditLogPanel();
   updateLiveStatus();
+}
+
+function renderOrchestratorPanel() {
+  var el = document.getElementById('orchestrator-panel-container');
+  var labelEl = document.getElementById('orchestrator-status-label');
+  var histEl = document.getElementById('orchestrator-history-container');
+  if (!orchestratorStatus) {
+    el.innerHTML = '<div class="empty-state">Orchestrator data unavailable. Ensure orchestrator_state.json exists in the repo.</div>';
+    if (histEl) histEl.innerHTML = '';
+    return;
+  }
+  var s = orchestratorStatus;
+  if (labelEl) {
+    var lastCycle = s.last_cycle ? formatDate(s.last_cycle) : 'never';
+    labelEl.textContent = 'Last cycle: ' + lastCycle;
+  }
+  var rl = s.rate_limit || {};
+  var html = '<div class="metrics-grid" style="margin-bottom:12px">';
+  html += '<div class="metric-card blue"><div class="label">Rate Limit</div><div class="value">' + (rl.used || 0) + ' / ' + (rl.max || 20) + '</div><div class="sub">' + (rl.remaining || 0) + ' remaining (' + (rl.period_hours || 24) + 'h window)</div></div>';
+  html += '<div class="metric-card"><div class="label">Total Issues</div><div class="value">' + (s.total_issues || 0) + '</div></div>';
+  html += '<div class="metric-card"><div class="label">Dispatch History</div><div class="value">' + (s.dispatch_history_entries || 0) + '</div><div class="sub">unique fingerprints</div></div>';
+  html += '</div>';
+  var breakdown = s.issue_state_breakdown || {};
+  var bKeys = Object.keys(breakdown);
+  if (bKeys.length > 0) {
+    html += '<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Issue State Breakdown</div>';
+    html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+    bKeys.forEach(function(k) {
+      html += '<span class="badge" style="font-size:12px;padding:4px 10px">' + escapeHtml(k) + ': ' + breakdown[k] + '</span>';
+    });
+    html += '</div></div>';
+  }
+  var objectives = s.objective_progress || [];
+  if (objectives.length > 0) {
+    html += '<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Objective Progress</div>';
+    objectives.forEach(function(obj) {
+      var pct = Math.round(obj.current_count / Math.max(obj.target_count, 1) * 100);
+      var color = obj.met ? 'var(--accent-green)' : pct >= 50 ? 'var(--accent-orange)' : 'var(--accent-red)';
+      html += '<div style="margin-bottom:6px;font-size:13px"><span>' + escapeHtml(obj.objective) + '</span>';
+      html += ' <span style="font-weight:600">' + obj.current_count + '/' + obj.target_count + '</span>';
+      html += ' <span style="color:' + color + ';font-size:11px">' + (obj.met ? 'MET' : pct + '%') + '</span>';
+      html += '<div style="background:var(--bg-tertiary);border-radius:3px;height:8px;margin-top:2px;overflow:hidden"><div style="background:' + color + ';height:100%;width:' + Math.min(pct, 100) + '%"></div></div></div>';
+    });
+    html += '</div>';
+  }
+  el.innerHTML = html;
+  if (histEl && orchestratorHistory) {
+    var items = orchestratorHistory.items || [];
+    if (items.length === 0) {
+      histEl.innerHTML = '<div class="empty-state">No dispatch history yet.</div>';
+    } else {
+      var rows = items.slice(0, 50).map(function(item) {
+        var statusCls = item.status === 'finished' ? 'badge-verified' : item.status === 'running' ? 'badge-partial' : '';
+        return '<tr>'
+          + '<td><span class="issue-id">' + escapeHtml((item.fingerprint || '').slice(0, 12)) + '</span></td>'
+          + '<td>' + (item.session_url ? '<a href="'+escapeHtml(item.session_url)+'" target="_blank">' + escapeHtml((item.session_id || '').slice(0, 12)) + '</a>' : escapeHtml((item.session_id || '-').slice(0, 12))) + '</td>'
+          + '<td><span class="badge ' + statusCls + '">' + escapeHtml(item.status || 'unknown') + '</span></td>'
+          + '<td>' + (item.pr_url ? '<a href="'+escapeHtml(item.pr_url)+'" target="_blank">PR</a>' : '-') + '</td>'
+          + '<td>' + formatDate(item.dispatched_at) + '</td>'
+          + '</tr>';
+      }).join('');
+      histEl.innerHTML = '<table><thead><tr><th>Fingerprint</th><th>Session</th><th>Status</th><th>PR</th><th>Dispatched</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    }
+  }
+}
+
+function renderOrchestratorConfigPanel() {
+  var el = document.getElementById('orchestrator-config-container');
+  if (!el) return;
+  if (!orchestratorConfig) { el.innerHTML = ''; return; }
+  var c = orchestratorConfig;
+  var html = '<div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Configuration</div>';
+  html += '<div id="orch-config-display">';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:13px">';
+  html += '<div><span style="color:var(--text-muted)">Session limit:</span> ' + c.global_session_limit + '</div>';
+  html += '<div><span style="color:var(--text-muted)">Period:</span> ' + c.global_session_limit_period_hours + 'h</div>';
+  html += '<div><span style="color:var(--text-muted)">Objectives:</span> ' + (c.objectives || []).length + '</div>';
+  html += '<div><span style="color:var(--text-muted)">Alert on objective met:</span> ' + (c.alert_on_objective_met ? 'yes' : 'no') + '</div>';
+  html += '<div><span style="color:var(--text-muted)">Alert on verified fix:</span> ' + (c.alert_on_verified_fix ? 'yes' : 'no') + '</div>';
+  html += '<div><span style="color:var(--text-muted)">Alert severities:</span> ' + (c.alert_severities || []).join(', ') + '</div>';
+  html += '</div>';
+  var cfg = getConfig();
+  if (cfg.githubToken) {
+    html += '<button class="btn btn-sm" onclick="_toggleOrchConfigEdit()" id="btn-orch-config-edit" style="margin-top:8px">Edit</button>';
+  }
+  html += '</div>';
+  html += '<div id="orch-config-form" style="display:none">';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">';
+  html += '<div class="form-group" style="margin:0"><label style="font-size:11px;color:var(--text-muted)">Session Limit</label><input class="form-input" id="orch-cfg-limit" type="number" value="' + c.global_session_limit + '" style="padding:4px 8px"></div>';
+  html += '<div class="form-group" style="margin:0"><label style="font-size:11px;color:var(--text-muted)">Period (hours)</label><input class="form-input" id="orch-cfg-period" type="number" value="' + c.global_session_limit_period_hours + '" style="padding:4px 8px"></div>';
+  html += '</div>';
+  html += '<div style="display:flex;gap:4px">';
+  html += '<button class="btn btn-sm btn-primary" onclick="_saveOrchConfig()">Save</button>';
+  html += '<button class="btn btn-sm" onclick="_toggleOrchConfigEdit()">Cancel</button>';
+  html += '</div></div>';
+  el.innerHTML = html;
+}
+
+function _toggleOrchConfigEdit() {
+  var display = document.getElementById('orch-config-display');
+  var form = document.getElementById('orch-config-form');
+  if (!display || !form) return;
+  var editing = form.style.display !== 'none';
+  display.style.display = editing ? '' : 'none';
+  form.style.display = editing ? 'none' : '';
+}
+
+async function _saveOrchConfig() {
+  if (!registryData) return;
+  if (!registryData.orchestrator) registryData.orchestrator = {};
+  registryData.orchestrator.global_session_limit = parseInt(document.getElementById('orch-cfg-limit').value, 10) || 20;
+  registryData.orchestrator.global_session_limit_period_hours = parseInt(document.getElementById('orch-cfg-period').value, 10) || 24;
+  setStatus('Saving orchestrator config...');
+  var result = await saveOrchestratorConfigToGitHub(registryData);
+  if (result.error) {
+    setStatus('Config save failed: ' + result.error);
+    return;
+  }
+  orchestratorConfig = buildOrchestratorConfig(registryData);
+  renderOrchestratorConfigPanel();
+  setStatus('Orchestrator config saved');
+  setUpdated();
+}
+
+function renderOrchestratorQuickView() {
+  var el = document.getElementById('orchestrator-quick-view');
+  if (!el) return;
+  if (!orchestratorStatus) {
+    el.innerHTML = '<div class="empty-state" style="padding:8px 0">Orchestrator data unavailable</div>';
+    return;
+  }
+  var s = orchestratorStatus;
+  var rl = s.rate_limit || {};
+  var lastCycle = s.last_cycle ? formatDate(s.last_cycle) : 'never';
+  var html = '<div style="display:flex;gap:24px;align-items:center;font-size:13px;flex-wrap:wrap">';
+  html += '<div><span style="color:var(--text-muted)">Last cycle:</span> <span style="font-weight:600">' + lastCycle + '</span></div>';
+  html += '<div><span style="color:var(--text-muted)">Rate limit:</span> <span style="font-weight:600">' + (rl.used || 0) + '/' + (rl.max || 20) + '</span></div>';
+  html += '<div><span style="color:var(--text-muted)">Issues:</span> <span style="font-weight:600">' + (s.total_issues || 0) + '</span></div>';
+  html += '<div><span style="color:var(--text-muted)">Dispatches:</span> <span style="font-weight:600">' + (s.dispatch_history_entries || 0) + '</span></div>';
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+function renderOrchestratorPriorityTable() {
+  var el = document.getElementById('orchestrator-priority-container');
+  var countEl = document.getElementById('priority-count');
+  if (!el) return;
+  if (!orchestratorPlan || !orchestratorPlan.planned_dispatches || orchestratorPlan.planned_dispatches.length === 0) {
+    el.innerHTML = '<div class="empty-state">No pending issues to prioritize.</div>';
+    if (countEl) countEl.textContent = '';
+    return;
+  }
+  var items = orchestratorPlan.planned_dispatches;
+  if (countEl) countEl.textContent = items.length + ' issues';
+  var rows = '';
+  items.slice(0, 100).forEach(function(item, idx) {
+    var sev = item.severity_tier || '';
+    var score = item.priority_score || 0;
+    var barW = Math.min(score / 30 * 100, 100);
+    var barColor = score >= 20 ? 'var(--accent-red)' : score >= 10 ? 'var(--accent-orange)' : 'var(--accent-green)';
+    var repo = (item.target_repo || '').replace('https://github.com/', '');
+    var rule = item.rule_id || '';
+    rows += '<tr>'
+      + '<td>' + (idx + 1) + '</td>'
+      + '<td><span class="issue-id">' + escapeHtml((item.fingerprint || '').slice(0, 12)) + '</span></td>'
+      + '<td>' + escapeHtml(repo) + '</td>'
+      + '<td>' + escapeHtml(rule) + '</td>'
+      + '<td><span class="badge ' + badgeClass(sev) + '">' + escapeHtml(sev) + '</span></td>'
+      + '<td style="min-width:120px"><div style="display:flex;align-items:center;gap:6px">'
+      + '<div style="flex:1;background:var(--bg-tertiary);border-radius:3px;height:12px;overflow:hidden">'
+      + '<div style="background:' + barColor + ';height:100%;width:' + barW + '%"></div></div>'
+      + '<span style="font-size:12px;font-weight:600;min-width:32px;text-align:right">' + score + '</span></div></td>'
+      + '</tr>';
+  });
+  el.innerHTML = '<table><thead><tr><th>#</th><th>Fingerprint</th><th>Repo</th><th>Rule</th><th>Severity</th><th>Priority Score</th></tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+function renderFixRatesPanel() {
+  var el = document.getElementById('orchestrator-fix-rates-container');
+  if (!el) return;
+  if (!fixRatesData) { el.innerHTML = '<div class="empty-state">Fix rate data unavailable</div>'; return; }
+  var overall = fixRatesData.overall || {};
+  var html = '<div class="metrics-grid" style="margin-bottom:16px">';
+  html += '<div class="metric-card ' + fixRateColorClass(overall.fix_rate || 0) + '"><div class="label">Overall Fix Rate</div><div class="value">' + (overall.fix_rate || 0) + '%</div><div class="sub">' + (overall.fixed || 0) + ' of ' + (overall.total || 0) + ' issues</div></div>';
+  html += '</div>';
+  var sections = [
+    { key: 'by_severity', title: 'By Severity' },
+    { key: 'by_cwe_family', title: 'By CWE Family' },
+    { key: 'by_repo', title: 'By Repository' },
+  ];
+  sections.forEach(function(sec) {
+    var items = fixRatesData[sec.key] || [];
+    if (!items.length) return;
+    html += '<div style="margin-bottom:16px"><div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">' + sec.title + '</div>';
+    html += '<table style="font-size:12px"><thead><tr><th>' + (sec.key === 'by_repo' ? 'Repository' : 'Category') + '</th><th>Total</th><th>Fixed</th><th>Fix Rate</th><th style="min-width:100px"></th></tr></thead><tbody>';
+    items.forEach(function(item) {
+      var name = item.name || '';
+      if (sec.key === 'by_repo') name = name.replace('https://github.com/', '');
+      var pct = item.fix_rate || 0;
+      var barColor = pct >= 60 ? 'var(--accent-green)' : pct >= 30 ? 'var(--accent-orange)' : 'var(--accent-red)';
+      html += '<tr><td>' + escapeHtml(name) + '</td><td>' + item.total + '</td><td>' + item.fixed + '</td><td style="font-weight:600">' + pct + '%</td>';
+      html += '<td><div style="background:var(--bg-tertiary);border-radius:3px;height:10px;overflow:hidden"><div style="background:' + barColor + ';height:100%;width:' + pct + '%"></div></div></td></tr>';
+    });
+    html += '</tbody></table></div>';
+  });
+  el.innerHTML = html;
+}
+
+async function triggerOrchestratorCycleStatic() {
+  var btn = document.getElementById('btn-orch-cycle');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Running...';
+  setStatus('Dispatching orchestrator workflow...');
+  var result = await triggerOrchestratorWorkflow();
+  if (result.error) {
+    setStatus('Orchestrator error: ' + result.error);
+  } else {
+    setStatus('Orchestrator workflow dispatched successfully');
+  }
+  btn.disabled = false;
+  btn.textContent = 'Run Cycle';
 }
 
 function renderRegistryPanel() {
@@ -888,6 +1148,18 @@ async function fetchAll() {
 
     registryData = await fetchRegistry();
     verificationRecords = await loadVerificationRecords();
+
+    if (_isDemoActive()) {
+      var demoData = _getLocalDemoData();
+      _orchestratorState = demoData.orchestrator_state || null;
+    } else {
+      _orchestratorState = await fetchOrchestratorState();
+    }
+    orchestratorStatus = buildOrchestratorStatus(_orchestratorState, registryData, allIssues, verificationRecords);
+    orchestratorHistory = buildOrchestratorHistory(_orchestratorState);
+    orchestratorPlan = buildOrchestratorPlan(allIssues, _orchestratorState, verificationRecords);
+    orchestratorConfig = buildOrchestratorConfig(registryData);
+    fixRatesData = buildFixRates(allIssues, verificationRecords);
 
     renderAll();
     setStatus('Ready');

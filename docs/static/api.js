@@ -838,6 +838,216 @@ async function updateRegistryOnGitHub(registry) {
   }
 }
 
+async function fetchOrchestratorState() {
+  var cfg = getConfig();
+  var repo = cfg.actionRepo;
+  var url = GH_API + '/repos/' + repo + '/contents/telemetry/orchestrator_state.json?ref=main';
+  try {
+    var resp = await fetch(url, { headers: ghHeaders() });
+    if (!resp.ok) return null;
+    var meta = await resp.json();
+    if (!meta.download_url) return null;
+    var dataResp = await fetch(meta.download_url);
+    if (!dataResp.ok) return null;
+    return await dataResp.json();
+  } catch (e) {
+    return null;
+  }
+}
+
+function buildOrchestratorStatus(state, registry, issues, verificationRecords) {
+  if (!state) return null;
+  var orchConfig = (registry || {}).orchestrator || {};
+  var maxSessions = orchConfig.global_session_limit || 20;
+  var periodHours = orchConfig.global_session_limit_period_hours || 24;
+  var rlData = state.rate_limiter || {};
+  var timestamps = rlData.created_timestamps || rlData.timestamps || [];
+  var cutoff = new Date(Date.now() - periodHours * 3600000);
+  var used = 0;
+  for (var i = 0; i < timestamps.length; i++) {
+    try {
+      var ts = new Date(timestamps[i]);
+      if (ts > cutoff) used++;
+    } catch (e) {}
+  }
+  var stateCounts = {};
+  for (var j = 0; j < (issues || []).length; j++) {
+    var derived = issues[j].status || 'new';
+    stateCounts[derived] = (stateCounts[derived] || 0) + 1;
+  }
+  var objectives = orchConfig.objectives || [];
+  var objectiveProgress = objectives.map(function(obj) {
+    var severity = obj.severity || '';
+    var current = (issues || []).filter(function(iss) {
+      return (iss.status === 'fixed' || iss.status === 'verified_fixed')
+        && (!severity || iss.severity_tier === severity);
+    }).length;
+    return {
+      objective: obj.objective || '',
+      target_count: obj.target_count || 0,
+      current_count: current,
+      met: current >= (obj.target_count || 0),
+    };
+  });
+  var dispatchHistory = state.dispatch_history || {};
+  return {
+    timestamp: new Date().toISOString(),
+    last_cycle: state.last_cycle || null,
+    issue_state_breakdown: stateCounts,
+    total_issues: (issues || []).length,
+    rate_limit: {
+      used: used,
+      max: maxSessions,
+      remaining: maxSessions - used,
+      period_hours: periodHours,
+    },
+    objective_progress: objectiveProgress,
+    scan_schedule: state.scan_schedule || {},
+    dispatch_history_entries: Object.keys(dispatchHistory).length,
+  };
+}
+
+function buildOrchestratorHistory(state) {
+  if (!state) return { items: [] };
+  var dispatchHistory = state.dispatch_history || {};
+  var allEntries = [];
+  for (var fp in dispatchHistory) {
+    var history = dispatchHistory[fp];
+    if (Array.isArray(history)) {
+      for (var i = 0; i < history.length; i++) {
+        var entry = Object.assign({}, history[i]);
+        entry.fingerprint = fp;
+        allEntries.push(entry);
+      }
+    } else if (history && typeof history === 'object') {
+      var single = Object.assign({}, history);
+      single.fingerprint = fp;
+      allEntries.push(single);
+    }
+  }
+  allEntries.sort(function(a, b) {
+    return (b.dispatched_at || '').localeCompare(a.dispatched_at || '');
+  });
+  return { items: allEntries, total: allEntries.length };
+}
+
+function buildOrchestratorConfig(registry) {
+  var orch = (registry || {}).orchestrator || {};
+  return {
+    global_session_limit: orch.global_session_limit || 20,
+    global_session_limit_period_hours: orch.global_session_limit_period_hours || 24,
+    objectives: orch.objectives || [],
+    alert_on_objective_met: orch.alert_on_objective_met || false,
+    alert_webhook_url: orch.alert_webhook_url || '',
+    alert_on_verified_fix: orch.alert_on_verified_fix !== false,
+    alert_severities: orch.alert_severities || ['critical', 'high'],
+  };
+}
+
+function buildFixRates(issues, verificationRecords) {
+  var fpFixMap = buildFingerprintFixMap(verificationRecords || []);
+  var byCwe = {}, byRepo = {}, bySeverity = {};
+  var totalIssues = (issues || []).length;
+  var totalFixed = 0;
+  for (var i = 0; i < totalIssues; i++) {
+    var issue = issues[i];
+    var fp = issue.fingerprint || '';
+    var cwe = issue.cwe_family || 'unknown';
+    var repo = issue.target_repo || 'unknown';
+    var sev = issue.severity_tier || 'unknown';
+    var isFixed = (fp && fpFixMap[fp]) || issue.status === 'fixed' || issue.status === 'verified_fixed';
+    if (isFixed) totalFixed++;
+    var groups = [[byCwe, cwe], [byRepo, repo], [bySeverity, sev]];
+    for (var g = 0; g < groups.length; g++) {
+      var dict = groups[g][0], key = groups[g][1];
+      if (!dict[key]) dict[key] = { total: 0, fixed: 0 };
+      dict[key].total++;
+      if (isFixed) dict[key].fixed++;
+    }
+  }
+  function computeRates(groupDict) {
+    var result = [];
+    var keys = Object.keys(groupDict).sort(function(a, b) {
+      return groupDict[b].total - groupDict[a].total;
+    });
+    for (var k = 0; k < keys.length; k++) {
+      var name = keys[k];
+      var counts = groupDict[name];
+      var rate = Math.round(counts.fixed / Math.max(counts.total, 1) * 1000) / 10;
+      result.push({ name: name, total: counts.total, fixed: counts.fixed, fix_rate: rate });
+    }
+    return result;
+  }
+  return {
+    overall: {
+      total: totalIssues,
+      fixed: totalFixed,
+      fix_rate: Math.round(totalFixed / Math.max(totalIssues, 1) * 1000) / 10,
+    },
+    by_cwe_family: computeRates(byCwe),
+    by_repo: computeRates(byRepo),
+    by_severity: computeRates(bySeverity),
+  };
+}
+
+function buildOrchestratorPlan(issues, state, verificationRecords) {
+  if (!issues || !issues.length) return { planned_dispatches: [] };
+  var fpFixMap = buildFingerprintFixMap(verificationRecords || []);
+  var dispatchHistory = (state || {}).dispatch_history || {};
+  var sevWeights = { critical: 1.0, high: 0.75, medium: 0.5, low: 0.25 };
+  var dispatches = [];
+  for (var i = 0; i < issues.length; i++) {
+    var issue = issues[i];
+    if (issue.status === 'fixed' || issue.status === 'verified_fixed') continue;
+    if (issue.fingerprint && fpFixMap[issue.fingerprint]) continue;
+    var fp = issue.fingerprint || '';
+    var history = dispatchHistory[fp];
+    if (Array.isArray(history) && history.length > 0) {
+      var lastEntry = history[history.length - 1];
+      if (lastEntry.status === 'running' || lastEntry.status === 'pending') continue;
+    }
+    var sevScore = (sevWeights[issue.severity_tier] || 0.25) * 30;
+    var recurrence = Math.min((issue.appearances || 1) - 1, 5) * 2;
+    var priority = sevScore + recurrence;
+    dispatches.push({
+      fingerprint: fp,
+      target_repo: issue.target_repo || '',
+      rule_id: issue.rule_id || '',
+      severity_tier: issue.severity_tier || '',
+      priority_score: Math.round(priority * 10) / 10,
+    });
+  }
+  dispatches.sort(function(a, b) { return b.priority_score - a.priority_score; });
+  return { planned_dispatches: dispatches };
+}
+
+async function triggerOrchestratorWorkflow() {
+  var cfg = getConfig();
+  if (!cfg.githubToken) return { error: 'GitHub token not configured. Open Settings to add it.' };
+  if (!cfg.actionRepo) return { error: 'Action repo not configured. Open Settings to add it.' };
+  var url = GH_API + '/repos/' + cfg.actionRepo + '/actions/workflows/orchestrator.yml/dispatches';
+  try {
+    var resp = await fetch(url, {
+      method: 'POST',
+      headers: ghHeaders(),
+      body: JSON.stringify({ ref: 'main' }),
+    });
+    if (resp.status === 204) return { success: true };
+    var errMsg = 'GitHub API error (' + resp.status + ')';
+    try {
+      var errData = await resp.json();
+      errMsg += ': ' + (errData.message || resp.statusText);
+    } catch (e) {}
+    return { error: errMsg };
+  } catch (e) {
+    return { error: 'Request failed: ' + e.message };
+  }
+}
+
+async function saveOrchestratorConfigToGitHub(registry) {
+  return await updateRegistryOnGitHub(registry);
+}
+
 async function dispatchPreflight(targetRepo, runs, prs, sessions) {
   const openPrs = prs.filter(function(p) { return p.state === 'open' && !p.merged; });
   const repoOpenPrs = [];
