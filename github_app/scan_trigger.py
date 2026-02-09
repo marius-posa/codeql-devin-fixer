@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from urllib.parse import urlparse, urlunparse
 
 log = logging.getLogger(__name__)
 
@@ -54,7 +55,9 @@ def trigger_scan(scan_config: dict) -> dict:
     output_dir = os.path.join(work_dir, "output")
     os.makedirs(output_dir, exist_ok=True)
 
-    log.info("Starting scan for %s in %s", target_repo, work_dir)
+    parsed = urlparse(target_repo)
+    safe_url = urlunparse(parsed._replace(netloc=parsed.hostname or ""))
+    log.info("Starting scan for %s in %s", safe_url, work_dir)
 
     steps: list[dict] = []
 
