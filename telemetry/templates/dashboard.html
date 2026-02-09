@@ -5,12 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CodeQL Devin Fixer - Telemetry Dashboard</title>
 <link rel="stylesheet" href="/static/shared.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 </head>
 <body>
 <div class="container">
   <header>
     <h1><span>CodeQL Devin Fixer</span> Telemetry</h1>
     <div class="header-actions">
+      <span id="live-status"></span>
       <button class="btn" onclick="refreshData()" id="btn-refresh">Refresh Data</button>
       <button class="btn btn-primary" onclick="pollSessions()" id="btn-poll">Poll Sessions</button>
       <button class="btn btn-primary" onclick="openDispatchModal()" id="btn-dispatch" style="background:#1f6feb;border-color:#388bfd">Trigger Action</button>
@@ -26,106 +28,141 @@
     <span id="last-updated"></span>
   </div>
 
-  <div class="period-selector" style="margin-bottom:16px;display:flex;gap:4px;align-items:center">
-    <span style="font-size:12px;color:var(--text-muted);margin-right:8px">Period:</span>
-    <button class="btn period-btn active" data-period="all" onclick="setPeriod('all')">All Time</button>
-    <button class="btn period-btn" data-period="7d" onclick="setPeriod('7d')">7 Days</button>
-    <button class="btn period-btn" data-period="30d" onclick="setPeriod('30d')">30 Days</button>
-    <button class="btn period-btn" data-period="90d" onclick="setPeriod('90d')">90 Days</button>
-  </div>
+  <nav class="tab-nav" id="tab-nav">
+    <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview')">
+      <span class="tab-icon">&#x1F4CA;</span>Overview
+    </button>
+    <button class="tab-btn" data-tab="repos" onclick="switchTab('repos')">
+      <span class="tab-icon">&#x1F4E6;</span>Repositories
+    </button>
+    <button class="tab-btn" data-tab="issues" onclick="switchTab('issues')">
+      <span class="tab-icon">&#x1F50D;</span>Issues
+    </button>
+    <button class="tab-btn" data-tab="activity" onclick="switchTab('activity')">
+      <span class="tab-icon">&#x1F680;</span>Activity
+    </button>
+    <button class="tab-btn" data-tab="orchestrator" onclick="switchTab('orchestrator')">
+      <span class="tab-icon">&#x2699;</span>Orchestrator
+    </button>
+    <button class="tab-btn" data-tab="settings" onclick="switchTab('settings')">
+      <span class="tab-icon">&#x2692;</span>Settings
+    </button>
+  </nav>
 
-  <div class="metrics-grid" id="metrics-grid"></div>
-
-  <div class="panel">
-    <div class="panel-header">Security Health Trend</div>
-    <div class="panel-body" id="trend-chart"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
-  </div>
-
-  <div class="grid-2">
+  <div class="tab-content active" id="tab-overview">
+    <div class="period-selector" style="margin-bottom:16px;display:flex;gap:4px;align-items:center">
+      <span style="font-size:12px;color:var(--text-muted);margin-right:8px">Period:</span>
+      <button class="btn period-btn active" data-period="all" onclick="setPeriod('all')">All Time</button>
+      <button class="btn period-btn" data-period="7d" onclick="setPeriod('7d')">7 Days</button>
+      <button class="btn period-btn" data-period="30d" onclick="setPeriod('30d')">30 Days</button>
+      <button class="btn period-btn" data-period="90d" onclick="setPeriod('90d')">90 Days</button>
+    </div>
+    <div class="metrics-grid" id="metrics-grid"></div>
     <div class="panel">
-      <div class="panel-header">Severity Breakdown</div>
-      <div class="panel-body" id="severity-chart"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+      <div class="panel-header">Security Health Trend</div>
+      <div class="panel-body" id="trend-chart"><div class="skeleton skeleton-chart"></div></div>
+    </div>
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel-header">Severity Breakdown</div>
+        <div class="panel-body chart-canvas-wrap" id="severity-chart"><div class="skeleton skeleton-chart" style="height:200px"></div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">Category Breakdown</div>
+        <div class="panel-body chart-canvas-wrap" id="category-chart"><div class="skeleton skeleton-chart" style="height:200px"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-content" id="tab-repos">
+    <div class="panel">
+      <div class="panel-header">
+        Repositories Scanned
+        <span id="repo-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      </div>
+      <div class="panel-body table-scroll-wrapper" id="repos-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
+    </div>
+  </div>
+
+  <div class="tab-content" id="tab-issues">
+    <div class="panel">
+      <div class="panel-header">
+        Issue Tracking
+        <span id="issues-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+        <button class="btn btn-sm" onclick="exportAllIssuesCsv()" style="margin-left:auto">Export CSV</button>
+      </div>
+      <div class="panel-body table-scroll-wrapper" id="issues-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
     </div>
     <div class="panel">
-      <div class="panel-header">Category Breakdown</div>
-      <div class="panel-body" id="category-chart"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+      <div class="panel-header">SLA Compliance</div>
+      <div class="panel-body" id="sla-panel-container"><div class="skeleton skeleton-chart" style="height:120px"></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        Fix Verification
+        <span id="verification-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      </div>
+      <div class="panel-body" id="verification-stats-container"><div class="skeleton skeleton-chart" style="height:100px"></div></div>
+      <div class="panel-body table-scroll-wrapper" id="verification-table-container"></div>
     </div>
   </div>
 
-  <div class="panel">
-    <div class="panel-header">
-      Repositories Scanned
-      <span id="repo-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+  <div class="tab-content" id="tab-activity">
+    <div class="panel">
+      <div class="panel-header">
+        Run History
+        <span id="runs-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      </div>
+      <div class="panel-body table-scroll-wrapper" id="runs-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
     </div>
-    <div class="panel-body table-scroll-wrapper" id="repos-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+    <div class="panel">
+      <div class="panel-header">
+        Devin Sessions
+        <span id="sessions-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      </div>
+      <div class="panel-body table-scroll-wrapper" id="sessions-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        Pull Requests
+        <span id="prs-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      </div>
+      <div class="panel-body table-scroll-wrapper" id="prs-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
+    </div>
   </div>
 
-  <div class="panel">
-    <div class="panel-header">
-      Run History
-      <span id="runs-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+  <div class="tab-content" id="tab-orchestrator">
+    <div class="panel">
+      <div class="panel-header">
+        Orchestrator
+        <span id="orchestrator-status-label" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+        <button class="btn btn-sm" onclick="triggerOrchestratorScan()" style="margin-left:auto" id="btn-orch-scan">Scan Due Repos</button>
+        <button class="btn btn-sm" onclick="triggerOrchestratorDispatch()" id="btn-orch-dispatch" style="background:#1f6feb;border-color:#388bfd;color:#fff;margin-left:4px">Dispatch</button>
+        <button class="btn btn-sm" onclick="triggerOrchestratorCycle()" id="btn-orch-cycle" style="background:#238636;border-color:#2ea043;color:#fff;margin-left:4px">Run Cycle</button>
+      </div>
+      <div class="panel-body" id="orchestrator-panel-container"><div class="skeleton skeleton-chart" style="height:120px"></div></div>
+      <div class="panel-body" id="orchestrator-config-container"></div>
+      <div class="panel-body table-scroll-wrapper" id="orchestrator-history-container"></div>
     </div>
-    <div class="panel-body table-scroll-wrapper" id="runs-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
   </div>
 
-  <div class="panel">
-    <div class="panel-header">
-      Devin Sessions
-      <span id="sessions-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+  <div class="tab-content" id="tab-settings">
+    <div class="panel">
+      <div class="panel-header">Export &amp; Reports</div>
+      <div class="panel-body">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+          <button class="btn" onclick="exportAllIssuesCsv()">Export Issues CSV</button>
+          <a class="btn" href="/api/report/pdf">PDF Report</a>
+        </div>
+      </div>
     </div>
-    <div class="panel-body table-scroll-wrapper" id="sessions-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-header">
-      Pull Requests
-      <span id="prs-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+    <div class="panel">
+      <div class="panel-header">
+        Scheduled Repo Registry
+        <span id="registry-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      </div>
+      <div class="panel-body table-scroll-wrapper" id="registry-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
     </div>
-    <div class="panel-body table-scroll-wrapper" id="prs-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-header">SLA Compliance</div>
-    <div class="panel-body" id="sla-panel-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-header">
-      Issue Tracking
-      <span id="issues-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
-      <button class="btn btn-sm" onclick="exportAllIssuesCsv()" style="margin-left:auto">Export CSV</button>
-    </div>
-    <div class="panel-body table-scroll-wrapper" id="issues-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-header">
-      Fix Verification
-      <span id="verification-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
-    </div>
-    <div class="panel-body" id="verification-stats-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
-    <div class="panel-body table-scroll-wrapper" id="verification-table-container"></div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-header">
-      Orchestrator
-      <span id="orchestrator-status-label" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
-      <button class="btn btn-sm" onclick="triggerOrchestratorScan()" style="margin-left:auto" id="btn-orch-scan">Scan Due Repos</button>
-      <button class="btn btn-sm" onclick="triggerOrchestratorDispatch()" id="btn-orch-dispatch" style="background:#1f6feb;border-color:#388bfd;color:#fff;margin-left:4px">Dispatch</button>
-      <button class="btn btn-sm" onclick="triggerOrchestratorCycle()" id="btn-orch-cycle" style="background:#238636;border-color:#2ea043;color:#fff;margin-left:4px">Run Cycle</button>
-    </div>
-    <div class="panel-body" id="orchestrator-panel-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
-    <div class="panel-body" id="orchestrator-config-container"></div>
-    <div class="panel-body table-scroll-wrapper" id="orchestrator-history-container"></div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-header">
-      Scheduled Repo Registry
-      <span id="registry-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
-    </div>
-    <div class="panel-body table-scroll-wrapper" id="registry-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
   </div>
 </div>
 
@@ -186,6 +223,87 @@ let orchestratorStatus = null;
 let orchestratorHistory = null;
 let orchestratorPlan = null;
 let orchestratorConfig = null;
+let _chartInstances = {};
+let _livePoller = null;
+
+function switchTab(tabId) {
+  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.toggle('active', b.dataset.tab === tabId); });
+  document.querySelectorAll('.tab-content').forEach(function(c) { c.classList.toggle('active', c.id === 'tab-' + tabId); });
+}
+
+function updateLiveStatus() {
+  var el = document.getElementById('live-status');
+  if (!el) return;
+  var running = (allSessions || []).filter(function(s) { return s.status === 'running' || s.status === 'pending'; });
+  if (running.length > 0) {
+    el.innerHTML = '<span class="live-badge live-running">' + running.length + ' active</span>';
+  } else {
+    el.innerHTML = '<span class="live-badge live-idle">idle</span>';
+  }
+}
+
+function startLivePolling(intervalMs) {
+  if (_livePoller) clearInterval(_livePoller);
+  _livePoller = setInterval(function() {
+    updateLiveStatus();
+  }, intervalMs || 30000);
+}
+
+function destroyChart(key) {
+  if (_chartInstances[key]) { _chartInstances[key].destroy(); delete _chartInstances[key]; }
+}
+
+function renderSeverityChartJs(container, data) {
+  if (!data || typeof Chart === 'undefined') return;
+  container.innerHTML = '<canvas></canvas>';
+  var canvas = container.querySelector('canvas');
+  var labels = Object.keys(data);
+  var values = labels.map(function(k) { return data[k]; });
+  var colors = { critical: '#f85149', high: '#f0883e', medium: '#d29922', low: '#58a6ff', note: '#8b949e' };
+  var bgColors = labels.map(function(l) { return colors[l.toLowerCase()] || '#8b949e'; });
+  destroyChart('severity');
+  _chartInstances['severity'] = new Chart(canvas, {
+    type: 'doughnut',
+    data: { labels: labels, datasets: [{ data: values, backgroundColor: bgColors, borderWidth: 0 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: getComputedStyle(document.body).getPropertyValue('--text-primary').trim() || '#e6edf3', font: { size: 11 } } } } }
+  });
+}
+
+function renderCategoryChartJs(container, data) {
+  if (!data || typeof Chart === 'undefined') return;
+  container.innerHTML = '<canvas></canvas>';
+  var canvas = container.querySelector('canvas');
+  var labels = Object.keys(data).slice(0, 10);
+  var values = labels.map(function(k) { return data[k]; });
+  destroyChart('category');
+  _chartInstances['category'] = new Chart(canvas, {
+    type: 'bar',
+    data: { labels: labels, datasets: [{ data: values, backgroundColor: '#388bfd', borderRadius: 4 }] },
+    options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#8b949e' }, grid: { color: 'rgba(139,148,158,0.1)' } }, y: { ticks: { color: '#8b949e', font: { size: 10 } }, grid: { display: false } } } }
+  });
+}
+
+function renderTrendChartJs(container, runs) {
+  if (!runs || !runs.length || typeof Chart === 'undefined') return;
+  container.innerHTML = '<div class="chart-canvas-wrap"><canvas></canvas></div>';
+  var canvas = container.querySelector('canvas');
+  var sorted = runs.slice().sort(function(a, b) { return (a.timestamp || '').localeCompare(b.timestamp || ''); });
+  var labels = sorted.map(function(r) { return r.timestamp ? new Date(r.timestamp).toLocaleDateString() : '#' + (r.run_number || '?'); });
+  var issuesData = sorted.map(function(r) { return r.issues_found || 0; });
+  var sessionsData = sorted.map(function(r) { return (r.sessions || []).length; });
+  destroyChart('trend');
+  _chartInstances['trend'] = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        { label: 'Issues Found', data: issuesData, borderColor: '#f0883e', backgroundColor: 'rgba(240,136,62,0.1)', fill: true, tension: 0.3, pointRadius: 3 },
+        { label: 'Sessions', data: sessionsData, borderColor: '#a371f7', backgroundColor: 'rgba(163,113,247,0.1)', fill: true, tension: 0.3, pointRadius: 3 }
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#8b949e' } } }, scales: { x: { ticks: { color: '#8b949e', maxRotation: 45 }, grid: { color: 'rgba(139,148,158,0.1)' } }, y: { ticks: { color: '#8b949e' }, grid: { color: 'rgba(139,148,158,0.1)' } } } }
+  });
+}
 
 function setPeriod(period) {
   currentPeriod = period;
@@ -646,9 +764,9 @@ function renderVerificationPanel(data) {
 
 function renderAll() {
   renderMetrics(stats);
-  renderTrendChart(document.getElementById('trend-chart'), allRuns);
-  renderBarChart(document.getElementById('severity-chart'), stats.latest_severity || stats.severity_breakdown);
-  renderBarChart(document.getElementById('category-chart'), stats.latest_category || stats.category_breakdown);
+  renderTrendChartJs(document.getElementById('trend-chart'), allRuns);
+  renderSeverityChartJs(document.getElementById('severity-chart'), stats.latest_severity || stats.severity_breakdown);
+  renderCategoryChartJs(document.getElementById('category-chart'), stats.latest_category || stats.category_breakdown);
   renderReposTable(allRepos);
   renderRunsTable(allRuns);
   renderSessionsTable(allSessions, 'sessions-table-container', 'sessions-count');
@@ -659,6 +777,7 @@ function renderAll() {
   renderOrchestratorPanel();
   renderOrchestratorConfigPanel();
   renderRegistryPanel();
+  updateLiveStatus();
 }
 
 function renderOrchestratorPanel() {
@@ -1053,6 +1172,7 @@ async function init() {
   renderUserInfo();
   await fetchAll();
   if (configWarning) setStatus(configWarning);
+  startLivePolling(30000);
 }
 init();
 </script>
