@@ -36,6 +36,14 @@ except ImportError:
     _HAS_DISPATCH = False
 
 try:
+    from playbook_manager import PlaybookManager  # noqa: E402
+except ImportError:
+    try:
+        from scripts.playbook_manager import PlaybookManager  # noqa: E402
+    except ImportError:
+        PlaybookManager = None  # type: ignore[assignment,misc]
+
+try:
     from retry_utils import request_with_retry  # noqa: E402
     _HAS_REQUESTS = True
 except ImportError:
@@ -367,6 +375,16 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         logger.error("dispatch_devin module not available (missing requests library)")
         return 1
 
+    playbook_mgr = None
+    if PlaybookManager is not None:
+        playbooks_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "playbooks")
+        if os.path.isdir(playbooks_dir):
+            playbook_mgr = PlaybookManager(playbooks_dir)
+            if api_key and playbook_mgr.available_families:
+                synced = playbook_mgr.sync_to_devin_api(api_key)
+                if synced:
+                    logger.info("Synced %d playbook(s) to Devin API", len(synced))
+
     data = _state._compute_eligible_issues(repo_filter)
     eligible = data["eligible"]
     registry = data["registry"]
@@ -439,8 +457,12 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
 
         max_acu = fl.compute_acu_budget(batch["cwe_family"])
 
+        playbook_id = ""
+        if playbook_mgr:
+            playbook_id = playbook_mgr.get_devin_playbook_id(batch["cwe_family"])
+
         try:
-            result = create_devin_session(api_key, prompt, batch, max_acu)
+            result = create_devin_session(api_key, prompt, batch, max_acu, playbook_id)
             session_id = result["session_id"]
             session_url = result["url"]
             if not output_json:
