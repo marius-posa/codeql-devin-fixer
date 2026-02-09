@@ -1,0 +1,60 @@
+{
+  "target_repo": "https://github.com/marius-posa/juice-shop",
+  "fork_url": "https://github.com/marius-posa/juice-shop",
+  "run_number": 29,
+  "run_id": "21803457070",
+  "run_url": "https://github.com/marius-posa/codeql-devin-fixer/actions/runs/21803457070",
+  "run_label": "run-29-2026-02-08-185206",
+  "timestamp": "2026-02-08T18:52:11.106535+00:00",
+  "issues_found": 3,
+  "severity_breakdown": {
+    "critical": 3
+  },
+  "category_breakdown": {
+    "path-traversal": 2,
+    "ssrf": 1
+  },
+  "batches_created": 1,
+  "sessions": [
+    {
+      "session_id": "devin-e6ce3633117e4ac7b73f06222e42ce3c",
+      "session_url": "https://app.devin.ai/sessions/e6ce3633117e4ac7b73f06222e42ce3c",
+      "batch_id": 1,
+      "status": "created",
+      "issue_ids": [
+        "CQLF-R29-0001",
+        "CQLF-R29-0002"
+      ]
+    }
+  ],
+  "issue_fingerprints": [
+    {
+      "id": "CQLF-R29-0001",
+      "fingerprint": "22c0b9568b7c1e68",
+      "rule_id": "js/template-object-injection",
+      "severity_tier": "critical",
+      "cwe_family": "path-traversal",
+      "file": "routes/dataErasure.ts",
+      "start_line": 72
+    },
+    {
+      "id": "CQLF-R29-0002",
+      "fingerprint": "0c2a6c2b67c01628",
+      "rule_id": "js/template-object-injection",
+      "severity_tier": "critical",
+      "cwe_family": "path-traversal",
+      "file": "routes/dataErasure.ts",
+      "start_line": 87
+    },
+    {
+      "id": "CQLF-R29-0003",
+      "fingerprint": "4be89e0fbf4569e1",
+      "rule_id": "js/request-forgery",
+      "severity_tier": "critical",
+      "cwe_family": "ssrf",
+      "file": "routes/profileImageUrlUpload.ts",
+      "start_line": 24
+    }
+  ],
+  "zero_issue_run": false
+}

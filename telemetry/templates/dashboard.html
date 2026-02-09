@@ -1,0 +1,1648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CodeQL Devin Fixer - Telemetry Dashboard</title>
+<link rel="stylesheet" href="/static/shared.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1><span>CodeQL Devin Fixer</span> Telemetry</h1>
+    <div class="header-actions">
+      <span id="live-status"></span>
+      <button class="btn" onclick="refreshData()" id="btn-refresh">Refresh Data</button>
+      <button class="btn btn-primary" onclick="pollSessions()" id="btn-poll">Poll Sessions</button>
+      <button class="btn btn-primary" onclick="openDispatchModal()" id="btn-dispatch" style="background:#1f6feb;border-color:#388bfd">Trigger Action</button>
+      <a class="btn" href="/api/report/pdf" id="btn-pdf">PDF Report</a>
+      <button class="btn" id="btn-demo-toggle" onclick="toggleDemoData()" title="Toggle demo data" style="font-size:12px">Demo Data</button>
+      <button class="density-toggle" id="density-toggle" title="Toggle compact mode">Compact</button>
+      <button class="theme-toggle" id="theme-toggle"></button>
+      <span id="user-info"></span>
+    </div>
+  </header>
+
+  <div class="status-bar">
+    <span id="status-text">Loading...</span>
+    <span id="last-updated"></span>
+  </div>
+
+  <nav class="tab-nav" id="tab-nav">
+    <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview')">
+      <span class="tab-icon">&#x1F4CA;</span>Overview
+    </button>
+    <button class="tab-btn" data-tab="repos" onclick="switchTab('repos')">
+      <span class="tab-icon">&#x1F4E6;</span>Repositories
+    </button>
+    <button class="tab-btn" data-tab="issues" onclick="switchTab('issues')">
+      <span class="tab-icon">&#x1F50D;</span>Issues
+    </button>
+    <button class="tab-btn" data-tab="activity" onclick="switchTab('activity')">
+      <span class="tab-icon">&#x1F680;</span>Activity
+    </button>
+    <button class="tab-btn" data-tab="orchestrator" onclick="switchTab('orchestrator')">
+      <span class="tab-icon">&#x2699;</span>Orchestrator
+    </button>
+    <button class="tab-btn" data-tab="settings" onclick="switchTab('settings')">
+      <span class="tab-icon">&#x2692;</span>Settings
+    </button>
+  </nav>
+
+  <div class="tab-content active" id="tab-overview">
+    <div class="period-selector" style="margin-bottom:16px;display:flex;gap:4px;align-items:center">
+      <span style="font-size:12px;color:var(--text-muted);margin-right:8px">Period:</span>
+      <button class="btn period-btn active" data-period="all" onclick="setPeriod('all')">All Time</button>
+      <button class="btn period-btn" data-period="7d" onclick="setPeriod('7d')">7 Days</button>
+      <button class="btn period-btn" data-period="30d" onclick="setPeriod('30d')">30 Days</button>
+      <button class="btn period-btn" data-period="90d" onclick="setPeriod('90d')">90 Days</button>
+    </div>
+    <div class="metrics-grid" id="metrics-grid"></div>
+    <div class="panel">
+      <div class="panel-header">Security Health Trend</div>
+      <div class="panel-body" id="trend-chart"><div class="skeleton skeleton-chart"></div></div>
+    </div>
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel-header">Severity Breakdown</div>
+        <div class="panel-body chart-canvas-wrap" id="severity-chart"><div class="skeleton skeleton-chart" style="height:200px"></div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">Category Breakdown</div>
+        <div class="panel-body chart-canvas-wrap" id="category-chart"><div class="skeleton skeleton-chart" style="height:200px"></div></div>
+      </div>
+    </div>
+    <div class="panel" style="cursor:pointer" onclick="switchTab('orchestrator')">
+      <div class="panel-header">Orchestrator Quick View <span style="font-size:11px;color:var(--text-muted);font-weight:400">click to open full view &rarr;</span></div>
+      <div class="panel-body" id="orchestrator-quick-view"><div class="skeleton skeleton-chart" style="height:60px"></div></div>
+    </div>
+  </div>
+
+  <div class="tab-content" id="tab-repos">
+    <div class="panel">
+      <div class="panel-header">
+        Repositories Scanned
+        <span id="repo-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      </div>
+      <div class="panel-body table-scroll-wrapper" id="repos-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
+    </div>
+  </div>
+
+  <div class="tab-content" id="tab-issues">
+    <div class="panel">
+      <div class="panel-header">
+        Issue Tracking
+        <span id="issues-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+        <button class="btn btn-sm" onclick="exportAllIssuesCsv()" style="margin-left:auto">Export CSV</button>
+      </div>
+      <div class="panel-body table-scroll-wrapper" id="issues-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">SLA Compliance</div>
+      <div class="panel-body" id="sla-panel-container"><div class="skeleton skeleton-chart" style="height:120px"></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        Fix Verification
+        <span id="verification-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      </div>
+      <div class="panel-body" id="verification-stats-container"><div class="skeleton skeleton-chart" style="height:100px"></div></div>
+      <div class="panel-body table-scroll-wrapper" id="verification-table-container"></div>
+    </div>
+  </div>
+
+  <div class="tab-content" id="tab-activity">
+    <div class="panel">
+      <div class="panel-header">
+        Run History
+        <span id="runs-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      </div>
+      <div class="panel-body table-scroll-wrapper" id="runs-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        Devin Sessions
+        <span id="sessions-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      </div>
+      <div class="panel-body table-scroll-wrapper" id="sessions-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        Pull Requests
+        <span id="prs-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      </div>
+      <div class="panel-body table-scroll-wrapper" id="prs-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
+    </div>
+  </div>
+
+  <div class="tab-content" id="tab-orchestrator">
+    <div class="panel">
+      <div class="panel-header">
+        Orchestrator
+        <span id="orchestrator-status-label" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+        <button class="btn btn-sm" onclick="triggerOrchestratorScan()" style="margin-left:auto" id="btn-orch-scan">Scan Due Repos</button>
+        <button class="btn btn-sm" onclick="triggerOrchestratorDispatch()" id="btn-orch-dispatch" style="background:#1f6feb;border-color:#388bfd;color:#fff;margin-left:4px">Dispatch</button>
+        <button class="btn btn-sm" onclick="triggerOrchestratorCycle()" id="btn-orch-cycle" style="background:#238636;border-color:#2ea043;color:#fff;margin-left:4px">Run Cycle</button>
+      </div>
+      <div class="panel-body" id="orchestrator-panel-container"><div class="skeleton skeleton-chart" style="height:120px"></div></div>
+      <div class="panel-body" id="orchestrator-config-container"></div>
+      <div class="panel-body table-scroll-wrapper" id="orchestrator-history-container"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">Issue Prioritization<span id="priority-count" style="color:var(--text-muted);font-weight:400;font-size:12px;margin-left:8px"></span></div>
+      <div class="panel-body table-scroll-wrapper" id="orchestrator-priority-container"><div class="skeleton skeleton-chart" style="height:120px"></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">Fix Rates</div>
+      <div class="panel-body" id="orchestrator-fix-rates-container"><div class="skeleton skeleton-chart" style="height:120px"></div></div>
+    </div>
+  </div>
+
+  <div class="tab-content" id="tab-settings">
+    <div class="panel">
+      <div class="panel-header">Demo Data</div>
+      <div class="panel-body" id="demo-data-panel">
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+          <span id="demo-status-text" style="font-size:13px;color:var(--text-muted)">Checking...</span>
+          <button class="btn btn-sm" id="btn-demo-load" onclick="loadDemoData()">Load Demo Data</button>
+          <button class="btn btn-sm" id="btn-demo-clear" onclick="clearDemoData()" style="background:var(--accent-red);border-color:var(--accent-red);color:#fff">Clear Demo Data</button>
+          <button class="btn btn-sm" id="btn-demo-reset" onclick="resetDemoData()">Regenerate</button>
+          <button class="btn btn-sm" id="btn-demo-edit" onclick="openDemoEditor()">Edit JSON</button>
+        </div>
+        <div id="demo-summary" style="margin-top:8px;font-size:12px;color:var(--text-muted)"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">Export &amp; Reports</div>
+      <div class="panel-body">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+          <button class="btn" onclick="exportAllIssuesCsv()">Export Issues CSV</button>
+          <a class="btn" href="/api/report/pdf">PDF Report</a>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">Global Defaults &amp; Concurrency</div>
+      <div class="panel-body" id="registry-defaults-container"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        Scheduled Repo Registry
+        <span id="registry-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      </div>
+      <div class="panel-body table-scroll-wrapper" id="registry-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        Audit Log
+        <span id="audit-log-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+        <button class="btn btn-sm" onclick="exportAuditLog()" style="margin-left:auto">Export JSON</button>
+      </div>
+      <div class="panel-body">
+        <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
+          <select class="form-input" id="audit-action-filter" onchange="fetchAuditLog()" style="width:auto;padding:4px 8px;font-size:12px">
+            <option value="">All actions</option>
+            <option value="poll_sessions">poll_sessions</option>
+            <option value="poll_prs">poll_prs</option>
+            <option value="refresh_runs">refresh_runs</option>
+            <option value="backfill">backfill</option>
+            <option value="dispatch_workflow">dispatch_workflow</option>
+            <option value="orchestrator_dispatch">orchestrator_dispatch</option>
+            <option value="orchestrator_scan">orchestrator_scan</option>
+            <option value="orchestrator_cycle">orchestrator_cycle</option>
+            <option value="update_orchestrator_config">update_orchestrator_config</option>
+            <option value="update_registry">update_registry</option>
+            <option value="add_registry_repo">add_registry_repo</option>
+            <option value="update_registry_repo">update_registry_repo</option>
+            <option value="remove_registry_repo">remove_registry_repo</option>
+            <option value="export_audit_log">export_audit_log</option>
+          </select>
+          <input class="form-input" id="audit-user-filter" placeholder="Filter by user" onchange="fetchAuditLog()" style="width:auto;padding:4px 8px;font-size:12px">
+        </div>
+      </div>
+      <div class="panel-body table-scroll-wrapper" id="audit-log-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="drawer-overlay" id="drawer-overlay"></div>
+<div class="drawer" id="issue-drawer">
+  <div class="drawer-header">
+    <h3>Issue Details</h3>
+    <button class="btn btn-icon" onclick="closeIssueDrawer()">&times;</button>
+  </div>
+  <div class="drawer-body"></div>
+</div>
+
+{% include 'dispatch_modal.html' %}
+
+<div class="modal-overlay" id="add-repo-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Add Repository to Scheduler</h2>
+      <button class="modal-close" onclick="_closeAddRepoModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label for="add-repo-url">Repository URL *</label>
+        <input class="form-input" id="add-repo-url" type="text" placeholder="https://github.com/owner/repo">
+        <div class="hint">Full GitHub repository URL to add to the scheduler</div>
+      </div>
+      <div class="form-group">
+        <label for="add-repo-schedule">Schedule</label>
+        <select class="form-input" id="add-repo-schedule">
+          <option value="daily">daily</option>
+          <option value="weekly" selected>weekly</option>
+          <option value="monthly">monthly</option>
+        </select>
+        <div class="hint">How often to scan this repository</div>
+      </div>
+      <div class="dispatch-result" id="add-repo-result"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="_closeAddRepoModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="_submitAddRepo()">Add Repository</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="edit-repo-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Edit Repository: <span id="edit-repo-name"></span></h2>
+      <button class="modal-close" onclick="_closeRepoEditModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label for="edit-repo-importance">Importance</label>
+          <select class="form-input" id="edit-repo-importance">
+            <option value="low">low</option>
+            <option value="medium">medium</option>
+            <option value="high">high</option>
+            <option value="critical">critical</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="edit-repo-score">Importance Score (0-100)</label>
+          <input class="form-input" id="edit-repo-score" type="number" min="0" max="100" value="50">
+        </div>
+        <div class="form-group">
+          <label for="edit-repo-max-sessions">Max Sessions per Cycle</label>
+          <input class="form-input" id="edit-repo-max-sessions" type="number" min="1" value="5">
+        </div>
+        <div class="form-group">
+          <label for="edit-repo-tags">Tags (comma-separated)</label>
+          <input class="form-input" id="edit-repo-tags" type="text" placeholder="web-app, internal">
+        </div>
+        <div class="form-group">
+          <label class="form-check"><input type="checkbox" id="edit-repo-auto-scan"><span>Auto Scan</span></label>
+        </div>
+        <div class="form-group">
+          <label class="form-check"><input type="checkbox" id="edit-repo-auto-dispatch"><span>Auto Dispatch</span></label>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="edit-repo-overrides">Overrides (JSON)</label>
+        <textarea class="form-input" id="edit-repo-overrides" rows="4" style="font-family:monospace;font-size:12px">{}</textarea>
+        <div class="hint">Override default settings for this repo (e.g. languages, severity_threshold)</div>
+      </div>
+      <div class="dispatch-result" id="edit-repo-result"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="_closeRepoEditModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="_submitRepoEdit()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="demo-editor-modal">
+  <div class="modal" style="max-width:900px">
+    <div class="modal-header">
+      <h2>Edit Demo Data</h2>
+      <button class="modal-close" onclick="closeDemoEditor()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="hint" style="margin-bottom:8px">Edit the raw JSON demo data below. Changes are saved to disk and reloaded into the database if demo data is currently active.</div>
+      <textarea class="form-input" id="demo-editor-textarea" rows="24" style="font-family:monospace;font-size:11px;white-space:pre;overflow:auto"></textarea>
+      <div class="dispatch-result" id="demo-editor-result"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeDemoEditor()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveDemoEditorData()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/shared.js"></script>
+<script>
+let allRuns = [];
+let allSessions = [];
+let allPrs = [];
+let allRepos = [];
+let allIssues = [];
+let stats = {};
+let registryData = null;
+let currentPeriod = 'all';
+let slaData = {};
+let verificationData = {};
+let orchestratorStatus = null;
+let orchestratorHistory = null;
+let orchestratorPlan = null;
+let orchestratorConfig = null;
+let fixRatesData = null;
+let _chartInstances = {};
+let _livePoller = null;
+let auditLogData = null;
+
+function switchTab(tabId) {
+  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.toggle('active', b.dataset.tab === tabId); });
+  document.querySelectorAll('.tab-content').forEach(function(c) { c.classList.toggle('active', c.id === 'tab-' + tabId); });
+}
+
+function updateLiveStatus() {
+  var el = document.getElementById('live-status');
+  if (!el) return;
+  var running = (allSessions || []).filter(function(s) { return s.status === 'running' || s.status === 'pending'; });
+  if (running.length > 0) {
+    el.innerHTML = '<span class="live-badge live-running">' + running.length + ' active</span>';
+  } else {
+    el.innerHTML = '<span class="live-badge live-idle">idle</span>';
+  }
+}
+
+function startLivePolling(intervalMs) {
+  if (_livePoller) clearInterval(_livePoller);
+  _livePoller = setInterval(function() {
+    updateLiveStatus();
+  }, intervalMs || 30000);
+}
+
+function destroyChart(key) {
+  if (_chartInstances[key]) { _chartInstances[key].destroy(); delete _chartInstances[key]; }
+}
+
+function renderSeverityChartJs(container, data) {
+  if (!data || typeof Chart === 'undefined') return;
+  container.innerHTML = '<canvas></canvas>';
+  var canvas = container.querySelector('canvas');
+  var labels = Object.keys(data);
+  var values = labels.map(function(k) { return data[k]; });
+  var colors = { critical: '#f85149', high: '#f0883e', medium: '#d29922', low: '#58a6ff', note: '#8b949e' };
+  var bgColors = labels.map(function(l) { return colors[l.toLowerCase()] || '#8b949e'; });
+  destroyChart('severity');
+  _chartInstances['severity'] = new Chart(canvas, {
+    type: 'doughnut',
+    data: { labels: labels, datasets: [{ data: values, backgroundColor: bgColors, borderWidth: 0 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: getComputedStyle(document.body).getPropertyValue('--text-primary').trim() || '#e6edf3', font: { size: 11 } } } } }
+  });
+}
+
+function renderCategoryChartJs(container, data) {
+  if (!data || typeof Chart === 'undefined') return;
+  container.innerHTML = '<canvas></canvas>';
+  var canvas = container.querySelector('canvas');
+  var labels = Object.keys(data).slice(0, 10);
+  var values = labels.map(function(k) { return data[k]; });
+  destroyChart('category');
+  _chartInstances['category'] = new Chart(canvas, {
+    type: 'bar',
+    data: { labels: labels, datasets: [{ data: values, backgroundColor: '#388bfd', borderRadius: 4 }] },
+    options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#8b949e' }, grid: { color: 'rgba(139,148,158,0.1)' } }, y: { ticks: { color: '#8b949e', font: { size: 10 } }, grid: { display: false } } } }
+  });
+}
+
+function renderTrendChartJs(container, runs) {
+  if (!runs || !runs.length || typeof Chart === 'undefined') return;
+  container.innerHTML = '<div class="chart-canvas-wrap"><canvas></canvas></div>';
+  var canvas = container.querySelector('canvas');
+  var sorted = runs.slice().sort(function(a, b) { return (a.timestamp || '').localeCompare(b.timestamp || ''); });
+  var labels = sorted.map(function(r) { return r.timestamp ? new Date(r.timestamp).toLocaleDateString() : '#' + (r.run_number || '?'); });
+  var issuesData = sorted.map(function(r) { return r.issues_found || 0; });
+  var sessionsData = sorted.map(function(r) { return (r.sessions || []).length; });
+  destroyChart('trend');
+  _chartInstances['trend'] = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        { label: 'Issues Found', data: issuesData, borderColor: '#f0883e', backgroundColor: 'rgba(240,136,62,0.1)', fill: true, tension: 0.3, pointRadius: 3 },
+        { label: 'Sessions', data: sessionsData, borderColor: '#a371f7', backgroundColor: 'rgba(163,113,247,0.1)', fill: true, tension: 0.3, pointRadius: 3 }
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#8b949e' } } }, scales: { x: { ticks: { color: '#8b949e', maxRotation: 45 }, grid: { color: 'rgba(139,148,158,0.1)' } }, y: { ticks: { color: '#8b949e' }, grid: { color: 'rgba(139,148,158,0.1)' } } } }
+  });
+}
+
+function showAllSkeletons() {
+  document.querySelectorAll('.skeleton').forEach(function(el) { el.style.display = ''; });
+}
+
+function setPeriod(period) {
+  currentPeriod = period;
+  document.querySelectorAll('.period-btn').forEach(function(btn) {
+    btn.classList.toggle('active', btn.dataset.period === period);
+  });
+  fetchAll();
+}
+
+function renderSlaPanel(sla) {
+  var el = document.getElementById('sla-panel-container');
+  if (!sla || (!sla.total_on_track && !sla.total_at_risk && !sla.total_breached && !sla.total_met)) {
+    el.innerHTML = '<div class="empty-state"><span class="empty-state-icon">&#x23F1;</span><div class="empty-state-text">No SLA data available yet. Run scans to see SLA compliance.</div></div>';
+    return;
+  }
+  var html = '<div class="sla-summary">';
+  html += '<div class="sla-card sla-on-track"><div class="sla-card-count">' + (sla.total_on_track || 0) + '</div><div class="sla-card-label">On Track</div></div>';
+  html += '<div class="sla-card sla-at-risk"><div class="sla-card-count">' + (sla.total_at_risk || 0) + '</div><div class="sla-card-label">At Risk</div></div>';
+  html += '<div class="sla-card sla-breached"><div class="sla-card-count">' + (sla.total_breached || 0) + '</div><div class="sla-card-label">Breached</div></div>';
+  html += '<div class="sla-card sla-met"><div class="sla-card-count">' + (sla.total_met || 0) + '</div><div class="sla-card-label">Met (Fixed)</div></div>';
+  html += '</div>';
+
+  var ttf = sla.time_to_fix_by_severity || {};
+  var sevs = Object.keys(ttf);
+  var sevOrder = ['critical','high','medium','low'];
+  sevs.sort(function(a, b) {
+    var ia = sevOrder.indexOf(a), ib = sevOrder.indexOf(b);
+    if (ia === -1) ia = 99;
+    if (ib === -1) ib = 99;
+    return ia - ib;
+  });
+  if (sevs.length > 0) {
+    html += '<div style="margin-top:12px"><div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Time to Fix by Severity</div>';
+    html += '<table class="ttf-table"><thead><tr><th>Severity</th><th>Fixed</th><th>Min</th><th>Avg</th><th>Median</th><th>Max</th></tr></thead><tbody>';
+    sevs.forEach(function(sev) {
+      var t = ttf[sev];
+      html += '<tr><td><span class="badge ' + badgeClass(sev) + '">' + escapeHtml(sev) + '</span></td>';
+      html += '<td>' + t.count + '</td>';
+      html += '<td>' + t.min + 'h</td>';
+      html += '<td>' + t.avg + 'h</td>';
+      html += '<td>' + t.median + 'h</td>';
+      html += '<td>' + t.max + 'h</td></tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+
+  var bySev = sla.by_severity || {};
+  var bsKeys = Object.keys(bySev);
+  bsKeys.sort(function(a, b) {
+    var ia = sevOrder.indexOf(a), ib = sevOrder.indexOf(b);
+    if (ia === -1) ia = 99;
+    if (ib === -1) ib = 99;
+    return ia - ib;
+  });
+  if (bsKeys.length > 0) {
+    html += '<div style="margin-top:16px"><div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">SLA Status by Severity</div>';
+    html += '<table class="ttf-table"><thead><tr><th>Severity</th><th>On Track</th><th>At Risk</th><th>Breached</th><th>Met</th></tr></thead><tbody>';
+    bsKeys.forEach(function(sev) {
+      var s = bySev[sev];
+      html += '<tr><td><span class="badge ' + badgeClass(sev) + '">' + escapeHtml(sev) + '</span></td>';
+      html += '<td>' + (s['on-track'] || 0) + '</td>';
+      html += '<td>' + (s['at-risk'] || 0) + '</td>';
+      html += '<td style="' + ((s['breached'] || 0) > 0 ? 'color:var(--accent-red);font-weight:600' : '') + '">' + (s['breached'] || 0) + '</td>';
+      html += '<td>' + (s['met'] || 0) + '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+  el.innerHTML = html;
+}
+
+function renderMetrics(s) {
+  const grid = document.getElementById('metrics-grid');
+  const latestIssues = s.latest_issues != null ? s.latest_issues : s.total_issues;
+  const issuesSub = s.total_runs > 1 && s.latest_issues != null
+    ? latestIssues + ' current, ' + (s.total_issues || 0) + ' across all runs'
+    : '';
+  const periodLabel = currentPeriod !== 'all' ? ' (' + currentPeriod + ')' : '';
+  const fixRate = s.fix_rate || 0;
+  const cards = [
+    { label: 'Repos Scanned', value: s.repos_scanned || 0, cls: 'blue' },
+    { label: 'Total Runs' + periodLabel, value: s.total_runs || 0, cls: 'cyan' },
+    { label: 'Issues Found' + periodLabel, value: latestIssues, cls: 'orange',
+      sub: issuesSub },
+    { label: 'Devin Sessions' + periodLabel, value: s.sessions_created || 0, cls: 'purple',
+      sub: (s.sessions_finished || 0) + ' finished' },
+    { label: 'PRs Created' + periodLabel, value: s.prs_total || 0, cls: 'blue',
+      sub: (s.prs_merged || 0) + ' merged, ' + (s.prs_open || 0) + ' open' },
+    { label: 'Fix Rate' + periodLabel, value: fixRate + '%', cls: fixRateColorClass(fixRate),
+      sub: 'merged / total PRs' },
+  ];
+  grid.innerHTML = cards.map(c => '<div class="metric-card ' + c.cls + '">'
+    + '<div class="label">' + c.label + '</div>'
+    + '<div class="value">' + c.value + '</div>'
+    + (c.sub ? '<div class="sub">' + c.sub + '</div>' : '')
+    + '</div>').join('');
+}
+
+function renderReposTable(repos) {
+  const el = document.getElementById('repos-table-container');
+  document.getElementById('repo-count').textContent = repos.length;
+  if (repos.length === 0) {
+    el.innerHTML = '<div class="empty-state"><span class="empty-state-icon">&#x1F4E6;</span><div class="empty-state-text">No repos scanned yet</div></div>';
+    return;
+  }
+  let rows = '';
+  repos.forEach(function(r) {
+    const short = escapeHtml(repoShort(r.repo));
+    rows += '<tr>'
+      + '<td><a href="/repo/' + short + '">' + short + '</a></td>'
+      + '<td>' + r.runs + '</td>'
+      + '<td>' + r.issues_found + '</td>'
+      + '<td>' + r.sessions_created + (r.sessions_finished ? ' <span style="color:var(--accent-green);font-size:11px">(' + r.sessions_finished + ' done)</span>' : '') + '</td>'
+      + '<td>' + r.prs_total + '</td>'
+      + '<td>' + r.prs_merged + '</td>'
+      + '<td>' + r.prs_open + '</td>'
+      + '<td>' + formatDate(r.last_run) + '</td>'
+      + '<td style="white-space:nowrap"><a class="btn" style="padding:2px 10px;font-size:11px" href="/repo/' + short + '">View</a> '
+      + '<button class="btn" style="padding:2px 10px;font-size:11px;background:#1f6feb;border-color:#388bfd;color:#fff" onclick="openDispatchModal(this.dataset.repo)" data-repo="' + escapeHtml(r.repo) + '">Run</button></td>'
+      + '</tr>';
+  });
+  el.innerHTML = '<table><thead><tr>'
+    + '<th>Repository</th><th>Runs</th><th>Issues</th><th>Sessions</th>'
+    + '<th>PRs</th><th>Merged</th><th>Open</th><th>Last Run</th><th></th>'
+    + '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+function renderRunsTable(runs) {
+  const el = document.getElementById('runs-table-container');
+  document.getElementById('runs-count').textContent = runs.length;
+  if (runs.length === 0) {
+    el.innerHTML = '<div class="empty-state"><span class="empty-state-icon">&#x1F680;</span><div class="empty-state-text">No runs recorded yet. Trigger the action to see data here.</div></div>';
+    return;
+  }
+  const sorted = [...runs].sort(function(a, b) {
+    var diff = (b.run_number || 0) - (a.run_number || 0);
+    if (diff !== 0) return diff;
+    var ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+    var tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+    return tb - ta;
+  });
+  let rows = '';
+  sorted.forEach(function(r) {
+    rows += '<tr>'
+      + '<td><strong>#' + (r.run_number || '-') + '</strong></td>'
+      + '<td><a href="' + escapeHtml(r.target_repo) + '" target="_blank">' + escapeHtml(repoShort(r.target_repo)) + '</a></td>'
+      + '<td>' + (r.issues_found || 0) + '</td>'
+      + '<td>' + (r.batches_created || 0) + '</td>'
+      + '<td>' + (r.sessions || []).length + '</td>'
+      + '<td>' + formatDate(r.timestamp) + '</td>'
+      + '</tr>';
+  });
+  el.innerHTML = '<table><thead><tr>'
+    + '<th>Run</th><th>Target Repo</th><th>Issues</th><th>Batches</th>'
+    + '<th>Sessions</th><th>Timestamp</th>'
+    + '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+async function fetchAll() {
+  showAllSkeletons();
+  setStatus('Loading data...');
+  const periodParam = currentPeriod !== 'all' ? '?period=' + currentPeriod : '';
+  const endpoints = [
+    { key: 'runs', endpoint: '/api/runs' },
+    { key: 'sessions', endpoint: '/api/sessions' },
+    { key: 'stats', endpoint: '/api/stats' + periodParam, single: true },
+    { key: 'prs', endpoint: '/api/prs' },
+    { key: 'repos', endpoint: '/api/repos', single: true },
+    { key: 'issues', endpoint: '/api/issues' },
+    { key: 'registry', endpoint: '/api/registry', single: true },
+    { key: 'sla', endpoint: '/api/sla', single: true },
+    { key: 'verification', endpoint: '/api/verification', single: true },
+    { key: 'orchestrator', endpoint: '/api/orchestrator/status', single: true },
+    { key: 'orchestratorHistory', endpoint: '/api/orchestrator/history', single: true },
+    { key: 'orchestratorPlan', endpoint: '/api/orchestrator/plan', single: true },
+    { key: 'orchestratorConfig', endpoint: '/api/orchestrator/config', single: true },
+    { key: 'fixRates', endpoint: '/api/orchestrator/fix-rates', single: true },
+  ];
+  const results = {};
+  const settled = await Promise.allSettled(
+    endpoints.map(async function(ep) {
+      if (ep.single) {
+        const res = await fetch(API + ep.endpoint);
+        if (!res.ok) throw new Error('API returned ' + res.status);
+        results[ep.key] = await res.json();
+      } else {
+        results[ep.key] = await fetchAllPages(ep.endpoint);
+      }
+    })
+  );
+  let hasError = false;
+  settled.forEach(function(r, i) {
+    if (r.status === 'rejected') {
+      console.error('Failed to fetch ' + endpoints[i].key + ':', r.reason);
+      hasError = true;
+    }
+  });
+  if (results.runs !== undefined) allRuns = results.runs;
+  if (results.sessions !== undefined) allSessions = results.sessions;
+  if (results.stats !== undefined) stats = results.stats;
+  if (results.prs !== undefined) allPrs = results.prs;
+  if (results.repos !== undefined) allRepos = results.repos;
+  if (results.issues !== undefined) allIssues = results.issues;
+  if (results.registry !== undefined) registryData = results.registry;
+  if (results.sla !== undefined) slaData = results.sla;
+  if (results.verification !== undefined) verificationData = results.verification;
+  if (results.orchestrator !== undefined) orchestratorStatus = results.orchestrator;
+  if (results.orchestratorHistory !== undefined) orchestratorHistory = results.orchestratorHistory;
+  if (results.orchestratorPlan !== undefined) orchestratorPlan = results.orchestratorPlan;
+  if (results.orchestratorConfig !== undefined) orchestratorConfig = results.orchestratorConfig;
+  if (results.fixRates !== undefined) fixRatesData = results.fixRates;
+  renderAll();
+  fetchAuditLog();
+  setStatus(hasError ? 'Loaded with some errors (check console)' : 'Ready');
+  setUpdated();
+}
+
+function renderVerificationPanel(data) {
+  const statsEl = document.getElementById('verification-stats-container');
+  const tableEl = document.getElementById('verification-table-container');
+  const countEl = document.getElementById('verification-count');
+  const vStats = data.stats || {};
+  const records = (data.records || {}).items || [];
+  if (countEl) countEl.textContent = vStats.total_verifications || 0;
+  if (vStats.total_verifications === 0 && records.length === 0) {
+    statsEl.innerHTML = '<div class="empty-state">No verification data yet. Verifications run automatically when Devin creates PRs.</div>';
+    tableEl.innerHTML = '';
+    return;
+  }
+  var fixRate = vStats.overall_fix_rate || 0;
+  statsEl.innerHTML = '<div class="metrics-grid" style="margin-bottom:0">'
+    + '<div class="metric-card green"><div class="label">Issues Fixed</div><div class="value">' + (vStats.total_issues_fixed || 0) + '</div>'
+    + '<div class="sub">of ' + (vStats.total_issues_targeted || 0) + ' targeted</div></div>'
+    + '<div class="metric-card ' + fixRateColorClass(fixRate) + '"><div class="label">Verification Fix Rate</div><div class="value">' + fixRate + '%</div></div>'
+    + '<div class="metric-card blue"><div class="label">Fully Verified PRs</div><div class="value">' + (vStats.fully_verified_prs || 0) + '</div></div>'
+    + '<div class="metric-card orange"><div class="label">Partial Fix PRs</div><div class="value">' + (vStats.partial_fix_prs || 0) + '</div></div>'
+    + '</div>';
+  if (records.length === 0) { tableEl.innerHTML = ''; return; }
+  var rows = records.map(function(r) {
+    var summary = r.summary || {};
+    var fixedCount = summary.fixed_count || 0;
+    var totalTargeted = summary.total_targeted || 0;
+    var label = 'codeql-needs-work';
+    if (totalTargeted > 0) {
+      if (fixedCount === totalTargeted) label = 'verified-fix';
+      else if (fixedCount > 0) label = 'codeql-partial-fix';
+    }
+    var badgeCls = label === 'verified-fix' ? 'badge-verified' : label === 'codeql-partial-fix' ? 'badge-partial' : 'badge-needs-work';
+    return '<tr>'
+      + '<td>' + (r.pr_url ? '<a href="'+escapeHtml(r.pr_url)+'" target="_blank">PR #'+(r.pr_number || '-')+'</a>' : '-') + '</td>'
+      + '<td>' + (r.session_id ? '<span class="issue-id">' + escapeHtml((r.session_id || '').slice(0,8)) + '</span>' : '-') + '</td>'
+      + '<td><span class="badge '+badgeCls+'">'+fixedCount+'/'+totalTargeted+' fixed</span></td>'
+      + '<td>' + (summary.fix_rate || 0) + '%</td>'
+      + '<td>' + formatDate(r.verified_at) + '</td>'
+      + '</tr>';
+  }).join('');
+  tableEl.innerHTML = '<table><thead><tr>'
+    + '<th>PR</th><th>Session</th><th>Result</th><th>Fix Rate</th><th>Verified At</th>'
+    + '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+function renderAll() {
+  renderMetrics(stats);
+  renderTrendChartJs(document.getElementById('trend-chart'), allRuns);
+  renderSeverityChartJs(document.getElementById('severity-chart'), stats.latest_severity || stats.severity_breakdown);
+  renderCategoryChartJs(document.getElementById('category-chart'), stats.latest_category || stats.category_breakdown);
+  renderReposTable(allRepos);
+  renderRunsTable(allRuns);
+  renderSessionsTable(allSessions, 'sessions-table-container', 'sessions-count');
+  renderPrsTable(allPrs, 'prs-table-container', 'prs-count');
+  renderIssuesTable(allIssues, 'issues-table-container', 'issues-count');
+  renderSlaPanel(slaData);
+  renderVerificationPanel(verificationData);
+  renderOrchestratorPanel();
+  renderOrchestratorConfigPanel();
+  renderOrchestratorQuickView();
+  renderOrchestratorPriorityTable();
+  renderFixRatesPanel();
+  renderRegistryPanel();
+  renderAuditLogPanel();
+  renderRegistryDefaultsPanel();
+  updateLiveStatus();
+}
+
+function renderOrchestratorPanel() {
+  var el = document.getElementById('orchestrator-panel-container');
+  var histEl = document.getElementById('orchestrator-history-container');
+  var labelEl = document.getElementById('orchestrator-status-label');
+  if (!orchestratorStatus) {
+    el.innerHTML = '<div class="empty-state">Orchestrator status unavailable</div>';
+    return;
+  }
+  var s = orchestratorStatus;
+  var rl = s.rate_limit || {};
+  var used = rl.used || 0, max = rl.max || 20, remaining = rl.remaining || 0;
+  var rlPct = max > 0 ? Math.round((used / max) * 100) : 0;
+  var rlColor = rlPct > 80 ? 'var(--accent-red)' : rlPct > 50 ? 'var(--accent-yellow, #d29922)' : 'var(--accent-green)';
+  if (labelEl) labelEl.textContent = s.last_cycle ? 'Last cycle: ' + formatDate(s.last_cycle) : 'No cycles run yet';
+
+  var html = '<div class="metrics-grid" style="margin-bottom:12px">';
+  var breakdown = s.issue_state_breakdown || {};
+  var stateOrder = ['new','recurring','session_dispatched','pr_open','pr_merged','fixed','verified_fixed'];
+  var stateColors = {new:'orange',recurring:'orange',session_dispatched:'purple',pr_open:'blue',pr_merged:'cyan',fixed:'green',verified_fixed:'green'};
+  stateOrder.forEach(function(st) {
+    var count = breakdown[st] || 0;
+    if (count > 0 || st === 'new' || st === 'fixed') {
+      html += '<div class="metric-card ' + (stateColors[st] || 'blue') + '"><div class="label">' + escapeHtml(st.replace(/_/g, ' ')) + '</div><div class="value">' + count + '</div></div>';
+    }
+  });
+  html += '</div>';
+
+  html += '<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Rate Limit (' + rl.period_hours + 'h window)</div>';
+  html += '<div style="background:var(--bg-tertiary);border-radius:6px;height:20px;overflow:hidden;position:relative">';
+  html += '<div style="background:' + rlColor + ';height:100%;width:' + rlPct + '%;transition:width 0.3s"></div>';
+  html += '<span style="position:absolute;top:0;left:8px;line-height:20px;font-size:11px;color:var(--text-primary)">' + used + ' / ' + max + ' used (' + remaining + ' remaining)</span>';
+  html += '</div></div>';
+
+  var objectives = s.objective_progress || [];
+  if (objectives.length > 0) {
+    html += '<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Objectives</div>';
+    objectives.forEach(function(obj) {
+      var pct = obj.target_count > 0 ? Math.round((obj.current_count / obj.target_count) * 100) : 0;
+      var barColor = obj.met ? 'var(--accent-green)' : 'var(--accent-blue, #58a6ff)';
+      html += '<div style="margin-bottom:6px"><div style="font-size:12px;margin-bottom:2px">' + escapeHtml(obj.objective) + ' <span style="color:var(--text-muted)">' + obj.current_count + '/' + obj.target_count;
+      if (obj.met) html += ' (met)';
+      html += '</span></div>';
+      html += '<div style="background:var(--bg-tertiary);border-radius:4px;height:14px;overflow:hidden">';
+      html += '<div style="background:' + barColor + ';height:100%;width:' + Math.min(pct, 100) + '%;transition:width 0.3s"></div></div></div>';
+    });
+    html += '</div>';
+  }
+
+  var dispatches = (orchestratorPlan || {}).planned_dispatches || [];
+  if (dispatches.length > 0) {
+    var repoScores = {};
+    dispatches.forEach(function(d) {
+      var repo = d.target_repo || d.repo || '';
+      if (!repo) return;
+      if (!repoScores[repo]) repoScores[repo] = { total: 0, count: 0 };
+      repoScores[repo].total += (d.priority_score || 0);
+      repoScores[repo].count += 1;
+    });
+    var ranked = Object.keys(repoScores).map(function(r) {
+      return { repo: r, avg: repoScores[r].total / repoScores[r].count, issues: repoScores[r].count };
+    }).sort(function(a, b) { return b.avg - a.avg; });
+    html += '<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Repo Priority Ranking</div>';
+    html += '<table><thead><tr><th>Repo</th><th>Avg Priority</th><th>Eligible Issues</th></tr></thead><tbody>';
+    ranked.forEach(function(r) {
+      var name = r.repo.replace('https://github.com/', '');
+      html += '<tr><td>' + escapeHtml(name) + '</td><td>' + r.avg.toFixed(1) + '</td><td>' + r.issues + '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+
+  el.innerHTML = html;
+
+  if (!orchestratorHistory || !orchestratorHistory.items || orchestratorHistory.items.length === 0) {
+    histEl.innerHTML = '';
+    return;
+  }
+  var entries = orchestratorHistory.items;
+  var rows = '';
+  entries.slice(0, 20).forEach(function(e) {
+    rows += '<tr>'
+      + '<td><span class="issue-id">' + escapeHtml((e.fingerprint || '').slice(0, 12)) + '</span></td>'
+      + '<td>' + escapeHtml(e.session_id || e.session_url || '-') + '</td>'
+      + '<td>' + escapeHtml(e.status || '-') + '</td>'
+      + '<td>' + formatDate(e.dispatched_at) + '</td>'
+      + '</tr>';
+  });
+  histEl.innerHTML = '<div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;padding-top:8px">Recent Dispatch History</div>'
+    + '<table><thead><tr><th>Fingerprint</th><th>Session</th><th>Status</th><th>Dispatched</th></tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+async function triggerOrchestratorScan() {
+  var btn = document.getElementById('btn-orch-scan');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Scanning...';
+  setStatus('Triggering orchestrator scan...');
+  try {
+    var res = await _authedFetch(API + '/api/orchestrator/scan', {
+      method: 'POST',
+      headers: Object.assign({}, _authHeaders(), { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({}),
+    });
+    var data = await res.json();
+    if (data.error) {
+      setStatus('Scan error: ' + data.error);
+    } else {
+      setStatus('Scan complete: ' + (data.triggered || 0) + ' triggered, ' + (data.skipped_not_due || 0) + ' not due');
+    }
+    await fetchAll();
+  } catch (e) {
+    setStatus('Scan error: ' + e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = 'Scan Due Repos';
+}
+
+async function triggerOrchestratorDispatch() {
+  var btn = document.getElementById('btn-orch-dispatch');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Dispatching...';
+  setStatus('Running orchestrator dispatch...');
+  try {
+    var res = await _authedFetch(API + '/api/orchestrator/dispatch', {
+      method: 'POST',
+      headers: Object.assign({}, _authHeaders(), { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({}),
+    });
+    var data = await res.json();
+    if (data.error) {
+      setStatus('Dispatch error: ' + data.error);
+    } else {
+      setStatus('Dispatch complete: ' + (data.sessions_created || 0) + ' sessions created');
+    }
+    await fetchAll();
+  } catch (e) {
+    setStatus('Dispatch error: ' + e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = 'Dispatch';
+}
+
+async function triggerOrchestratorCycle() {
+  var btn = document.getElementById('btn-orch-cycle');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Running...';
+  setStatus('Running full orchestrator cycle (scan + dispatch)...');
+  try {
+    var res = await _authedFetch(API + '/api/orchestrator/cycle', {
+      method: 'POST',
+      headers: Object.assign({}, _authHeaders(), { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({}),
+    });
+    var data = await res.json();
+    if (data.error) {
+      setStatus('Cycle error: ' + data.error);
+    } else {
+      var scan = data.scan || {};
+      var dispatch = data.dispatch || {};
+      setStatus('Cycle complete: ' + (scan.triggered || 0) + ' scans, ' + (dispatch.sessions_created || 0) + ' sessions');
+    }
+    await fetchAll();
+  } catch (e) {
+    setStatus('Cycle error: ' + e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = 'Run Cycle';
+}
+
+function renderOrchestratorConfigPanel() {
+  var el = document.getElementById('orchestrator-config-container');
+  if (!orchestratorConfig) { el.innerHTML = ''; return; }
+  var c = orchestratorConfig;
+  var sevAll = ['critical','high','medium','low'];
+  var alertSevs = c.alert_severities || [];
+  var html = '<div style="border-top:1px solid var(--border-primary);padding-top:12px">';
+  html += '<div style="display:flex;align-items:center;margin-bottom:8px"><div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px">Configuration</div>';
+  html += '<button class="btn btn-sm" onclick="_toggleOrchestratorConfigEdit()" id="btn-orch-config-edit" style="margin-left:auto">Edit</button></div>';
+  html += '<div id="orch-config-display">';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:13px">';
+  html += '<div><span style="color:var(--text-muted)">Session limit:</span> ' + (c.global_session_limit || 20) + ' / ' + (c.global_session_limit_period_hours || 24) + 'h</div>';
+  html += '<div><span style="color:var(--text-muted)">Alert on objective met:</span> ' + (c.alert_on_objective_met ? 'Yes' : 'No') + '</div>';
+  html += '<div><span style="color:var(--text-muted)">Alert on verified fix:</span> ' + (c.alert_on_verified_fix ? 'Yes' : 'No') + '</div>';
+  html += '<div><span style="color:var(--text-muted)">Alert severities:</span> ' + (alertSevs.length > 0 ? alertSevs.join(', ') : 'none') + '</div>';
+  html += '<div><span style="color:var(--text-muted)">Webhook:</span> ' + (c.alert_webhook_url ? '<span title="' + escapeHtml(c.alert_webhook_url) + '">configured</span>' : 'not set') + '</div>';
+  html += '</div>';
+  var objs = c.objectives || [];
+  if (objs.length > 0) {
+    html += '<div style="margin-top:8px;font-size:12px"><span style="color:var(--text-muted)">Objectives:</span></div>';
+    html += '<table style="margin-top:4px;font-size:12px"><thead><tr><th>Objective</th><th>Target</th><th>Severity Filter</th></tr></thead><tbody>';
+    objs.forEach(function(o) {
+      html += '<tr><td>' + escapeHtml(o.objective || '') + '</td><td>' + (o.target_count || 0) + '</td><td>' + escapeHtml(o.severity || 'any') + '</td></tr>';
+    });
+    html += '</tbody></table>';
+  } else {
+    html += '<div style="margin-top:6px;font-size:12px;color:var(--text-muted)">No objectives configured</div>';
+  }
+  html += '</div>';
+  html += '<div id="orch-config-form" style="display:none">';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">';
+  html += '<div class="form-group" style="margin:0"><label style="font-size:11px;color:var(--text-muted)">Session Limit</label>';
+  html += '<input class="form-input" id="orch-cfg-limit" type="number" value="' + (c.global_session_limit || 20) + '" style="padding:4px 8px"></div>';
+  html += '<div class="form-group" style="margin:0"><label style="font-size:11px;color:var(--text-muted)">Period (hours)</label>';
+  html += '<input class="form-input" id="orch-cfg-period" type="number" value="' + (c.global_session_limit_period_hours || 24) + '" style="padding:4px 8px"></div>';
+  html += '</div>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">';
+  html += '<div class="form-group" style="margin:0"><label class="form-check"><input type="checkbox" id="orch-cfg-alert-obj"' + (c.alert_on_objective_met ? ' checked' : '') + '><span style="font-size:11px">Alert on objective met</span></label></div>';
+  html += '<div class="form-group" style="margin:0"><label class="form-check"><input type="checkbox" id="orch-cfg-alert-fix"' + (c.alert_on_verified_fix ? ' checked' : '') + '><span style="font-size:11px">Alert on verified fix</span></label></div>';
+  html += '</div>';
+  html += '<div class="form-group" style="margin:0;margin-bottom:8px"><label style="font-size:11px;color:var(--text-muted)">Alert Severities</label>';
+  html += '<div style="display:flex;gap:6px;margin-top:4px">';
+  sevAll.forEach(function(s) {
+    var checked = alertSevs.indexOf(s) >= 0 ? ' checked' : '';
+    html += '<label class="form-check"><input type="checkbox" class="orch-cfg-sev" value="' + s + '"' + checked + '><span style="font-size:11px">' + s + '</span></label>';
+  });
+  html += '</div></div>';
+  html += '<div class="form-group" style="margin:0;margin-bottom:8px"><label style="font-size:11px;color:var(--text-muted)">Webhook URL</label>';
+  html += '<input class="form-input" id="orch-cfg-webhook" type="text" value="' + escapeHtml(c.alert_webhook_url || '') + '" placeholder="https://hooks.slack.com/..." style="padding:4px 8px"></div>';
+  html += '<div id="orch-obj-editor" style="margin-bottom:8px">';
+  html += '<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">Objectives</div>';
+  html += '<div id="orch-obj-list">';
+  objs.forEach(function(o, i) {
+    html += '<div class="orch-obj-row" style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:4px;margin-bottom:4px;align-items:center">';
+    html += '<input class="form-input orch-obj-name" value="' + escapeHtml(o.objective || '') + '" placeholder="Objective name" style="padding:4px 6px;font-size:12px">';
+    html += '<input class="form-input orch-obj-target" type="number" value="' + (o.target_count || 0) + '" placeholder="Target" style="padding:4px 6px;font-size:12px">';
+    html += '<select class="form-input orch-obj-sev" style="padding:4px 6px;font-size:12px"><option value="">any</option>';
+    sevAll.forEach(function(s) { html += '<option value="' + s + '"' + (o.severity === s ? ' selected' : '') + '>' + s + '</option>'; });
+    html += '</select>';
+    html += '<button class="btn btn-sm" onclick="this.parentElement.remove()" style="color:var(--accent-red);padding:2px 6px">&times;</button>';
+    html += '</div>';
+  });
+  html += '</div>';
+  html += '<button class="btn btn-sm" onclick="_addObjectiveRow()" style="font-size:11px;margin-top:2px">+ Add Objective</button>';
+  html += '</div>';
+  html += '<div style="display:flex;gap:4px">';
+  html += '<button class="btn btn-sm btn-primary" onclick="_saveOrchestratorConfig()">Save</button>';
+  html += '<button class="btn btn-sm" onclick="_toggleOrchestratorConfigEdit()">Cancel</button>';
+  html += '</div></div></div>';
+  el.innerHTML = html;
+}
+
+function _addObjectiveRow() {
+  var list = document.getElementById('orch-obj-list');
+  var div = document.createElement('div');
+  div.className = 'orch-obj-row';
+  div.style.cssText = 'display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:4px;margin-bottom:4px;align-items:center';
+  div.innerHTML = '<input class="form-input orch-obj-name" value="" placeholder="Objective name" style="padding:4px 6px;font-size:12px">'
+    + '<input class="form-input orch-obj-target" type="number" value="0" placeholder="Target" style="padding:4px 6px;font-size:12px">'
+    + '<select class="form-input orch-obj-sev" style="padding:4px 6px;font-size:12px"><option value="">any</option><option value="critical">critical</option><option value="high">high</option><option value="medium">medium</option><option value="low">low</option></select>'
+    + '<button class="btn btn-sm" onclick="this.parentElement.remove()" style="color:var(--accent-red);padding:2px 6px">&times;</button>';
+  list.appendChild(div);
+}
+
+function _toggleOrchestratorConfigEdit() {
+  var display = document.getElementById('orch-config-display');
+  var form = document.getElementById('orch-config-form');
+  var btn = document.getElementById('btn-orch-config-edit');
+  if (!display || !form) return;
+  var editing = form.style.display !== 'none';
+  display.style.display = editing ? '' : 'none';
+  form.style.display = editing ? 'none' : '';
+  btn.style.display = editing ? '' : 'none';
+}
+
+async function _saveOrchestratorConfig() {
+  var limit = parseInt(document.getElementById('orch-cfg-limit').value, 10);
+  var period = parseInt(document.getElementById('orch-cfg-period').value, 10);
+  if (isNaN(limit) || limit < 1) { setStatus('Invalid session limit'); return; }
+  if (isNaN(period) || period < 1) { setStatus('Invalid period'); return; }
+  var alertObj = document.getElementById('orch-cfg-alert-obj').checked;
+  var alertFix = document.getElementById('orch-cfg-alert-fix').checked;
+  var alertSevs = [];
+  document.querySelectorAll('.orch-cfg-sev:checked').forEach(function(cb) { alertSevs.push(cb.value); });
+  var webhook = (document.getElementById('orch-cfg-webhook').value || '').trim();
+  var objectives = [];
+  document.querySelectorAll('.orch-obj-row').forEach(function(row) {
+    var name = row.querySelector('.orch-obj-name').value.trim();
+    var target = parseInt(row.querySelector('.orch-obj-target').value, 10);
+    var sev = row.querySelector('.orch-obj-sev').value;
+    if (name && target > 0) {
+      var o = { objective: name, target_count: target };
+      if (sev) o.severity = sev;
+      objectives.push(o);
+    }
+  });
+  setStatus('Saving orchestrator config...');
+  try {
+    var res = await _authedFetch(API + '/api/orchestrator/config', {
+      method: 'PUT',
+      headers: Object.assign({}, _authHeaders(), { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        global_session_limit: limit,
+        global_session_limit_period_hours: period,
+        alert_on_objective_met: alertObj,
+        alert_on_verified_fix: alertFix,
+        alert_severities: alertSevs,
+        alert_webhook_url: webhook,
+        objectives: objectives,
+      }),
+    });
+    if (!res.ok) { setStatus('Config save failed: ' + res.status); return; }
+    orchestratorConfig = await res.json();
+    renderOrchestratorConfigPanel();
+    setStatus('Orchestrator config saved');
+    setUpdated();
+  } catch (e) {
+    setStatus('Config save error: ' + e.message);
+  }
+}
+
+function renderOrchestratorQuickView() {
+  var el = document.getElementById('orchestrator-quick-view');
+  if (!orchestratorStatus) { el.innerHTML = '<div style="color:var(--text-muted);font-size:12px">No orchestrator data</div>'; return; }
+  var s = orchestratorStatus;
+  var rl = s.rate_limit || {};
+  var used = rl.used || 0, max = rl.max || 20, remaining = rl.remaining || 0;
+  var rlPct = max > 0 ? Math.round((used / max) * 100) : 0;
+  var rlColor = rlPct > 80 ? 'var(--accent-red)' : rlPct > 50 ? 'var(--accent-yellow, #d29922)' : 'var(--accent-green)';
+  var html = '<div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap">';
+  html += '<div style="font-size:13px"><span style="color:var(--text-muted)">Sessions:</span> <strong>' + used + '/' + max + '</strong> used</div>';
+  html += '<div style="flex:1;min-width:120px;max-width:300px"><div style="background:var(--bg-tertiary);border-radius:4px;height:14px;overflow:hidden">';
+  html += '<div style="background:' + rlColor + ';height:100%;width:' + rlPct + '%;transition:width 0.3s"></div></div></div>';
+  html += '<div style="font-size:13px"><span style="color:var(--text-muted)">Last cycle:</span> ' + (s.last_cycle ? formatDate(s.last_cycle) : 'never') + '</div>';
+  html += '<div style="font-size:13px"><span style="color:var(--text-muted)">Issues:</span> ' + (s.total_issues || 0) + '</div>';
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+function renderOrchestratorPriorityTable() {
+  var el = document.getElementById('orchestrator-priority-container');
+  var countEl = document.getElementById('priority-count');
+  var dispatches = (orchestratorPlan || {}).planned_dispatches || [];
+  if (!dispatches.length) {
+    el.innerHTML = '<div class="empty-state"><span class="empty-state-icon">&#x1F4CB;</span><div class="empty-state-text">No issues eligible for dispatch. Run a scan to populate the priority queue.</div></div>';
+    if (countEl) countEl.textContent = '';
+    return;
+  }
+  if (countEl) countEl.textContent = dispatches.length + ' eligible';
+  var sorted = dispatches.slice().sort(function(a, b) { return (b.priority_score || 0) - (a.priority_score || 0); });
+  var rows = '';
+  sorted.forEach(function(d, i) {
+    var score = (d.priority_score || 0).toFixed(1);
+    var repo = (d.target_repo || d.repo || '').replace('https://github.com/', '');
+    var sev = d.severity_tier || d.severity || '-';
+    var fp = (d.fingerprint || '').slice(0, 12);
+    var rule = d.rule_id || '-';
+    var barW = Math.min(Math.round((d.priority_score || 0)), 100);
+    var barColor = barW > 70 ? 'var(--accent-red)' : barW > 40 ? 'var(--accent-orange)' : 'var(--accent-blue)';
+    rows += '<tr>'
+      + '<td style="font-weight:600;color:var(--text-muted)">' + (i + 1) + '</td>'
+      + '<td><span class="issue-id">' + escapeHtml(fp) + '</span></td>'
+      + '<td>' + escapeHtml(repo) + '</td>'
+      + '<td>' + escapeHtml(rule) + '</td>'
+      + '<td><span class="badge ' + badgeClass(sev) + '">' + escapeHtml(sev) + '</span></td>'
+      + '<td style="min-width:120px"><div style="display:flex;align-items:center;gap:6px">'
+      + '<div style="flex:1;background:var(--bg-tertiary);border-radius:3px;height:12px;overflow:hidden">'
+      + '<div style="background:' + barColor + ';height:100%;width:' + barW + '%"></div></div>'
+      + '<span style="font-size:12px;font-weight:600;min-width:32px;text-align:right">' + score + '</span></div></td>'
+      + '</tr>';
+  });
+  el.innerHTML = '<table><thead><tr><th>#</th><th>Fingerprint</th><th>Repo</th><th>Rule</th><th>Severity</th><th>Priority Score</th></tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+function renderFixRatesPanel() {
+  var el = document.getElementById('orchestrator-fix-rates-container');
+  if (!fixRatesData) { el.innerHTML = '<div class="empty-state">Fix rate data unavailable</div>'; return; }
+  var overall = fixRatesData.overall || {};
+  var html = '<div class="metrics-grid" style="margin-bottom:16px">';
+  html += '<div class="metric-card ' + fixRateColorClass(overall.fix_rate || 0) + '"><div class="label">Overall Fix Rate</div><div class="value">' + (overall.fix_rate || 0) + '%</div><div class="sub">' + (overall.fixed || 0) + ' of ' + (overall.total || 0) + ' issues</div></div>';
+  html += '</div>';
+  var sections = [
+    { key: 'by_severity', title: 'By Severity' },
+    { key: 'by_cwe_family', title: 'By CWE Family' },
+    { key: 'by_repo', title: 'By Repository' },
+  ];
+  sections.forEach(function(sec) {
+    var items = fixRatesData[sec.key] || [];
+    if (!items.length) return;
+    html += '<div style="margin-bottom:16px"><div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">' + sec.title + '</div>';
+    html += '<table style="font-size:12px"><thead><tr><th>' + (sec.key === 'by_repo' ? 'Repository' : 'Category') + '</th><th>Total</th><th>Fixed</th><th>Fix Rate</th><th style="min-width:100px"></th></tr></thead><tbody>';
+    items.forEach(function(item) {
+      var name = item.name || '';
+      if (sec.key === 'by_repo') name = name.replace('https://github.com/', '');
+      var pct = item.fix_rate || 0;
+      var barColor = pct >= 60 ? 'var(--accent-green)' : pct >= 30 ? 'var(--accent-orange)' : 'var(--accent-red)';
+      html += '<tr><td>' + escapeHtml(name) + '</td><td>' + item.total + '</td><td>' + item.fixed + '</td><td style="font-weight:600">' + pct + '%</td>';
+      html += '<td><div style="background:var(--bg-tertiary);border-radius:3px;height:10px;overflow:hidden"><div style="background:' + barColor + ';height:100%;width:' + pct + '%"></div></div></td></tr>';
+    });
+    html += '</tbody></table></div>';
+  });
+  el.innerHTML = html;
+}
+
+function renderRegistryPanel() {
+  var callbacks = {
+    actionRepo: _flaskActionRepo,
+    onToggle: function(idx) { _flaskRegistryToggle(idx); },
+    onScheduleChange: function(idx, val) { _flaskRegistrySchedule(idx, val); },
+    onRemove: function(idx) { _flaskRegistryRemove(idx); },
+    onAdd: function(url, schedule) { _flaskRegistryAdd(url, schedule); },
+    onEditRepo: function(idx) { _openRepoEditModal(idx); },
+  };
+  if (registryData) renderRegistryTable(registryData, 'registry-table-container', 'registry-count', callbacks);
+}
+
+function renderRegistryDefaultsPanel() {
+  var el = document.getElementById('registry-defaults-container');
+  if (!registryData) { el.innerHTML = ''; return; }
+  var d = registryData.defaults || {};
+  var c = registryData.concurrency || {};
+  var html = '<div id="reg-defaults-display">';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:13px">';
+  html += '<div><span style="color:var(--text-muted)">Batch size:</span> ' + (d.batch_size || 5) + '</div>';
+  html += '<div><span style="color:var(--text-muted)">Max sessions:</span> ' + (d.max_sessions || 5) + '</div>';
+  html += '<div><span style="color:var(--text-muted)">Severity threshold:</span> ' + escapeHtml(d.severity_threshold || 'low') + '</div>';
+  html += '<div><span style="color:var(--text-muted)">Default branch:</span> ' + escapeHtml(d.default_branch || 'main') + '</div>';
+  html += '<div><span style="color:var(--text-muted)">Queries:</span> ' + escapeHtml(d.queries || 'security-extended') + '</div>';
+  html += '<div><span style="color:var(--text-muted)">Persist logs:</span> ' + (d.persist_logs !== false ? 'yes' : 'no') + '</div>';
+  html += '<div><span style="color:var(--text-muted)">Dry run:</span> ' + (d.dry_run ? 'yes' : 'no') + '</div>';
+  html += '<div><span style="color:var(--text-muted)">Max parallel:</span> ' + (c.max_parallel || 3) + '</div>';
+  html += '<div><span style="color:var(--text-muted)">Delay (sec):</span> ' + (c.delay_seconds || 30) + '</div>';
+  html += '</div>';
+  html += '<button class="btn btn-sm" onclick="_toggleDefaultsEdit()" id="btn-defaults-edit" style="margin-top:8px">Edit</button>';
+  html += '</div>';
+  html += '<div id="reg-defaults-form" style="display:none">';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">';
+  html += '<div class="form-group" style="margin:0"><label style="font-size:11px;color:var(--text-muted)">Batch Size</label><input class="form-input" id="def-batch-size" type="number" value="' + (d.batch_size || 5) + '" style="padding:4px 8px"></div>';
+  html += '<div class="form-group" style="margin:0"><label style="font-size:11px;color:var(--text-muted)">Max Sessions</label><input class="form-input" id="def-max-sessions" type="number" value="' + (d.max_sessions || 5) + '" style="padding:4px 8px"></div>';
+  html += '<div class="form-group" style="margin:0"><label style="font-size:11px;color:var(--text-muted)">Severity Threshold</label>';
+  html += '<select class="form-input" id="def-severity" style="padding:4px 8px">';
+  ['low','medium','high','critical'].forEach(function(s) {
+    html += '<option value="' + s + '"' + ((d.severity_threshold || 'low') === s ? ' selected' : '') + '>' + s + '</option>';
+  });
+  html += '</select></div>';
+  html += '<div class="form-group" style="margin:0"><label style="font-size:11px;color:var(--text-muted)">Default Branch</label><input class="form-input" id="def-branch" type="text" value="' + escapeHtml(d.default_branch || 'main') + '" style="padding:4px 8px"></div>';
+  html += '<div class="form-group" style="margin:0"><label style="font-size:11px;color:var(--text-muted)">Queries</label><input class="form-input" id="def-queries" type="text" value="' + escapeHtml(d.queries || 'security-extended') + '" style="padding:4px 8px"></div>';
+  html += '<div class="form-group" style="margin:0"><label class="form-check"><input type="checkbox" id="def-persist"' + (d.persist_logs !== false ? ' checked' : '') + '><span style="font-size:11px">Persist logs</span></label></div>';
+  html += '<div class="form-group" style="margin:0"><label class="form-check"><input type="checkbox" id="def-dryrun"' + (d.dry_run ? ' checked' : '') + '><span style="font-size:11px">Dry run</span></label></div>';
+  html += '<div class="form-group" style="margin:0"><label style="font-size:11px;color:var(--text-muted)">Max Parallel</label><input class="form-input" id="def-parallel" type="number" value="' + (c.max_parallel || 3) + '" style="padding:4px 8px"></div>';
+  html += '<div class="form-group" style="margin:0"><label style="font-size:11px;color:var(--text-muted)">Delay (sec)</label><input class="form-input" id="def-delay" type="number" value="' + (c.delay_seconds || 30) + '" style="padding:4px 8px"></div>';
+  html += '</div>';
+  html += '<div style="display:flex;gap:4px">';
+  html += '<button class="btn btn-sm btn-primary" onclick="_saveDefaultsConfig()">Save</button>';
+  html += '<button class="btn btn-sm" onclick="_toggleDefaultsEdit()">Cancel</button>';
+  html += '</div></div>';
+  el.innerHTML = html;
+}
+
+function _toggleDefaultsEdit() {
+  var display = document.getElementById('reg-defaults-display');
+  var form = document.getElementById('reg-defaults-form');
+  if (!display || !form) return;
+  var editing = form.style.display !== 'none';
+  display.style.display = editing ? '' : 'none';
+  form.style.display = editing ? 'none' : '';
+}
+
+async function _saveDefaultsConfig() {
+  var newDefaults = {
+    batch_size: parseInt(document.getElementById('def-batch-size').value, 10) || 5,
+    max_sessions: parseInt(document.getElementById('def-max-sessions').value, 10) || 5,
+    severity_threshold: document.getElementById('def-severity').value,
+    default_branch: document.getElementById('def-branch').value.trim() || 'main',
+    queries: document.getElementById('def-queries').value.trim() || 'security-extended',
+    persist_logs: document.getElementById('def-persist').checked,
+    dry_run: document.getElementById('def-dryrun').checked,
+    languages: (registryData.defaults || {}).languages || '',
+    include_paths: (registryData.defaults || {}).include_paths || '',
+    exclude_paths: (registryData.defaults || {}).exclude_paths || '',
+  };
+  var newConcurrency = {
+    max_parallel: parseInt(document.getElementById('def-parallel').value, 10) || 3,
+    delay_seconds: parseInt(document.getElementById('def-delay').value, 10) || 30,
+  };
+  registryData.defaults = newDefaults;
+  registryData.concurrency = newConcurrency;
+  var ok = await _saveRegistryFlask();
+  if (ok) {
+    renderRegistryDefaultsPanel();
+  }
+}
+
+var _editingRepoIdx = -1;
+function _openRepoEditModal(idx) {
+  _editingRepoIdx = idx;
+  var r = registryData.repos[idx];
+  var modal = document.getElementById('edit-repo-modal');
+  if (!modal) return;
+  modal.classList.add('active');
+  document.getElementById('edit-repo-name').textContent = repoShort(r.repo);
+  document.getElementById('edit-repo-importance').value = r.importance || 'medium';
+  document.getElementById('edit-repo-score').value = r.importance_score != null ? r.importance_score : 50;
+  document.getElementById('edit-repo-max-sessions').value = r.max_sessions_per_cycle != null ? r.max_sessions_per_cycle : 5;
+  document.getElementById('edit-repo-auto-scan').checked = r.auto_scan !== false;
+  document.getElementById('edit-repo-auto-dispatch').checked = r.auto_dispatch !== false;
+  document.getElementById('edit-repo-tags').value = (r.tags || []).join(', ');
+  document.getElementById('edit-repo-overrides').value = JSON.stringify(r.overrides || {}, null, 2);
+  var resultEl = document.getElementById('edit-repo-result');
+  if (resultEl) { resultEl.className = 'dispatch-result'; resultEl.textContent = ''; }
+}
+
+function _closeRepoEditModal() {
+  var modal = document.getElementById('edit-repo-modal');
+  if (modal) modal.classList.remove('active');
+  _editingRepoIdx = -1;
+}
+
+async function _submitRepoEdit() {
+  if (_editingRepoIdx < 0) return;
+  var idx = _editingRepoIdx;
+  var resultEl = document.getElementById('edit-repo-result');
+  var body = {
+    importance: document.getElementById('edit-repo-importance').value,
+    importance_score: parseInt(document.getElementById('edit-repo-score').value, 10) || 50,
+    max_sessions_per_cycle: parseInt(document.getElementById('edit-repo-max-sessions').value, 10) || 5,
+    auto_scan: document.getElementById('edit-repo-auto-scan').checked,
+    auto_dispatch: document.getElementById('edit-repo-auto-dispatch').checked,
+    tags: document.getElementById('edit-repo-tags').value.split(',').map(function(t) { return t.trim(); }).filter(Boolean),
+  };
+  try {
+    var overridesStr = document.getElementById('edit-repo-overrides').value.trim();
+    if (overridesStr) body.overrides = JSON.parse(overridesStr);
+  } catch (e) {
+    resultEl.textContent = 'Invalid overrides JSON';
+    resultEl.className = 'dispatch-result error';
+    return;
+  }
+  try {
+    var res = await _authedFetch(API + '/api/registry/repos/' + idx, {
+      method: 'PUT',
+      headers: Object.assign({}, _authHeaders(), { 'Content-Type': 'application/json' }),
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      resultEl.textContent = 'Save failed: ' + res.status;
+      resultEl.className = 'dispatch-result error';
+      return;
+    }
+    var updated = await res.json();
+    registryData.repos[idx] = updated;
+    _closeRepoEditModal();
+    renderRegistryPanel();
+    setStatus('Repo config saved');
+    setUpdated();
+  } catch (e) {
+    resultEl.textContent = 'Error: ' + e.message;
+    resultEl.className = 'dispatch-result error';
+  }
+}
+
+async function _saveRegistryFlask() {
+  setStatus('Saving registry...');
+  try {
+    var res = await _authedFetch(API + '/api/registry', {
+      method: 'PUT',
+      headers: Object.assign({}, _authHeaders(), { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ repos: registryData.repos, defaults: registryData.defaults, concurrency: registryData.concurrency }),
+    });
+    if (!res.ok) { setStatus('Registry save failed: ' + res.status); return false; }
+    registryData = await res.json();
+    setStatus('Registry saved');
+    setUpdated();
+    return true;
+  } catch (e) {
+    setStatus('Registry save error: ' + e.message);
+    return false;
+  }
+}
+
+async function _flaskRegistryToggle(idx) {
+  var repo = registryData.repos[idx];
+  var prev = repo.enabled;
+  repo.enabled = repo.enabled === false ? true : false;
+  renderRegistryPanel();
+  var ok = await _saveRegistryFlask();
+  if (!ok) { repo.enabled = prev; renderRegistryPanel(); }
+}
+
+async function _flaskRegistrySchedule(idx, val) {
+  var prev = registryData.repos[idx].schedule;
+  registryData.repos[idx].schedule = val;
+  var ok = await _saveRegistryFlask();
+  if (!ok) { registryData.repos[idx].schedule = prev; renderRegistryPanel(); }
+}
+
+async function _flaskRegistryRemove(idx) {
+  var removed = registryData.repos[idx];
+  registryData.repos.splice(idx, 1);
+  renderRegistryPanel();
+  try {
+    var res = await _authedFetch(API + '/api/registry/repos', {
+      method: 'DELETE',
+      headers: Object.assign({}, _authHeaders(), { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ repo: removed.repo }),
+    });
+    if (!res.ok) {
+      registryData.repos.splice(idx, 0, removed);
+      renderRegistryPanel();
+      setStatus('Remove failed: ' + res.status);
+      return;
+    }
+    setStatus('Repo removed');
+    setUpdated();
+  } catch (e) {
+    registryData.repos.splice(idx, 0, removed);
+    renderRegistryPanel();
+    setStatus('Remove error: ' + e.message);
+  }
+}
+
+async function _flaskRegistryAdd(url, schedule) {
+  var resultEl = document.getElementById('add-repo-result');
+  try {
+    var res = await _authedFetch(API + '/api/registry/repos', {
+      method: 'POST',
+      headers: Object.assign({}, _authHeaders(), { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ repo: url, schedule: schedule, enabled: true, overrides: {} }),
+    });
+    if (res.status === 409) {
+      resultEl.textContent = 'Repo already registered.';
+      resultEl.className = 'dispatch-result error';
+      return;
+    }
+    if (!res.ok) {
+      resultEl.textContent = 'Failed to add repo: ' + res.status;
+      resultEl.className = 'dispatch-result error';
+      return;
+    }
+    var entry = await res.json();
+    registryData.repos.push(entry);
+    _closeAddRepoModal();
+    renderRegistryPanel();
+    setStatus('Repo added');
+    setUpdated();
+  } catch (e) {
+    resultEl.textContent = 'Error: ' + e.message;
+    resultEl.className = 'dispatch-result error';
+  }
+}
+
+async function fetchAuditLog() {
+  var actionFilter = (document.getElementById('audit-action-filter') || {}).value || '';
+  var userFilter = (document.getElementById('audit-user-filter') || {}).value || '';
+  var qs = '?per_page=100';
+  if (actionFilter) qs += '&action=' + encodeURIComponent(actionFilter);
+  if (userFilter) qs += '&user=' + encodeURIComponent(userFilter);
+  try {
+    var res = await _authedFetch(API + '/api/audit-log' + qs);
+    if (res.ok) {
+      auditLogData = await res.json();
+      renderAuditLogPanel();
+    }
+  } catch (e) {
+    console.error('Failed to fetch audit log:', e);
+  }
+}
+
+function renderAuditLogPanel() {
+  var el = document.getElementById('audit-log-container');
+  var countEl = document.getElementById('audit-log-count');
+  if (!auditLogData) return;
+  var items = auditLogData.items || [];
+  if (countEl) countEl.textContent = auditLogData.total || 0;
+  if (items.length === 0) {
+    el.innerHTML = '<div class="empty-state">No audit log entries yet.</div>';
+    return;
+  }
+  var actionColors = {
+    'orchestrator_cycle': '#238636', 'orchestrator_scan': '#1f6feb', 'orchestrator_dispatch': '#a371f7',
+    'dispatch_workflow': '#f0883e', 'poll_sessions': '#58a6ff', 'poll_prs': '#58a6ff',
+    'refresh_runs': '#d29922', 'add_registry_repo': '#238636', 'remove_registry_repo': '#f85149',
+    'update_registry': '#d29922', 'update_registry_repo': '#d29922', 'update_orchestrator_config': '#d29922',
+    'backfill': '#8b949e', 'export_audit_log': '#8b949e'
+  };
+  var rows = items.map(function(e) {
+    var color = actionColors[e.action] || '#8b949e';
+    var detailsStr = '';
+    if (e.details) {
+      try {
+        var d = typeof e.details === 'string' ? JSON.parse(e.details) : e.details;
+        detailsStr = Object.keys(d).map(function(k) { return k + '=' + JSON.stringify(d[k]); }).join(', ');
+      } catch (_) { detailsStr = escapeHtml(String(e.details)); }
+    }
+    var resourceStr = e.resource ? '<span style="color:var(--text-secondary)">' + escapeHtml(e.resource) + '</span>' : '';
+    return '<tr>'
+      + '<td style="white-space:nowrap">' + formatDate(e.timestamp) + '</td>'
+      + '<td>' + escapeHtml(e.user || '-') + '</td>'
+      + '<td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + color + ';margin-right:4px"></span>' + escapeHtml(e.action) + '</td>'
+      + '<td>' + resourceStr + '</td>'
+      + '<td style="font-size:11px;color:var(--text-muted);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtml(detailsStr) + '">' + escapeHtml(detailsStr) + '</td>'
+      + '</tr>';
+  }).join('');
+  el.innerHTML = '<table><thead><tr>'
+    + '<th>Timestamp</th><th>User</th><th>Action</th><th>Resource</th><th>Details</th>'
+    + '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+async function exportAuditLog() {
+  setStatus('Exporting audit log...');
+  try {
+    var res = await _authedFetch(API + '/api/audit-log/export', {
+      method: 'POST',
+      headers: Object.assign({}, _authHeaders(), { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({}),
+    });
+    var data = await res.json();
+    if (data.error) {
+      setStatus('Export error: ' + data.error);
+    } else {
+      setStatus('Exported ' + (data.entries || 0) + ' entries to ' + (data.file || 'logs/'));
+    }
+  } catch (e) {
+    setStatus('Export error: ' + e.message);
+  }
+}
+
+async function pollSessions() {
+  const btn = document.getElementById('btn-poll');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Polling...';
+  setStatus('Polling Devin sessions & fetching PRs...');
+  try {
+    const res = await _authedFetch(API + '/api/poll', { method: 'POST' });
+    const data = await res.json();
+    setStatus('Polled ' + (data.polled || 0) + ' sessions, found ' + (data.prs_found || 0) + ' PRs');
+    await fetchAll();
+  } catch (e) {
+    setStatus('Poll error: ' + e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = 'Poll Sessions';
+}
+
+async function refreshData() {
+  const btn = document.getElementById('btn-refresh');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Refreshing...';
+  setStatus('Pulling latest telemetry & PRs...');
+  try {
+    const res = await _authedFetch(API + '/api/refresh', { method: 'POST' });
+    const data = await res.json();
+    if (data.error) {
+      setStatus('Refresh error: ' + data.error);
+    } else {
+      setStatus('Downloaded ' + (data.downloaded || 0) + ' new run files, found ' + (data.prs_found || 0) + ' PRs');
+    }
+    await fetchAll();
+  } catch (e) {
+    setStatus('Refresh error: ' + e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = 'Refresh Data';
+}
+
+let configWarning = '';
+let _flaskActionRepo = '';
+async function checkConfig() {
+  try {
+    const res = await fetch(API + '/api/config');
+    const cfg = await res.json();
+    _flaskActionRepo = cfg.action_repo || '';
+    const warnings = [];
+    if (!cfg.github_token_set) warnings.push('GITHUB_TOKEN not set in .env \u2014 PR discovery disabled');
+    if (!cfg.devin_api_key_set) warnings.push('DEVIN_API_KEY not set in .env \u2014 session polling disabled');
+    if (cfg.auth_required && !_getApiKey()) {
+      _promptApiKey();
+    }
+    if (warnings.length > 0) configWarning = '\u26a0\ufe0f ' + warnings.join(' | ');
+  } catch (e) {}
+}
+
+let _demoLoaded = false;
+
+async function checkDemoDataStatus() {
+  try {
+    var res = await fetch(API + '/api/demo-data');
+    var data = await res.json();
+    _demoLoaded = data.loaded;
+    updateDemoUI(data);
+  } catch (e) {}
+}
+
+function updateDemoUI(data) {
+  var btn = document.getElementById('btn-demo-toggle');
+  var statusEl = document.getElementById('demo-status-text');
+  var loadBtn = document.getElementById('btn-demo-load');
+  var clearBtn = document.getElementById('btn-demo-clear');
+  if (btn) {
+    btn.style.background = data.loaded ? 'var(--accent-orange)' : '';
+    btn.style.borderColor = data.loaded ? 'var(--accent-orange)' : '';
+    btn.style.color = data.loaded ? '#fff' : '';
+    btn.title = data.loaded ? 'Demo data active - click to clear' : 'Click to load demo data';
+  }
+  if (loadBtn) loadBtn.style.display = data.loaded ? 'none' : '';
+  if (clearBtn) clearBtn.style.display = data.loaded ? '' : 'none';
+  if (statusEl) {
+    statusEl.textContent = data.loaded ? 'Demo data is loaded' : 'No demo data loaded';
+    statusEl.style.color = data.loaded ? 'var(--accent-green)' : 'var(--text-muted)';
+  }
+  var summaryEl = document.getElementById('demo-summary');
+  if (summaryEl && data.summary) {
+    var s = data.summary;
+    summaryEl.textContent = s.repos + ' repos, ' + s.runs + ' runs, ' + s.prs + ' PRs, ' + s.total_sessions + ' sessions (' + s.date_range + ')';
+  }
+}
+
+async function toggleDemoData() {
+  if (_demoLoaded) {
+    await clearDemoData();
+  } else {
+    await loadDemoData();
+  }
+}
+
+async function loadDemoData() {
+  var btn = document.getElementById('btn-demo-load');
+  if (btn) { btn.disabled = true; btn.textContent = 'Loading...'; }
+  setStatus('Loading demo data...');
+  try {
+    var res = await fetch(API + '/api/demo-data', { method: 'POST', headers: _authHeaders() });
+    var data = await res.json();
+    if (data.error) {
+      setStatus('Demo: ' + data.error);
+    } else {
+      setStatus('Demo data loaded: ' + data.stats.runs + ' runs, ' + data.stats.prs + ' PRs');
+    }
+    await checkDemoDataStatus();
+    await fetchAll();
+  } catch (e) {
+    setStatus('Error loading demo data: ' + e.message);
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Load Demo Data'; }
+}
+
+async function clearDemoData() {
+  var btn = document.getElementById('btn-demo-clear');
+  if (btn) { btn.disabled = true; btn.textContent = 'Clearing...'; }
+  setStatus('Clearing demo data...');
+  try {
+    var res = await fetch(API + '/api/demo-data', { method: 'DELETE', headers: _authHeaders() });
+    var data = await res.json();
+    setStatus('Demo data cleared: ' + data.stats.runs_deleted + ' runs removed');
+    await checkDemoDataStatus();
+    await fetchAll();
+  } catch (e) {
+    setStatus('Error clearing demo data: ' + e.message);
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Clear Demo Data'; }
+}
+
+async function resetDemoData() {
+  var btn = document.getElementById('btn-demo-reset');
+  if (btn) { btn.disabled = true; btn.textContent = 'Regenerating...'; }
+  setStatus('Regenerating demo data...');
+  try {
+    var res = await fetch(API + '/api/demo-data/reset', { method: 'POST', headers: _authHeaders() });
+    var data = await res.json();
+    setStatus('Demo data regenerated: ' + data.stats.runs + ' runs');
+    await checkDemoDataStatus();
+    await fetchAll();
+  } catch (e) {
+    setStatus('Error: ' + e.message);
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Regenerate'; }
+}
+
+async function openDemoEditor() {
+  setStatus('Loading demo data for editing...');
+  try {
+    var res = await fetch(API + '/api/demo-data/files');
+    var data = await res.json();
+    var modal = document.getElementById('demo-editor-modal');
+    if (modal) {
+      document.getElementById('demo-editor-textarea').value = JSON.stringify(data, null, 2);
+      modal.classList.add('active');
+    }
+  } catch (e) {
+    setStatus('Error loading demo data: ' + e.message);
+  }
+}
+
+function closeDemoEditor() {
+  var modal = document.getElementById('demo-editor-modal');
+  if (modal) modal.classList.remove('active');
+}
+
+async function saveDemoEditorData() {
+  var textarea = document.getElementById('demo-editor-textarea');
+  var resultEl = document.getElementById('demo-editor-result');
+  var parsed;
+  try {
+    parsed = JSON.parse(textarea.value);
+  } catch (e) {
+    if (resultEl) { resultEl.className = 'dispatch-result error'; resultEl.textContent = 'Invalid JSON: ' + e.message; }
+    return;
+  }
+  try {
+    var res = await fetch(API + '/api/demo-data/files', {
+      method: 'PUT',
+      headers: Object.assign({}, _authHeaders(), { 'Content-Type': 'application/json' }),
+      body: JSON.stringify(parsed),
+    });
+    var data = await res.json();
+    if (data.error) {
+      if (resultEl) { resultEl.className = 'dispatch-result error'; resultEl.textContent = data.error; }
+    } else {
+      if (resultEl) { resultEl.className = 'dispatch-result success'; resultEl.textContent = 'Saved' + (data.reloaded ? ' & reloaded into DB' : ''); }
+      await checkDemoDataStatus();
+      await fetchAll();
+    }
+  } catch (e) {
+    if (resultEl) { resultEl.className = 'dispatch-result error'; resultEl.textContent = e.message; }
+  }
+}
+
+async function init() {
+  await checkConfig();
+  renderUserInfo();
+  await checkDemoDataStatus();
+  await fetchAll();
+  if (configWarning) setStatus(configWarning);
+  startLivePolling(30000);
+}
+init();
+</script>
+</body>
+</html>

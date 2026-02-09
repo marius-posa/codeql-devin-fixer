@@ -1,0 +1,58 @@
+name: Orchestrator Cycle
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      command:
+        description: 'Orchestrator command to run'
+        required: false
+        default: 'cycle'
+        type: choice
+        options:
+          - cycle
+          - dispatch
+          - scan
+          - status
+
+permissions:
+  contents: write
+
+jobs:
+  orchestrate:
+    name: Run Orchestrator
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests jinja2 pyyaml
+
+      - name: Run orchestrator
+        env:
+          DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+          ACTION_REPO: ${{ github.repository }}
+        run: python -m scripts.orchestrator ${{ inputs.command || 'cycle' }} --json
+
+      - name: Commit state changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add telemetry/orchestrator_state.json
+          if git diff --cached --quiet; then
+            echo "No state changes to commit"
+          else
+            git commit -m "chore: update orchestrator state after ${{ inputs.command || 'cycle' }}"
+            git push
+          fi

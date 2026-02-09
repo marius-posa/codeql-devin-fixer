@@ -1,0 +1,57 @@
+{
+  "target_repo": "https://github.com/acme-corp/data-pipeline",
+  "fork_url": "https://github.com/acme-corp-forks/data-pipeline",
+  "run_number": 31,
+  "run_id": "44419518557",
+  "run_url": "https://github.com/acme-corp/codeql-devin-fixer/actions/runs/25189462425",
+  "run_label": "run-31-2025-12-09-153700",
+  "timestamp": "2025-12-09T15:37:00+00:00",
+  "issues_found": 2,
+  "severity_breakdown": {
+    "low": 2
+  },
+  "category_breakdown": {
+    "auth-bypass": 1,
+    "crypto": 1
+  },
+  "batches_created": 1,
+  "sessions": [
+    {
+      "session_id": "devin-124d1388f2594d33abec771bef87cbbd",
+      "session_url": "https://app.devin.ai/sessions/124d1388f2594d33abec771bef87cbbd",
+      "batch_id": 1,
+      "status": "finished",
+      "issue_ids": [
+        "ISSUE-004-001",
+        "ISSUE-004-002"
+      ],
+      "pr_url": ""
+    }
+  ],
+  "issue_fingerprints": [
+    {
+      "id": "ISSUE-004-001",
+      "fingerprint": "c58b7eb5b5471575ab12b9fb25cd19a6",
+      "rule_id": "py/insecure-auth",
+      "severity_tier": "low",
+      "cwe_family": "auth-bypass",
+      "file": "src/api/middleware/auth.js",
+      "start_line": 48,
+      "description": "Potential auth bypass vulnerability in auth.js",
+      "resolution": "",
+      "code_churn": 1
+    },
+    {
+      "id": "ISSUE-004-002",
+      "fingerprint": "25ed4a726a00f727a09d24e01a932a63",
+      "rule_id": "java/weak-crypto",
+      "severity_tier": "low",
+      "cwe_family": "crypto",
+      "file": "src/security/CryptoHelper.java",
+      "start_line": 356,
+      "description": "Potential crypto vulnerability in CryptoHelper.java",
+      "resolution": "",
+      "code_churn": 3
+    }
+  ]
+}

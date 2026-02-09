@@ -1,0 +1,60 @@
+{
+  "verified_at": "2026-02-09T07:15:42.917264+00:00",
+  "pr_number": "95",
+  "pr_url": "https://github.com/marius-posa/codeql-devin-fixer/pull/95",
+  "pr_title": "fix(CQLF-R34-0003,CQLF-R34-0004,CQLF-R34-0005,CQLF-R34-0006,CQLF-R34-0007): resolve logging security issues",
+  "session_id": "632c86f22b594fe5857491672ce608f3",
+  "source_run_number": "34",
+  "cwe_family": "logging",
+  "summary": {
+    "total_original": 19,
+    "total_targeted": 5,
+    "fixed_count": 5,
+    "remaining_count": 0,
+    "fix_rate": 100.0,
+    "new_issues_in_scan": 0
+  },
+  "verified_fixed": [
+    {
+      "id": "CQLF-R34-0003",
+      "fingerprint": "09a12550a2cefd4eee37",
+      "rule_id": "py/log-injection",
+      "severity_tier": "high",
+      "cwe_family": "logging",
+      "file": "github_app/app.py"
+    },
+    {
+      "id": "CQLF-R34-0004",
+      "fingerprint": "b3d1c9715d5fcc4417ed",
+      "rule_id": "py/log-injection",
+      "severity_tier": "high",
+      "cwe_family": "logging",
+      "file": "github_app/app.py"
+    },
+    {
+      "id": "CQLF-R34-0005",
+      "fingerprint": "edbe275b939df5fb43c3",
+      "rule_id": "py/log-injection",
+      "severity_tier": "high",
+      "cwe_family": "logging",
+      "file": "github_app/app.py"
+    },
+    {
+      "id": "CQLF-R34-0006",
+      "fingerprint": "7bb2bca9ae1f2d1bbe3e",
+      "rule_id": "py/log-injection",
+      "severity_tier": "high",
+      "cwe_family": "logging",
+      "file": "github_app/scan_trigger.py"
+    },
+    {
+      "id": "CQLF-R34-0007",
+      "fingerprint": "02144e7fc2c215cd4577",
+      "rule_id": "py/log-injection",
+      "severity_tier": "high",
+      "cwe_family": "logging",
+      "file": "github_app/webhook_handler.py"
+    }
+  ],
+  "still_present": []
+}

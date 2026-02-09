@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ repo_short }} - Telemetry</title>
+<link rel="stylesheet" href="/static/shared.css">
+</head>
+<body>
+<div class="container">
+  <div class="breadcrumb">
+    <a href="/">Dashboard</a> / {{ repo_short }}
+  </div>
+
+  <header>
+    <h1><span>{{ repo_short }}</span></h1>
+    <div class="header-actions">
+      <button class="btn btn-primary" onclick="openDispatchModal()" style="background:#1f6feb;border-color:#388bfd">Run Action</button>
+      <a href="{{ repo_url }}" target="_blank" class="btn">View on GitHub</a>
+      <a class="btn" href="/api/report/pdf?repo={{ repo_url }}" id="btn-pdf">PDF Report</a>
+      <a href="/" class="btn">Back to Dashboard</a>
+      <button class="density-toggle" id="density-toggle" title="Toggle compact mode">Compact</button>
+      <button class="theme-toggle" id="theme-toggle"></button>
+    </div>
+  </header>
+
+  <div class="status-bar">
+    <span id="status-text">Loading...</span>
+    <span id="last-updated"></span>
+  </div>
+
+  <div class="metrics-grid" id="metrics-grid"></div>
+
+  <div class="panel">
+    <div class="panel-header">Security Health Trend</div>
+    <div class="panel-body" id="trend-chart"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+  </div>
+
+  <div class="grid-2">
+    <div class="panel">
+      <div class="panel-header">Severity Breakdown</div>
+      <div class="panel-body" id="severity-chart"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">Category Breakdown</div>
+      <div class="panel-body" id="category-chart"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      Run History
+      <span id="runs-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+    </div>
+    <div class="panel-body table-scroll-wrapper" id="runs-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      Devin Sessions
+      <span id="sessions-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+    </div>
+    <div class="panel-body table-scroll-wrapper" id="sessions-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      Pull Requests
+      <span id="prs-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+    </div>
+    <div class="panel-body table-scroll-wrapper" id="prs-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      Issue Tracking
+      <span id="issues-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+      <button class="btn btn-sm" onclick="exportAllIssuesCsv()" style="margin-left:auto">Export CSV</button>
+    </div>
+    <div class="panel-body table-scroll-wrapper" id="issues-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+  </div>
+</div>
+
+<div class="drawer-overlay" id="drawer-overlay"></div>
+<div class="drawer" id="issue-drawer">
+  <div class="drawer-header">
+    <h3>Issue Details</h3>
+    <button class="btn btn-icon" onclick="closeIssueDrawer()">&times;</button>
+  </div>
+  <div class="drawer-body"></div>
+</div>
+
+{% include 'dispatch_modal.html' %}
+
+<script src="/static/shared.js"></script>
+<script>
+const REPO_SHORT = {{ repo_short|tojson }};
+const REPO_URL = {{ repo_url|tojson }};
+
+function renderMetrics(s) {
+  const grid = document.getElementById('metrics-grid');
+  const fixRate = s.fix_rate || 0;
+  const cards = [
+    { label: 'Total Runs', value: s.total_runs || 0, cls: 'cyan' },
+    { label: 'Issues Found', value: s.total_issues || 0, cls: 'orange' },
+    { label: 'Devin Sessions', value: s.sessions_created || 0, cls: 'purple',
+      sub: (s.sessions_finished || 0) + ' finished' },
+    { label: 'PRs Created', value: s.prs_total || 0, cls: 'blue',
+      sub: (s.prs_merged || 0) + ' merged, ' + (s.prs_open || 0) + ' open' },
+    { label: 'Fix Rate', value: fixRate + '%', cls: fixRateColorClass(fixRate),
+      sub: 'merged / total PRs' },
+  ];
+  grid.innerHTML = cards.map(function(c) {
+    return '<div class="metric-card ' + c.cls + '">'
+      + '<div class="label">' + c.label + '</div>'
+      + '<div class="value">' + c.value + '</div>'
+      + (c.sub ? '<div class="sub">' + c.sub + '</div>' : '')
+      + '</div>';
+  }).join('');
+}
+
+function renderRunsTable(runs) {
+  const el = document.getElementById('runs-table-container');
+  document.getElementById('runs-count').textContent = runs.length;
+  if (runs.length === 0) {
+    el.innerHTML = '<div class="empty-state"><span class="empty-state-icon">&#x1F680;</span><div class="empty-state-text">No runs recorded yet.</div></div>';
+    return;
+  }
+  const sorted = [...runs].sort(function(a, b) {
+    var diff = (b.run_number || 0) - (a.run_number || 0);
+    if (diff !== 0) return diff;
+    var ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+    var tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+    return tb - ta;
+  });
+  let rows = '';
+  sorted.forEach(function(r) {
+    rows += '<tr>'
+      + '<td><strong>#' + (r.run_number || '-') + '</strong></td>'
+      + '<td>' + (r.issues_found || 0) + '</td>'
+      + '<td>' + (r.batches_created || 0) + '</td>'
+      + '<td>' + (r.sessions || []).length + '</td>'
+      + '<td>' + formatDate(r.timestamp) + '</td>'
+      + '</tr>';
+  });
+  el.innerHTML = '<table><thead><tr>'
+    + '<th>Run</th><th>Issues</th><th>Batches</th><th>Sessions</th><th>Timestamp</th>'
+    + '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+var _repoTrendMode = 'total';
+var _repoTrendExcluded = {};
+var _repoTrendRuns = [];
+
+var SEV_COLORS = { critical: '#f85149', high: '#d29922', medium: '#bc8cff', low: '#58a6ff' };
+var SEV_ORDER = ['critical', 'high', 'medium', 'low'];
+
+function _drawRepoTrendSvg(container, runs, mode, excluded) {
+  var sorted = runs.map(function(r) { return r; }).sort(function(a, b) { return (a.run_number || 0) - (b.run_number || 0); });
+  if (sorted.length === 0) {
+    container.querySelector('.trend-svg-wrap').innerHTML = '<div class="empty-state">No run data available yet</div>';
+    return;
+  }
+  var W = 800, H = 280, PAD_L = 55, PAD_R = 20, PAD_T = 20, PAD_B = 50;
+  var plotW = W - PAD_L - PAD_R, plotH = H - PAD_T - PAD_B;
+  var xScale = sorted.length > 1
+    ? function(i) { return PAD_L + (i / (sorted.length - 1)) * plotW; }
+    : function() { return PAD_L + plotW / 2; };
+
+  if (mode === 'severity') {
+    var activeSevs = SEV_ORDER.filter(function(s) { return !excluded[s]; });
+    var maxY = 1;
+    sorted.forEach(function(r) {
+      activeSevs.forEach(function(s) {
+        var v = (r.severity_breakdown || {})[s] || 0;
+        if (v > maxY) maxY = v;
+      });
+    });
+    var yScale = function(v) { return PAD_T + plotH - (v / maxY) * plotH; };
+    var gridSvg = '', xLabelSvg = '', linesSvg = '', dotsSvg = '';
+    for (var gi = 0; gi <= 5; gi++) {
+      var val = Math.round((maxY / 5) * gi), gy = yScale(val);
+      gridSvg += '<line x1="' + PAD_L + '" y1="' + gy + '" x2="' + (W - PAD_R) + '" y2="' + gy + '" stroke="#30363d" stroke-dasharray="4,4"/>';
+      gridSvg += '<text x="' + (PAD_L - 8) + '" y="' + (gy + 4) + '" fill="#8b949e" font-size="11" text-anchor="end">' + val + '</text>';
+    }
+    var maxLabels = Math.min(15, Math.max(5, Math.floor(W / 60)));
+    var step = Math.max(1, Math.ceil(sorted.length / maxLabels));
+    for (var xi = 0; xi < sorted.length; xi += step) {
+      xLabelSvg += '<text x="' + xScale(xi) + '" y="' + (H - PAD_B + 20) + '" fill="#8b949e" font-size="11" text-anchor="middle">#' + (sorted[xi].run_number || 0) + '</text>';
+    }
+    activeSevs.forEach(function(sev) {
+      var color = SEV_COLORS[sev] || '#8b949e';
+      var pts = sorted.map(function(r, idx) { return { x: idx, v: (r.severity_breakdown || {})[sev] || 0, run: r.run_number || 0 }; });
+      if (pts.length === 1) {
+        dotsSvg += '<circle cx="' + xScale(0) + '" cy="' + yScale(pts[0].v) + '" r="5" fill="' + color + '"><title>' + sev + ' Run #' + pts[0].run + ': ' + pts[0].v + '</title></circle>';
+      } else {
+        var d = pts.map(function(p, i) { return (i === 0 ? 'M' : 'L') + xScale(i).toFixed(1) + ',' + yScale(p.v).toFixed(1); }).join(' ');
+        linesSvg += '<path d="' + d + '" fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+        pts.forEach(function(p, i) {
+          dotsSvg += '<circle cx="' + xScale(i) + '" cy="' + yScale(p.v) + '" r="3" fill="' + color + '" stroke="var(--bg-secondary)" stroke-width="2"><title>' + sev + ' Run #' + p.run + ': ' + p.v + '</title></circle>';
+        });
+      }
+    });
+    var legendSvg = '';
+    activeSevs.forEach(function(sev, idx) {
+      var color = SEV_COLORS[sev] || '#8b949e', lx = PAD_L + idx * 120;
+      legendSvg += '<rect x="' + lx + '" y="' + (H - 10) + '" width="12" height="12" rx="2" fill="' + color + '"/>';
+      legendSvg += '<text x="' + (lx + 16) + '" y="' + H + '" fill="#8b949e" font-size="11">' + sev + '</text>';
+    });
+    var axisLabelY = PAD_T + plotH / 2;
+    container.querySelector('.trend-svg-wrap').innerHTML = '<svg viewBox="0 0 ' + W + ' ' + (H + 20) + '" width="100%" style="max-height:360px" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">'
+      + gridSvg
+      + '<line x1="' + PAD_L + '" y1="' + PAD_T + '" x2="' + PAD_L + '" y2="' + (PAD_T + plotH) + '" stroke="#30363d"/>'
+      + '<line x1="' + PAD_L + '" y1="' + (PAD_T + plotH) + '" x2="' + (W - PAD_R) + '" y2="' + (PAD_T + plotH) + '" stroke="#30363d"/>'
+      + '<text x="' + (PAD_L + plotW / 2) + '" y="' + (H - PAD_B + 38) + '" fill="#6e7681" font-size="12" text-anchor="middle">Action Runs</text>'
+      + '<text x="14" y="' + axisLabelY + '" fill="#6e7681" font-size="12" text-anchor="middle" transform="rotate(-90,14,' + axisLabelY + ')">Issues</text>'
+      + xLabelSvg + linesSvg + dotsSvg + legendSvg + '</svg>';
+  } else {
+    var pts = sorted.map(function(r) { return { run: r.run_number || 0, issues: r.issues_found || 0 }; });
+    var maxY = Math.max.apply(null, pts.map(function(p) { return p.issues; }).concat([1]));
+    var yScale = function(v) { return PAD_T + plotH - (v / maxY) * plotH; };
+    var gridSvg = '', xLabelSvg = '';
+    for (var gi = 0; gi <= 5; gi++) {
+      var val = Math.round((maxY / 5) * gi), gy = yScale(val);
+      gridSvg += '<line x1="' + PAD_L + '" y1="' + gy + '" x2="' + (W - PAD_R) + '" y2="' + gy + '" stroke="#30363d" stroke-dasharray="4,4"/>';
+      gridSvg += '<text x="' + (PAD_L - 8) + '" y="' + (gy + 4) + '" fill="#8b949e" font-size="11" text-anchor="end">' + val + '</text>';
+    }
+    var maxLabels = Math.min(15, Math.max(5, Math.floor(W / 60)));
+    var step = Math.max(1, Math.ceil(pts.length / maxLabels));
+    for (var xi = 0; xi < pts.length; xi += step) {
+      xLabelSvg += '<text x="' + xScale(xi) + '" y="' + (H - PAD_B + 20) + '" fill="#8b949e" font-size="11" text-anchor="middle">#' + pts[xi].run + '</text>';
+    }
+    var color = '#58a6ff', lineSvg = '', dotsSvg = '';
+    if (pts.length === 1) {
+      dotsSvg = '<circle cx="' + xScale(0) + '" cy="' + yScale(pts[0].issues) + '" r="5" fill="' + color + '"><title>Run #' + pts[0].run + ': ' + pts[0].issues + ' issues</title></circle>';
+    } else {
+      var d = pts.map(function(p, i) { return (i === 0 ? 'M' : 'L') + xScale(i).toFixed(1) + ',' + yScale(p.issues).toFixed(1); }).join(' ');
+      lineSvg = '<path d="' + d + '" fill="none" stroke="' + color + '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+      pts.forEach(function(p, i) {
+        dotsSvg += '<circle cx="' + xScale(i) + '" cy="' + yScale(p.issues) + '" r="4" fill="' + color + '" stroke="var(--bg-secondary)" stroke-width="2"><title>Run #' + p.run + ': ' + p.issues + ' issues</title></circle>';
+      });
+    }
+    var axisLabelY = PAD_T + plotH / 2;
+    container.querySelector('.trend-svg-wrap').innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="max-height:340px" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">'
+      + gridSvg
+      + '<line x1="' + PAD_L + '" y1="' + PAD_T + '" x2="' + PAD_L + '" y2="' + (PAD_T + plotH) + '" stroke="#30363d"/>'
+      + '<line x1="' + PAD_L + '" y1="' + (PAD_T + plotH) + '" x2="' + (W - PAD_R) + '" y2="' + (PAD_T + plotH) + '" stroke="#30363d"/>'
+      + '<text x="' + (PAD_L + plotW / 2) + '" y="' + (H - PAD_B + 38) + '" fill="#6e7681" font-size="12" text-anchor="middle">Action Runs</text>'
+      + '<text x="14" y="' + axisLabelY + '" fill="#6e7681" font-size="12" text-anchor="middle" transform="rotate(-90,14,' + axisLabelY + ')">Issues Found</text>'
+      + xLabelSvg + lineSvg + dotsSvg + '</svg>';
+  }
+}
+
+function _setRepoTrendMode(mode) {
+  _repoTrendMode = mode;
+  var container = document.getElementById('trend-chart');
+  _renderRepoTrendControls(container);
+  _drawRepoTrendSvg(container, _repoTrendRuns, _repoTrendMode, _repoTrendExcluded);
+}
+
+function _toggleRepoSev(sev) {
+  _repoTrendExcluded[sev] = !_repoTrendExcluded[sev];
+  var container = document.getElementById('trend-chart');
+  _renderRepoTrendControls(container);
+  _drawRepoTrendSvg(container, _repoTrendRuns, _repoTrendMode, _repoTrendExcluded);
+}
+
+function _renderRepoTrendControls(container) {
+  var ctrl = container.querySelector('.trend-controls');
+  if (!ctrl) return;
+  var html = '<button class="trend-toggle' + (_repoTrendMode === 'total' ? ' active' : '') + '" onclick="_setRepoTrendMode(\'total\')">Total</button>';
+  html += '<button class="trend-toggle' + (_repoTrendMode === 'severity' ? ' active' : '') + '" onclick="_setRepoTrendMode(\'severity\')">By Severity</button>';
+  if (_repoTrendMode === 'severity') {
+    html += '<span style="margin-left:8px"></span>';
+    SEV_ORDER.forEach(function(s) {
+      html += '<button class="sev-toggle sev-' + s + (_repoTrendExcluded[s] ? ' excluded' : '') + '" onclick="_toggleRepoSev(\'' + s + '\')">' + s + '</button> ';
+    });
+  }
+  ctrl.innerHTML = html;
+}
+
+function renderTrendChart(container, runs) {
+  _repoTrendRuns = runs;
+  _repoTrendMode = 'total';
+  _repoTrendExcluded = {};
+  if (!runs || runs.length === 0) {
+    container.innerHTML = '<div class="empty-state"><span class="empty-state-icon">&#x1F4C8;</span><div class="empty-state-text">No run data available yet</div></div>';
+    return;
+  }
+  container.innerHTML = '<div class="trend-controls"></div><div class="trend-svg-wrap"></div>';
+  _renderRepoTrendControls(container);
+  _drawRepoTrendSvg(container, runs, 'total', {});
+}
+
+function openDispatchModalRepo() {
+  openDispatchModal(REPO_URL);
+}
+
+async function fetchRepoData() {
+  showSkeletonMetrics('metrics-grid', 5);
+  showSkeletonChart('trend-chart');
+  showSkeletonBars('severity-chart');
+  showSkeletonBars('category-chart');
+  ['runs-table-container','sessions-table-container','prs-table-container','issues-table-container'].forEach(function(id) { showSkeletonTable(id); });
+  setStatus('Loading data...');
+  try {
+    const res = await fetch(API + '/api/repo/' + REPO_SHORT + '?per_page=200');
+    const data = await res.json();
+    renderMetrics(data.stats);
+    renderTrendChart(document.getElementById('trend-chart'), data.runs.items || []);
+    renderBarChart(document.getElementById('severity-chart'), data.stats.severity_breakdown);
+    renderBarChart(document.getElementById('category-chart'), data.stats.category_breakdown);
+    renderRunsTable(data.runs.items || []);
+    renderSessionsTable(data.sessions.items || [], 'sessions-table-container', 'sessions-count');
+    renderPrsTable(data.prs.items || [], 'prs-table-container', 'prs-count');
+    renderIssuesTable(data.issues.items || [], 'issues-table-container', 'issues-count');
+    setStatus('Ready');
+    setUpdated();
+  } catch (e) {
+    setStatus('Error loading data: ' + e.message);
+  }
+}
+fetchRepoData();
+
+(function() {
+  var btn = document.querySelector('[onclick="openDispatchModal()"]');
+  if (btn) btn.setAttribute('onclick', 'openDispatchModalRepo()');
+})();
+</script>
+</body>
+</html>

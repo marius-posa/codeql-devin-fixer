@@ -1,0 +1,23 @@
+{
+  "name": "CodeQL Devin Fixer App",
+  "url": "https://github.com/marius-posa/codeql-devin-fixer",
+  "hook_attributes": {
+    "url": "https://smee.io/8C86NTQmEqHxjwn",
+    "active": true
+  },
+  "redirect_url": "https://smee.io/8C86NTQmEqHxjwn",
+  "description": "Automated security vulnerability remediation powered by CodeQL analysis and Devin AI. Scans your code for vulnerabilities and creates fix PRs automatically.",
+  "public": true,
+  "default_events": [
+    "installation",
+    "installation_repositories",
+    "push"
+  ],
+  "default_permissions": {
+    "contents": "write",
+    "pull_requests": "write",
+    "metadata": "read",
+    "checks": "read",
+    "security_events": "read"
+  }
+}

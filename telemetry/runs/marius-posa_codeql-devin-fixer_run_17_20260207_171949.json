@@ -1,0 +1,51 @@
+{
+  "target_repo": "https://github.com/marius-posa/codeql-devin-fixer",
+  "fork_url": "https://github.com/marius-posa/codeql-devin-fixer",
+  "run_number": 17,
+  "run_id": "21783855305",
+  "run_url": "https://github.com/marius-posa/codeql-devin-fixer/actions/runs/21783855305",
+  "run_label": "run-17-2026-02-07-171945",
+  "timestamp": "2026-02-07T17:19:49.005852+00:00",
+  "issues_found": 2,
+  "severity_breakdown": {
+    "high": 1,
+    "medium": 1
+  },
+  "category_breakdown": {
+    "info-disclosure": 2
+  },
+  "batches_created": 1,
+  "sessions": [
+    {
+      "session_id": "devin-77de7fde071e460c99d9eefee2c14f23",
+      "session_url": "https://app.devin.ai/sessions/77de7fde071e460c99d9eefee2c14f23",
+      "batch_id": 1,
+      "status": "finished",
+      "issue_ids": [
+        "CQLF-R17-0001",
+        "CQLF-R17-0002"
+      ],
+      "pr_url": "https://github.com/marius-posa/codeql-devin-fixer/pull/30"
+    }
+  ],
+  "issue_fingerprints": [
+    {
+      "id": "CQLF-R17-0001",
+      "fingerprint": "7cd37c368f3c7da0",
+      "rule_id": "py/flask-debug",
+      "severity_tier": "high",
+      "cwe_family": "info-disclosure",
+      "file": "telemetry/app.py",
+      "start_line": 509
+    },
+    {
+      "id": "CQLF-R17-0002",
+      "fingerprint": "df49e9c820615817",
+      "rule_id": "py/stack-trace-exposure",
+      "severity_tier": "medium",
+      "cwe_family": "info-disclosure",
+      "file": "telemetry/app.py",
+      "start_line": 501
+    }
+  ]
+}

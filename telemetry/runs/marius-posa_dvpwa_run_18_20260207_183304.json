@@ -1,0 +1,117 @@
+{
+  "target_repo": "https://github.com/marius-posa/dvpwa",
+  "fork_url": "https://github.com/marius-posa/dvpwa",
+  "run_number": 18,
+  "run_id": "21784860179",
+  "run_url": "https://github.com/marius-posa/codeql-devin-fixer/actions/runs/21784860179",
+  "run_label": "run-18-2026-02-07-183300",
+  "timestamp": "2026-02-07T18:33:04.110541+00:00",
+  "issues_found": 9,
+  "severity_breakdown": {
+    "high": 9
+  },
+  "category_breakdown": {
+    "xss": 8,
+    "crypto": 1
+  },
+  "batches_created": 1,
+  "sessions": [
+    {
+      "session_id": "devin-13c79a0145a14bccb2c98c102b5affb8",
+      "session_url": "https://app.devin.ai/sessions/13c79a0145a14bccb2c98c102b5affb8",
+      "batch_id": 1,
+      "status": "finished",
+      "issue_ids": [
+        "CQLF-R18-0001",
+        "CQLF-R18-0002",
+        "CQLF-R18-0003",
+        "CQLF-R18-0004",
+        "CQLF-R18-0005"
+      ],
+      "pr_url": "https://github.com/marius-posa/dvpwa/pull/1"
+    }
+  ],
+  "issue_fingerprints": [
+    {
+      "id": "CQLF-R18-0001",
+      "fingerprint": "bbc3c6f669b187f8",
+      "rule_id": "js/xss-through-dom",
+      "severity_tier": "high",
+      "cwe_family": "xss",
+      "file": "sqli/static/js/materialize.js",
+      "start_line": 2850
+    },
+    {
+      "id": "CQLF-R18-0002",
+      "fingerprint": "c329a38c14ad6991",
+      "rule_id": "js/xss-through-dom",
+      "severity_tier": "high",
+      "cwe_family": "xss",
+      "file": "sqli/static/js/materialize.js",
+      "start_line": 2856
+    },
+    {
+      "id": "CQLF-R18-0003",
+      "fingerprint": "9fe54db59c216e1f",
+      "rule_id": "js/xss-through-dom",
+      "severity_tier": "high",
+      "cwe_family": "xss",
+      "file": "sqli/static/js/materialize.js",
+      "start_line": 4566
+    },
+    {
+      "id": "CQLF-R18-0004",
+      "fingerprint": "539df72e1bf719ae",
+      "rule_id": "js/xss-through-dom",
+      "severity_tier": "high",
+      "cwe_family": "xss",
+      "file": "sqli/static/js/materialize.js",
+      "start_line": 4586
+    },
+    {
+      "id": "CQLF-R18-0005",
+      "fingerprint": "772a6bb456c430c5",
+      "rule_id": "js/xss-through-dom",
+      "severity_tier": "high",
+      "cwe_family": "xss",
+      "file": "sqli/static/js/materialize.js",
+      "start_line": 4618
+    },
+    {
+      "id": "CQLF-R18-0006",
+      "fingerprint": "b4f2ee0d343d3cdd",
+      "rule_id": "js/xss-through-dom",
+      "severity_tier": "high",
+      "cwe_family": "xss",
+      "file": "sqli/static/js/materialize.js",
+      "start_line": 4688
+    },
+    {
+      "id": "CQLF-R18-0007",
+      "fingerprint": "405f90090a0d8aa0",
+      "rule_id": "js/xss-through-dom",
+      "severity_tier": "high",
+      "cwe_family": "xss",
+      "file": "sqli/static/js/materialize.js",
+      "start_line": 7008
+    },
+    {
+      "id": "CQLF-R18-0008",
+      "fingerprint": "ae0f3bcb5fe20201",
+      "rule_id": "js/incomplete-sanitization",
+      "severity_tier": "high",
+      "cwe_family": "xss",
+      "file": "sqli/static/js/materialize.js",
+      "start_line": 1331
+    },
+    {
+      "id": "CQLF-R18-0009",
+      "fingerprint": "4c61cb3f3f1109b4",
+      "rule_id": "py/weak-sensitive-data-hashing",
+      "severity_tier": "high",
+      "cwe_family": "crypto",
+      "file": "sqli/dao/user.py",
+      "start_line": 41
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "target_repo": "https://github.com/acme-corp/web-platform",
+  "fork_url": "https://github.com/acme-corp-forks/web-platform",
+  "run_number": 2,
+  "run_id": "82681300933",
+  "run_url": "https://github.com/acme-corp/codeql-devin-fixer/actions/runs/13944899549",
+  "run_label": "run-2-2025-11-12-091400",
+  "timestamp": "2025-11-12T09:14:00+00:00",
+  "issues_found": 1,
+  "severity_breakdown": {
+    "low": 1
+  },
+  "category_breakdown": {
+    "info-disclosure": 1
+  },
+  "batches_created": 1,
+  "sessions": [
+    {
+      "session_id": "devin-b1ac631f59e74e3a9cc2c0b76188dda3",
+      "session_url": "https://app.devin.ai/sessions/b1ac631f59e74e3a9cc2c0b76188dda3",
+      "batch_id": 1,
+      "status": "finished",
+      "issue_ids": [
+        "ISSUE-002-001"
+      ],
+      "pr_url": "https://github.com/acme-corp-forks/web-platform/pull/2"
+    }
+  ],
+  "issue_fingerprints": [
+    {
+      "id": "ISSUE-002-001",
+      "fingerprint": "b4981d1188f5bce207bf776330c5c27a",
+      "rule_id": "java/information-exposure",
+      "severity_tier": "low",
+      "cwe_family": "info-disclosure",
+      "file": "src/handlers/ExceptionMapper.java",
+      "start_line": 321,
+      "description": "Potential info disclosure vulnerability in ExceptionMapper.java",
+      "resolution": "",
+      "code_churn": 1
+    }
+  ]
+}

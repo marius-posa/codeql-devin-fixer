@@ -1,0 +1,566 @@
+name: "CodeQL Devin Fixer"
+description: "Run CodeQL analysis, prioritize security issues, and dispatch Devin sessions to fix them in batches"
+
+branding:
+  icon: "shield"
+  color: "purple"
+
+inputs:
+  target_repo:
+    description: "GitHub repository to analyze. Accepts full URL (https://github.com/owner/repo) or owner/repo shorthand."
+    required: true
+  github_token:
+    description: "GitHub token for fork operations, log persistence, and dashboard generation. MUST be a Personal Access Token (PAT) with 'repo' scope for fork creation and push. The default GITHUB_TOKEN cannot fork or push to other repos."
+    required: false
+    default: ""
+  languages:
+    description: "Comma-separated CodeQL languages (e.g., javascript,python). Auto-detected if empty."
+    required: false
+    default: ""
+  queries:
+    description: "CodeQL query suite to run (e.g., security-extended, security-and-quality)"
+    required: false
+    default: "security-extended"
+  include_paths:
+    description: "Optional newline- or comma-separated globs to include (limits analysis scope)"
+    required: false
+    default: ""
+  exclude_paths:
+    description: "Optional newline- or comma-separated globs to exclude from analysis"
+    required: false
+    default: ""
+  batch_size:
+    description: "Maximum number of issues per Devin session/batch"
+    required: false
+    default: "5"
+  max_sessions:
+    description: "Maximum number of Devin sessions to create"
+    required: false
+    default: "25"
+  severity_threshold:
+    description: "Minimum severity to include: critical, high, medium, low"
+    required: false
+    default: "low"
+  devin_api_key:
+    description: "Devin API key for creating fix sessions"
+    required: true
+  max_acu_per_session:
+    description: "Maximum ACU limit per Devin session (leave empty for default)"
+    required: false
+    default: ""
+  dry_run:
+    description: "If true, generate prompts but don't create Devin sessions"
+    required: false
+    default: "false"
+  default_branch:
+    description: "Default branch of the target repo"
+    required: false
+    default: "main"
+  persist_logs:
+    description: "Persist run logs to the fork repository"
+    required: false
+    default: "true"
+  max_failure_rate:
+    description: "Maximum session failure rate (0-100) before the dispatch step exits non-zero"
+    required: false
+    default: "50"
+  config_file:
+    description: "Path to a .codeql-fixer.yml config file in the target repo (auto-detected if empty)"
+    required: false
+    default: ""
+  prompt_template:
+    description: "Path to a custom Jinja2 prompt template file (overrides default prompt generation)"
+    required: false
+    default: ""
+  webhook_url:
+    description: "URL to receive lifecycle webhook notifications (scan started, completed, session created)"
+    required: false
+    default: ""
+  webhook_secret:
+    description: "Shared secret for signing webhook payloads (HMAC-SHA256)"
+    required: false
+    default: ""
+  mode:
+    description: "Pipeline mode: basic (scan+dispatch, default), orchestrator (scan only, defer dispatch)"
+    required: false
+    default: "basic"
+
+outputs:
+  total_issues:
+    description: "Total number of security issues found"
+    value: ${{ steps.parse.outputs.total_issues }}
+  total_batches:
+    description: "Number of batches created"
+    value: ${{ steps.parse.outputs.total_batches }}
+  sessions_created:
+    description: "Number of Devin sessions created"
+    value: ${{ steps.dispatch.outputs.sessions_created }}
+  sessions_failed:
+    description: "Number of Devin sessions that failed to create"
+    value: ${{ steps.dispatch.outputs.sessions_failed }}
+  session_urls:
+    description: "Comma-separated list of Devin session URLs"
+    value: ${{ steps.dispatch.outputs.session_urls }}
+  fork_url:
+    description: "URL of the fork used for scanning"
+    value: ${{ steps.fork.outputs.fork_url }}
+  run_label:
+    description: "Label for this run's logs"
+    value: ${{ steps.parse.outputs.run_label }}
+  logs_persisted:
+    description: "Whether run logs were successfully pushed to the fork"
+    value: ${{ steps.persist-logs.outputs.logs_persisted }}
+  mode:
+    description: "Pipeline mode that was used (basic or orchestrator)"
+    value: ${{ inputs.mode }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - name: Install Python dependencies
+      shell: bash
+      run: pip install requests jinja2 pyyaml
+
+    - name: Normalize target repo URL
+      id: normalize
+      shell: bash
+      env:
+        RAW_INPUT: ${{ inputs.target_repo }}
+      run: |
+        RAW="$RAW_INPUT"
+        RAW=$(echo "$RAW" | sed 's|^[[:space:]]*||;s|[[:space:]]*$||;s|/$||')
+        RAW=$(echo "$RAW" | sed 's|\.git$||')
+        if ! echo "$RAW" | grep -qE '^https?://'; then
+          if echo "$RAW" | grep -qE '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$'; then
+            RAW="https://github.com/$RAW"
+          fi
+        fi
+        echo "target_repo=$RAW" >> "$GITHUB_OUTPUT"
+        echo "Normalized target_repo: $RAW"
+
+    - name: Fork or verify target repository
+      id: fork
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        TARGET_REPO: ${{ steps.normalize.outputs.target_repo }}
+        DEFAULT_BRANCH: ${{ inputs.default_branch }}
+        FORK_OWNER: ${{ github.repository_owner }}
+      run: |
+        if [ -n "$GITHUB_TOKEN" ]; then
+          python "${{ github.action_path }}/scripts/fork_repo.py"
+        else
+          echo "fork_url=$TARGET_REPO" >> "$GITHUB_OUTPUT"
+          echo "No GITHUB_TOKEN provided; using original repo URL"
+        fi
+
+    - name: Clone target repository
+      shell: bash
+      env:
+        GIT_LFS_SKIP_SMUDGE: "1"
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        FORK_URL: ${{ steps.fork.outputs.fork_url }}
+        NORMALIZED_REPO: ${{ steps.normalize.outputs.target_repo }}
+      run: |
+        TARGET_DIR="${{ runner.temp }}/target-repo"
+        REPO_URL="$FORK_URL"
+        if [ -z "$REPO_URL" ]; then
+          REPO_URL="$NORMALIZED_REPO"
+        fi
+        if ! echo "$REPO_URL" | grep -qE '^https://github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$'; then
+          echo "ERROR: Invalid repository URL: $REPO_URL" >&2
+          exit 1
+        fi
+        if [ -n "$GITHUB_TOKEN" ]; then
+          CREDS=$(printf "x-access-token:%s" "$GITHUB_TOKEN" | base64 -w0)
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $CREDS" \
+            clone --depth 1 --single-branch -- "$REPO_URL" "$TARGET_DIR"
+        else
+          git clone --depth 1 --single-branch -- "$REPO_URL" "$TARGET_DIR"
+        fi
+        echo "TARGET_DIR=$TARGET_DIR" >> "$GITHUB_ENV"
+        echo "SCAN_REPO_URL=$REPO_URL" >> "$GITHUB_ENV"
+
+    - name: Load per-repo config
+      id: repo-config
+      shell: bash
+      env:
+        CONFIG_FILE_INPUT: ${{ inputs.config_file }}
+        INPUT_BATCH_SIZE: ${{ inputs.batch_size }}
+        INPUT_MAX_SESSIONS: ${{ inputs.max_sessions }}
+        INPUT_SEVERITY_THRESHOLD: ${{ inputs.severity_threshold }}
+        INPUT_EXCLUDE_PATHS: ${{ inputs.exclude_paths }}
+      run: |
+        TARGET_DIR="${{ runner.temp }}/target-repo"
+        CONFIG_PATH=""
+        if [ -n "$CONFIG_FILE_INPUT" ]; then
+          CONFIG_PATH="$TARGET_DIR/$CONFIG_FILE_INPUT"
+        elif [ -f "$TARGET_DIR/.codeql-fixer.yml" ]; then
+          CONFIG_PATH="$TARGET_DIR/.codeql-fixer.yml"
+        elif [ -f "$TARGET_DIR/.codeql-fixer.yaml" ]; then
+          CONFIG_PATH="$TARGET_DIR/.codeql-fixer.yaml"
+        fi
+
+        if [ -n "$CONFIG_PATH" ] && [ -f "$CONFIG_PATH" ]; then
+          echo "Found per-repo config: $CONFIG_PATH"
+          python3 "${{ github.action_path }}/scripts/load_repo_config.py" "$CONFIG_PATH"
+        else
+          echo "No per-repo config found; using action inputs"
+          echo "batch_size=$INPUT_BATCH_SIZE" >> "$GITHUB_OUTPUT"
+          echo "max_sessions=$INPUT_MAX_SESSIONS" >> "$GITHUB_OUTPUT"
+          echo "severity_threshold=$INPUT_SEVERITY_THRESHOLD" >> "$GITHUB_OUTPUT"
+          echo "exclude_paths=$INPUT_EXCLUDE_PATHS" >> "$GITHUB_OUTPUT"
+          echo "custom_cwe_families=" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Send webhook (scan_started)
+      if: inputs.webhook_url != ''
+      shell: bash
+      env:
+        WEBHOOK_URL: ${{ inputs.webhook_url }}
+        WEBHOOK_SECRET: ${{ inputs.webhook_secret }}
+        TARGET_REPO: ${{ steps.normalize.outputs.target_repo }}
+        RUN_ID: ${{ github.run_id }}
+      run: |
+        python3 "${{ github.action_path }}/scripts/webhook.py" \
+          --event scan_started \
+          --target-repo "$TARGET_REPO" \
+          --run-id "$RUN_ID"
+
+    - name: Detect languages
+      id: detect-lang
+      shell: bash
+      env:
+        INPUT_LANGUAGES: ${{ inputs.languages }}
+      run: |
+        if [ -n "$INPUT_LANGUAGES" ]; then
+          echo "languages=$INPUT_LANGUAGES" >> "$GITHUB_OUTPUT"
+          echo "Using specified languages: $INPUT_LANGUAGES"
+          exit 0
+        fi
+
+        TARGET_DIR="${{ runner.temp }}/target-repo"
+        LANGS=""
+
+        has_files() {
+          local result
+          result=$(find "$TARGET_DIR" -not -path '*/node_modules/*' -not -path '*/vendor/*' -not -path '*/.bundle/*' -not -path '*/Pods/*' \( "$@" \) -print -quit 2>/dev/null)
+          [ -n "$result" ]
+        }
+
+        has_manifest() {
+          local f
+          for f in "$@"; do
+            if [ -f "$TARGET_DIR/$f" ]; then
+              return 0
+            fi
+          done
+          return 1
+        }
+
+        PHP_PRESENT=0
+        if has_manifest composer.json; then
+          PHP_PRESENT=1
+        fi
+
+        if has_manifest package.json tsconfig.json; then
+          LANGS="${LANGS:+$LANGS,}javascript"
+        fi
+        if has_manifest setup.py setup.cfg pyproject.toml Pipfile requirements.txt; then
+          LANGS="${LANGS:+$LANGS,}python"
+        fi
+        if has_manifest pom.xml build.gradle build.gradle.kts; then
+          LANGS="${LANGS:+$LANGS,}java"
+        fi
+        if has_manifest go.mod; then
+          LANGS="${LANGS:+$LANGS,}go"
+        fi
+        if has_manifest Gemfile; then
+          LANGS="${LANGS:+$LANGS,}ruby"
+        fi
+        has_csharp_manifest() {
+          local result
+          result=$(find "$TARGET_DIR" -maxdepth 3 -not -path '*/node_modules/*' -not -path '*/vendor/*' \( -name "*.csproj" -o -name "*.sln" \) -print -quit 2>/dev/null)
+          [ -n "$result" ]
+        }
+        if has_csharp_manifest; then
+          LANGS="${LANGS:+$LANGS,}csharp"
+        fi
+        if has_manifest CMakeLists.txt Makefile; then
+          LANGS="${LANGS:+$LANGS,}cpp"
+        fi
+        if has_manifest Package.swift; then
+          LANGS="${LANGS:+$LANGS,}swift"
+        fi
+
+        if [ -z "$LANGS" ]; then
+          echo "No manifest files found; falling back to file-extension scanning"
+          if ! has_manifest composer.json && has_files -name "*.php"; then
+            PHP_PRESENT=1
+          fi
+          if has_files -name "*.js" -o -name "*.ts" -o -name "*.jsx" -o -name "*.tsx"; then
+            LANGS="${LANGS:+$LANGS,}javascript"
+          fi
+          if has_files -name "*.py"; then
+            LANGS="${LANGS:+$LANGS,}python"
+          fi
+          if has_files -name "*.java"; then
+            LANGS="${LANGS:+$LANGS,}java"
+          fi
+          if has_files -name "*.go"; then
+            LANGS="${LANGS:+$LANGS,}go"
+          fi
+          if has_files -name "*.rb"; then
+            LANGS="${LANGS:+$LANGS,}ruby"
+          fi
+          if has_files -name "*.cs"; then
+            LANGS="${LANGS:+$LANGS,}csharp"
+          fi
+          if has_files -name "*.cpp" -o -name "*.c" -o -name "*.h"; then
+            LANGS="${LANGS:+$LANGS,}cpp"
+          fi
+          if has_files -name "*.swift"; then
+            LANGS="${LANGS:+$LANGS,}swift"
+          fi
+        fi
+
+        if [ -z "$LANGS" ]; then
+          if [ "$PHP_PRESENT" -eq 1 ]; then
+            echo "ERROR: Detected PHP-only repository. CodeQL does not support PHP. Supported languages: cpp,csharp,go,java,javascript,python,ruby,swift" >&2
+            if [ -n "$GITHUB_STEP_SUMMARY" ]; then
+              printf "\n**ERROR**: Detected PHP-only repository. CodeQL does not support PHP.\n\nSupported languages: cpp, csharp, go, java, javascript, python, ruby, swift\n" >> "$GITHUB_STEP_SUMMARY"
+            fi
+            exit 1
+          fi
+          echo "No supported languages detected, defaulting to javascript"
+          LANGS="javascript"
+        fi
+
+        if [ "$PHP_PRESENT" -eq 1 ]; then
+          echo "WARNING: PHP detected. CodeQL does not support PHP; results will exclude PHP issues."
+          if [ -n "$GITHUB_STEP_SUMMARY" ]; then
+            printf "\n**Note**: PHP detected. CodeQL does not support PHP; results will exclude PHP issues.\n" >> "$GITHUB_STEP_SUMMARY"
+          fi
+        fi
+
+        echo "languages=$LANGS" >> "$GITHUB_OUTPUT"
+        echo "Detected languages: $LANGS"
+
+    - name: Prepare CodeQL config
+      id: prepare-config
+      shell: bash
+      env:
+        INPUT_INCLUDE_PATHS: ${{ inputs.include_paths }}
+        INPUT_EXCLUDE_PATHS: ${{ inputs.exclude_paths }}
+        INPUT_QUERIES: ${{ inputs.queries }}
+      run: |
+        CONFIG="${{ runner.temp }}/codeql-config.yml"
+        INC="$INPUT_INCLUDE_PATHS"
+        EXC="$INPUT_EXCLUDE_PATHS"
+        sanitize() {
+          echo "$1" | tr ',' '\n' | sed '/^\s*$/d' | sed 's/^\s*//;s/\s*$//'
+        }
+        has_config=false
+        echo "version: 2" > "$CONFIG"
+        echo "queries: $INPUT_QUERIES" >> "$CONFIG"
+        INCL=$(sanitize "$INC")
+        EXCL=$(sanitize "$EXC")
+        if [ -n "$INCL" ] || [ -n "$EXCL" ]; then
+          has_config=true
+          echo "paths:" >> "$CONFIG"
+          if [ -n "$INCL" ]; then
+            sanitize "$INC" | sed 's/^/- /' >> "$CONFIG"
+          fi
+          if [ -n "$EXCL" ]; then
+            echo "paths-ignore:" >> "$CONFIG"
+            sanitize "$EXC" | sed 's/^/- /' >> "$CONFIG"
+          fi
+        fi
+        echo "config_path=$CONFIG" >> "$GITHUB_OUTPUT"
+        echo "has_config=$has_config" >> "$GITHUB_OUTPUT"
+
+    - name: Initialize CodeQL (with config)
+      if: steps.prepare-config.outputs.has_config == 'true'
+      uses: github/codeql-action/init@v3
+      with:
+        languages: ${{ steps.detect-lang.outputs.languages }}
+        source-root: ${{ runner.temp }}/target-repo
+        config-file: ${{ steps.prepare-config.outputs.config_path }}
+
+    - name: Initialize CodeQL
+      if: steps.prepare-config.outputs.has_config != 'true'
+      uses: github/codeql-action/init@v3
+      with:
+        languages: ${{ steps.detect-lang.outputs.languages }}
+        source-root: ${{ runner.temp }}/target-repo
+        queries: ${{ inputs.queries }}
+
+    - name: Build CodeQL database (autobuild)
+      uses: github/codeql-action/autobuild@v3
+      env:
+        LGTM_SRC: ${{ runner.temp }}/target-repo
+
+    - name: Run CodeQL analysis
+      uses: github/codeql-action/analyze@v3
+      id: codeql-analyze
+      with:
+        output: ${{ runner.temp }}/codeql-results
+        upload: never
+        upload-database: true
+        wait-for-processing: true
+
+    - name: Find SARIF file
+      id: find-sarif
+      shell: bash
+      run: |
+        SARIF_DIR="${{ runner.temp }}/codeql-results"
+        SARIF_FILE=$(find "$SARIF_DIR" -name "*.sarif" -type f | head -1)
+        if [ -z "$SARIF_FILE" ]; then
+          echo "ERROR: No SARIF file found in $SARIF_DIR"
+          ls -la "$SARIF_DIR" || true
+          exit 1
+        fi
+        echo "sarif_file=$SARIF_FILE" >> "$GITHUB_OUTPUT"
+        echo "Found SARIF: $SARIF_FILE"
+
+    - name: Parse SARIF and create batches
+      id: parse
+      shell: bash
+      env:
+        BATCH_SIZE: ${{ steps.repo-config.outputs.batch_size || inputs.batch_size }}
+        MAX_SESSIONS: ${{ steps.repo-config.outputs.max_sessions || inputs.max_sessions }}
+        SEVERITY_THRESHOLD: ${{ steps.repo-config.outputs.severity_threshold || inputs.severity_threshold }}
+        RUN_NUMBER: ${{ github.run_number }}
+        CUSTOM_CWE_FAMILIES: ${{ steps.repo-config.outputs.custom_cwe_families }}
+        MODE: ${{ inputs.mode }}
+      run: |
+        python "${{ github.action_path }}/scripts/parse_sarif.py" \
+          "${{ runner.temp }}/codeql-results" \
+          "${{ runner.temp }}/codeql-output"
+
+    - name: Fetch telemetry for fix learning
+      id: fetch-telemetry
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        ACTION_REPO: ${{ github.repository }}
+      run: |
+        TELEMETRY_DIR="${{ runner.temp }}/telemetry-runs"
+        mkdir -p "$TELEMETRY_DIR"
+        if [ -n "$GITHUB_TOKEN" ] && [ -n "$ACTION_REPO" ]; then
+          TREE_URL="https://api.github.com/repos/${ACTION_REPO}/contents/telemetry/runs"
+          FILES=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" "$TREE_URL" 2>/dev/null | \
+            python3 -c "import sys,json; items=json.load(sys.stdin); [print(i['download_url']) for i in items if i['name'].endswith('.json')]" 2>/dev/null || true)
+          COUNT=0
+          for url in $FILES; do
+            FNAME=$(basename "$url")
+            curl -sL "$url" -o "$TELEMETRY_DIR/$FNAME" 2>/dev/null && COUNT=$((COUNT+1)) || true
+          done
+          echo "Fetched $COUNT telemetry file(s) for fix learning"
+        else
+          echo "No token/repo; skipping telemetry fetch"
+        fi
+        echo "telemetry_dir=$TELEMETRY_DIR" >> "$GITHUB_OUTPUT"
+
+    - name: Send webhook (scan_completed)
+      if: inputs.webhook_url != ''
+      shell: bash
+      env:
+        WEBHOOK_URL: ${{ inputs.webhook_url }}
+        WEBHOOK_SECRET: ${{ inputs.webhook_secret }}
+        TARGET_REPO: ${{ steps.normalize.outputs.target_repo }}
+        RUN_ID: ${{ github.run_id }}
+        TOTAL_ISSUES: ${{ steps.parse.outputs.total_issues }}
+        TOTAL_BATCHES: ${{ steps.parse.outputs.total_batches }}
+      run: |
+        python3 "${{ github.action_path }}/scripts/webhook.py" \
+          --event scan_completed \
+          --target-repo "$TARGET_REPO" \
+          --run-id "$RUN_ID" \
+          --total-issues "$TOTAL_ISSUES" \
+          --total-batches "$TOTAL_BATCHES"
+
+    - name: Dispatch Devin sessions
+      if: inputs.mode != 'orchestrator'
+      id: dispatch
+      shell: bash
+      env:
+        DEVIN_API_KEY: ${{ inputs.devin_api_key }}
+        TARGET_REPO: ${{ env.SCAN_REPO_URL }}
+        FORK_URL: ${{ steps.fork.outputs.fork_url }}
+        DEFAULT_BRANCH: ${{ inputs.default_branch }}
+        MAX_ACU_PER_SESSION: ${{ inputs.max_acu_per_session }}
+        DRY_RUN: ${{ inputs.dry_run }}
+        RUN_NUMBER: ${{ github.run_number }}
+        RUN_ID: ${{ github.run_id }}
+        TARGET_DIR: ${{ runner.temp }}/target-repo
+        TELEMETRY_DIR: ${{ steps.fetch-telemetry.outputs.telemetry_dir }}
+        PLAYBOOKS_DIR: ${{ github.action_path }}/playbooks
+        MAX_FAILURE_RATE: ${{ inputs.max_failure_rate }}
+        PROMPT_TEMPLATE: ${{ inputs.prompt_template }}
+        WEBHOOK_URL: ${{ inputs.webhook_url }}
+        WEBHOOK_SECRET: ${{ inputs.webhook_secret }}
+      run: |
+        python "${{ github.action_path }}/scripts/dispatch_devin.py"\
+          "${{ runner.temp }}/codeql-output/batches.json" \
+          "${{ runner.temp }}/codeql-output"
+
+    - name: Record issues for orchestrator
+      if: inputs.mode == 'orchestrator'
+      id: orchestrator-record
+      shell: bash
+      env:
+        TARGET_REPO: ${{ env.SCAN_REPO_URL }}
+        RUN_LABEL: ${{ steps.parse.outputs.run_label }}
+      run: |
+        echo "Mode: orchestrator -- ingesting scan results via orchestrator engine."
+        PYTHONPATH="${{ github.action_path }}:$PYTHONPATH" python -m scripts.orchestrator ingest \
+          --batches "${{ runner.temp }}/codeql-output/batches.json" \
+          --issues "${{ runner.temp }}/codeql-output/issues.json" \
+          --run-label "$RUN_LABEL" \
+          --target-repo "$TARGET_REPO"
+        echo "mode=orchestrator" >> "$GITHUB_OUTPUT"
+
+    - name: Persist run logs
+      id: persist-logs
+      if: inputs.persist_logs == 'true' && inputs.github_token != ''
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        TARGET_REPO: ${{ env.SCAN_REPO_URL }}
+        REPO_DIR: ${{ runner.temp }}/target-repo
+        RUN_LABEL: ${{ steps.parse.outputs.run_label }}
+      run: |
+        python "${{ github.action_path }}/scripts/persist_logs.py" \
+          "${{ runner.temp }}/codeql-output"
+
+    - name: Push telemetry to action repo
+      if: inputs.github_token != ''
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        ACTION_REPO: ${{ github.repository }}
+        TARGET_REPO: ${{ env.SCAN_REPO_URL }}
+        FORK_URL: ${{ steps.fork.outputs.fork_url }}
+        RUN_NUMBER: ${{ github.run_number }}
+        RUN_ID: ${{ github.run_id }}
+        RUN_LABEL: ${{ steps.parse.outputs.run_label }}
+      run: |
+        python "${{ github.action_path }}/scripts/persist_telemetry.py" \
+          "${{ runner.temp }}/codeql-output"
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: codeql-devin-results
+        path: |
+          ${{ runner.temp }}/codeql-output/
+          ${{ runner.temp }}/codeql-results/
+        retention-days: 30
