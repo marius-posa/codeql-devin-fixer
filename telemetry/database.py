@@ -167,6 +167,32 @@ CREATE TABLE IF NOT EXISTS scan_schedule (
     run_label TEXT NOT NULL DEFAULT '',
     extra     TEXT NOT NULL DEFAULT '{}'
 );
+
+CREATE TABLE IF NOT EXISTS fingerprint_issues (
+    fingerprint       TEXT PRIMARY KEY,
+    rule_id           TEXT    NOT NULL DEFAULT '',
+    severity_tier     TEXT    NOT NULL DEFAULT 'unknown',
+    cwe_family        TEXT    NOT NULL DEFAULT 'other',
+    file              TEXT    NOT NULL DEFAULT '',
+    start_line        INTEGER NOT NULL DEFAULT 0,
+    description       TEXT    NOT NULL DEFAULT '',
+    resolution        TEXT    NOT NULL DEFAULT '',
+    code_churn        INTEGER NOT NULL DEFAULT 0,
+    target_repo       TEXT    NOT NULL DEFAULT '',
+    status            TEXT    NOT NULL DEFAULT 'new',
+    first_seen_run    INTEGER NOT NULL DEFAULT 0,
+    first_seen_date   TEXT    NOT NULL DEFAULT '',
+    last_seen_run     INTEGER NOT NULL DEFAULT 0,
+    last_seen_date    TEXT    NOT NULL DEFAULT '',
+    appearances       INTEGER NOT NULL DEFAULT 1,
+    latest_issue_id   TEXT    NOT NULL DEFAULT '',
+    fix_duration_hours REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_fp_issues_status       ON fingerprint_issues(status);
+CREATE INDEX IF NOT EXISTS idx_fp_issues_severity     ON fingerprint_issues(severity_tier);
+CREATE INDEX IF NOT EXISTS idx_fp_issues_cwe          ON fingerprint_issues(cwe_family);
+CREATE INDEX IF NOT EXISTS idx_fp_issues_target_repo  ON fingerprint_issues(target_repo);
 """
 
 _FTS_SCHEMA_SQL = """\
@@ -327,6 +353,10 @@ def insert_run(conn: sqlite3.Connection, data: dict, source_file: str = "") -> i
             )
         except sqlite3.IntegrityError:
             pass
+
+    target_repo = data.get("target_repo", "")
+    if target_repo:
+        refresh_fingerprint_issues(conn, target_repo=target_repo)
 
     return run_db_id
 
@@ -821,20 +851,29 @@ def query_repos(conn: sqlite3.Connection) -> list[dict]:
 # Read helpers — issues (cross-run tracking)
 # ---------------------------------------------------------------------------
 
-def query_issues(conn: sqlite3.Connection, target_repo: str = "") -> list[dict]:
-    where = ""
-    params: list = []
+def refresh_fingerprint_issues(conn: sqlite3.Connection, target_repo: str = "") -> int:
+    """Rebuild the fingerprint_issues table from the per-run issues table.
+
+    This materialises the cross-run tracking view so that query_issues()
+    can read directly from a single table keyed by fingerprint.
+
+    Returns the number of fingerprint rows upserted.
+    """
+    from issue_tracking import _parse_ts
+
+    repo_where = ""
+    repo_params: list = []
     if target_repo:
-        where = "WHERE r.target_repo = ?"
-        params.append(target_repo)
+        repo_where = "WHERE r.target_repo = ?"
+        repo_params.append(target_repo)
 
     rows = conn.execute(
         f"""SELECT i.*, r.target_repo, r.run_number, r.timestamp, r.id as db_run_id
             FROM issues i
             JOIN runs r ON i.run_id = r.id
-            {where}
+            {repo_where}
             ORDER BY r.timestamp ASC""",
-        params,
+        repo_params,
     ).fetchall()
 
     fp_history: dict[str, list[dict]] = {}
@@ -862,12 +901,12 @@ def query_issues(conn: sqlite3.Connection, target_repo: str = "") -> list[dict]:
             }
 
     repo_filter_sql = "WHERE r.target_repo = ?" if target_repo else ""
-    repo_params = [target_repo] if target_repo else []
+    r_params = [target_repo] if target_repo else []
 
     runs_per_repo: dict[str, int] = {}
     runs_with_fps_per_repo: dict[str, int] = {}
     all_runs = conn.execute(
-        f"SELECT r.id, r.target_repo FROM runs r {repo_filter_sql}", repo_params
+        f"SELECT r.id, r.target_repo FROM runs r {repo_filter_sql}", r_params
     ).fetchall()
     for ar in all_runs:
         repo = ar["target_repo"]
@@ -882,26 +921,31 @@ def query_issues(conn: sqlite3.Connection, target_repo: str = "") -> list[dict]:
     latest_where = "WHERE" if not repo_filter_sql else repo_filter_sql + " AND"
     lr_rows = conn.execute(
         f"SELECT target_repo, id as latest_run_id FROM runs r {latest_where} id IN (SELECT r2.id FROM runs r2 WHERE r2.target_repo = r.target_repo ORDER BY r2.timestamp DESC LIMIT 1)",
-        repo_params,
+        r_params,
     ).fetchall()
     for lr in lr_rows:
         latest_run_per_repo[lr["target_repo"]] = lr["latest_run_id"]
 
     latest_fps: set[str] = set()
-    for repo, run_id in latest_run_per_repo.items():
+    for _repo, run_id in latest_run_per_repo.items():
         fp_rows = conn.execute(
             "SELECT DISTINCT fingerprint FROM issues WHERE run_id = ?", (run_id,)
         ).fetchall()
         for fr in fp_rows:
             latest_fps.add(fr["fingerprint"])
 
-    from issue_tracking import compute_sla_status, _parse_ts
+    if target_repo:
+        conn.execute(
+            "DELETE FROM fingerprint_issues WHERE target_repo = ?",
+            (target_repo,),
+        )
+    else:
+        conn.execute("DELETE FROM fingerprint_issues")
 
-    result: list[dict] = []
+    upserted = 0
     for fp, appearances in fp_history.items():
         first = appearances[0]
         latest = appearances[-1]
-        run_numbers = [a["run_number"] for a in appearances]
         repo = first["target_repo"]
 
         has_older_runs_without_fps = (
@@ -926,45 +970,110 @@ def query_issues(conn: sqlite3.Connection, target_repo: str = "") -> list[dict]:
                 delta = latest_ts - first_ts
                 fix_duration_hours = round(delta.total_seconds() / 3600, 1)
 
-        found_at_ts = _parse_ts(first["timestamp"])
-        fixed_at_ts = _parse_ts(latest["timestamp"]) if status == "fixed" else None
+        conn.execute(
+            """INSERT OR REPLACE INTO fingerprint_issues
+               (fingerprint, rule_id, severity_tier, cwe_family, file, start_line,
+                description, resolution, code_churn, target_repo, status,
+                first_seen_run, first_seen_date, last_seen_run, last_seen_date,
+                appearances, latest_issue_id, fix_duration_hours)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                fp,
+                meta.get("rule_id", ""),
+                meta.get("severity_tier", "unknown"),
+                meta.get("cwe_family", "other"),
+                meta.get("file", ""),
+                meta.get("start_line", 0),
+                meta.get("description", ""),
+                meta.get("resolution", ""),
+                meta.get("code_churn", 0),
+                repo,
+                status,
+                first["run_number"],
+                first["timestamp"],
+                latest["run_number"],
+                latest["timestamp"],
+                len(appearances),
+                latest["issue_id"],
+                fix_duration_hours,
+            ),
+        )
+        upserted += 1
+
+    return upserted
+
+
+def query_issues(conn: sqlite3.Connection, target_repo: str = "") -> list[dict]:
+    where = ""
+    params: list = []
+    if target_repo:
+        where = "WHERE fi.target_repo = ?"
+        params.append(target_repo)
+
+    rows = conn.execute(
+        f"""SELECT fi.* FROM fingerprint_issues fi
+            {where}
+            ORDER BY
+                CASE fi.status
+                    WHEN 'recurring' THEN 0
+                    WHEN 'new'       THEN 1
+                    WHEN 'fixed'     THEN 2
+                    ELSE 3
+                END,
+                fi.last_seen_date""",
+        params,
+    ).fetchall()
+
+    from issue_tracking import compute_sla_status, _parse_ts
+
+    result: list[dict] = []
+    for row in rows:
+        fp = row["fingerprint"]
+        status = row["status"]
+
+        run_number_rows = conn.execute(
+            """SELECT DISTINCT r.run_number
+               FROM issues i JOIN runs r ON i.run_id = r.id
+               WHERE i.fingerprint = ?
+               ORDER BY r.run_number""",
+            (fp,),
+        ).fetchall()
+        run_numbers = [r["run_number"] for r in run_number_rows]
+
+        found_at_ts = _parse_ts(row["first_seen_date"])
+        fixed_at_ts = _parse_ts(row["last_seen_date"]) if status == "fixed" else None
         sla = compute_sla_status(
-            meta.get("severity_tier", ""), found_at_ts, fixed_at_ts,
+            row["severity_tier"], found_at_ts, fixed_at_ts,
         )
 
         result.append({
             "fingerprint": fp,
-            "rule_id": meta.get("rule_id", ""),
-            "severity_tier": meta.get("severity_tier", ""),
-            "cwe_family": meta.get("cwe_family", ""),
-            "file": meta.get("file", ""),
-            "start_line": meta.get("start_line", 0),
-            "description": meta.get("description", ""),
-            "resolution": meta.get("resolution", ""),
-            "code_churn": meta.get("code_churn", 0),
+            "rule_id": row["rule_id"],
+            "severity_tier": row["severity_tier"],
+            "cwe_family": row["cwe_family"],
+            "file": row["file"],
+            "start_line": row["start_line"],
+            "description": row["description"],
+            "resolution": row["resolution"],
+            "code_churn": row["code_churn"],
             "status": status,
-            "first_seen_run": first["run_number"],
-            "first_seen_date": first["timestamp"],
-            "last_seen_run": latest["run_number"],
-            "last_seen_date": latest["timestamp"],
-            "target_repo": repo,
-            "appearances": len(appearances),
+            "first_seen_run": row["first_seen_run"],
+            "first_seen_date": row["first_seen_date"],
+            "last_seen_run": row["last_seen_run"],
+            "last_seen_date": row["last_seen_date"],
+            "target_repo": row["target_repo"],
+            "appearances": row["appearances"],
             "run_numbers": run_numbers,
-            "latest_issue_id": latest["issue_id"],
-            "fix_duration_hours": fix_duration_hours,
-            "found_at": first["timestamp"],
-            "fixed_at": latest["timestamp"] if status == "fixed" else None,
+            "latest_issue_id": row["latest_issue_id"],
+            "fix_duration_hours": row["fix_duration_hours"],
+            "found_at": row["first_seen_date"],
+            "fixed_at": row["last_seen_date"] if status == "fixed" else None,
             "sla_status": sla["sla_status"],
             "sla_limit_hours": sla["sla_limit_hours"],
             "sla_hours_elapsed": sla["sla_hours_elapsed"],
             "sla_hours_remaining": sla["sla_hours_remaining"],
         })
 
-    _STATUS_ORDER = {"recurring": 0, "new": 1, "fixed": 2}
-    result.sort(key=lambda x: (
-        _STATUS_ORDER.get(x["status"], 3),
-        x.get("last_seen_date", ""),
-    ))
     return result
 
 

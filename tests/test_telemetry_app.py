@@ -44,7 +44,7 @@ def _seed_db(runs=None, prs=None):
 
 def _clear_db():
     conn = get_connection(pathlib.Path(_test_db_path))
-    for tbl in ["pr_issue_ids", "prs", "session_issue_ids", "sessions", "issues", "runs", "metadata", "orchestrator_kv", "dispatch_history", "rate_limiter_timestamps", "scan_schedule"]:
+    for tbl in ["fingerprint_issues", "pr_issue_ids", "prs", "session_issue_ids", "sessions", "issues", "runs", "metadata", "orchestrator_kv", "dispatch_history", "rate_limiter_timestamps", "scan_schedule"]:
         try:
             conn.execute(f"DELETE FROM {tbl}")
         except Exception:
