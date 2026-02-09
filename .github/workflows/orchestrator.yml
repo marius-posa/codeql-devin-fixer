@@ -45,4 +45,14 @@ jobs:
           ACTION_REPO: ${{ github.repository }}
         run: python -m scripts.orchestrator ${{ inputs.command || 'cycle' }} --json
 
-      # State is now persisted in SQLite (telemetry.db), no JSON commit needed
+      - name: Commit state changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add telemetry/orchestrator_state.json
+          if git diff --cached --quiet; then
+            echo "No state changes to commit"
+          else
+            git commit -m "chore: update orchestrator state after ${{ inputs.command || 'cycle' }}"
+            git push
+          fi
