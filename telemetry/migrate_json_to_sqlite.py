@@ -8,6 +8,7 @@ import json
 import logging
 import pathlib
 import sqlite3
+import sys
 
 from database import get_connection, init_db, is_db_empty, insert_run, DB_PATH
 
@@ -51,6 +52,11 @@ def ensure_db_populated(runs_dir: pathlib.Path, sample_dir: pathlib.Path | None 
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        stream=sys.stderr,
+        format="%(levelname)s %(name)s %(message)s",
+    )
     runs_dir = pathlib.Path(__file__).parent / "runs"
     init_db()
     conn = get_connection()

@@ -20,9 +20,7 @@ GET  /healthz
 
 from __future__ import annotations
 
-import json
 import logging
-import os
 import sys
 
 from flask import Flask, jsonify, request as flask_request
@@ -39,7 +37,10 @@ def create_app(config: AppConfig | None = None) -> Flask:
     if config is None:
         config = AppConfig.from_env()
 
-    from scripts.logging_config import JSONFormatter
+    try:
+        from scripts.logging_config import JSONFormatter
+    except ImportError:
+        from logging_config import JSONFormatter
 
     root = logging.getLogger()
     root.setLevel(getattr(logging, config.log_level, logging.INFO))
