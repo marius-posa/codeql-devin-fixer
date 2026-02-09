@@ -83,6 +83,40 @@ Standout features (talking points)
 - Verification by fingerprints: Objective success criteria beyond “it builds”.
 - Central telemetry: Single source of truth for outcomes and trends.
 
+Expanded standout features + how to demo in UI
+
+- CWE playbooks
+  - What to say: Each CWE family has a reviewed playbook (playbooks/*.yaml) with precise, auditable guidance. This yields consistent fixes and governance.
+  - How to demo: Open playbooks/ in the repo, show a representative file, and point out the actionable steps and guardrails. Tie back to telemetry by highlighting improved fix rates for those CWE families over time.
+
+- Repository context enrichment
+  - What to say: We parse package managers, frameworks, tests, style rules (scripts/repo_context.py) and inject them into prompts so fixes match project conventions.
+  - How to demo: Show scripts/repo_context.py and a snippet of its collected signals. In Action logs, point out where these signals appear in the prompt payload (if logs are enabled) or reference the session tags.
+
+- Wave-based dispatch with gating
+  - What to say: We dispatch by severity tiers in waves; if fix-rate drops below threshold, we halt further waves to save cost and redirect effort.
+  - How to demo: Open scripts/orchestrator.py and point to the wave logic. In telemetry, filter by a run and talk through the phases/waves and resulting PRs.
+
+- Prompt-injection defense
+  - What to say: We sanitize inbound text before prompting (scripts/dispatch_devin.py: sanitize_prompt_text) to defend against injection.
+  - How to demo: Show the sanitize function in scripts/dispatch_devin.py. Call out examples of what gets stripped.
+
+- Idempotency + retry + knowledge assist
+  - What to say: Sessions are created with idempotent semantics. We also integrated a Knowledge API and retry-with-feedback pipeline (see recent MP-60 commits) to improve success on hard CWEs.
+  - How to demo: Point to dispatch_devin.py where idempotency is set and to recent MP-60 commits in git log (knowledge + retry). In telemetry, highlight improvements in fix-rate for those CWEs.
+
+- Fingerprint-based verification
+  - What to say: We re-run CodeQL on PR branches and compare stable fingerprints—objective proof that the target issue is actually gone.
+  - How to demo: Open scripts/verify_results.py and show fingerprint comparison. In telemetry, locate a PR marked verified and narrate the before/after.
+
+- Central telemetry dashboard
+  - What to say: Single pane of glass for runs, sessions, PRs, and outcomes over time.
+  - How to demo: Launch telemetry/app.py. Walk:
+    1) Overview: total runs, sessions, verified PRs, fix-rate trend
+    2) Runs list: pick a recent run; open detail
+    3) Sessions tab: show tags (repo, CWE, severity, batch) and dispatch timing
+    4) PRs tab: link out to GitHub; point to verification status
+
 Screenshots to include (optional)
 - GitHub Actions run (CodeQL + dispatch step)
 - Devin session detail (tags visible) — link to example session if available
