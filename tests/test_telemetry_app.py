@@ -523,6 +523,9 @@ class TestOrchestratorEndpoints:
             assert data["global_session_limit_period_hours"] == 24
             assert data["objectives"] == []
             assert data["alert_on_objective_met"] is False
+            assert data["alert_on_verified_fix"] is True
+            assert data["alert_severities"] == ["critical", "high"]
+            assert data["alert_webhook_url"] == ""
 
     def test_orchestrator_config_put_requires_auth(self, client, monkeypatch):
         monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
@@ -557,4 +560,213 @@ class TestOrchestratorEndpoints:
                 data = resp.get_json()
                 assert data["global_session_limit"] == 5
                 assert data["global_session_limit_period_hours"] == 12
+            os.unlink(f.name)
+
+    def test_orchestrator_config_put_alert_fields(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump({"orchestrator": {}, "repos": []}, f)
+            f.flush()
+            with patch("app._ORCHESTRATOR_REGISTRY_PATH", Path(f.name)), \
+                 patch("app._load_orchestrator_registry", return_value={"orchestrator": {}, "repos": []}):
+                resp = client.put(
+                    "/api/orchestrator/config",
+                    headers={"X-API-Key": "test-key"},
+                    json={
+                        "alert_on_verified_fix": False,
+                        "alert_severities": ["critical"],
+                    },
+                )
+                assert resp.status_code == 200
+                data = resp.get_json()
+                assert data["alert_on_verified_fix"] is False
+                assert data["alert_severities"] == ["critical"]
+            os.unlink(f.name)
+
+    def test_orchestrator_fix_rates_returns_json(self, client):
+        resp = client.get("/api/orchestrator/fix-rates")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "overall" in data
+        assert "by_cwe_family" in data
+        assert "by_repo" in data
+        assert "by_severity" in data
+        assert "total" in data["overall"]
+        assert "fixed" in data["overall"]
+        assert "fix_rate" in data["overall"]
+
+    def test_orchestrator_fix_rates_empty_db(self, client):
+        resp = client.get("/api/orchestrator/fix-rates")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["overall"]["total"] == 0
+        assert data["overall"]["fixed"] == 0
+        assert data["overall"]["fix_rate"] == 0.0
+
+
+class TestRegistryRepoEndpoints:
+    def test_registry_add_repo_includes_new_fields(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump({"version": "1.0", "repos": []}, f)
+            f.flush()
+            with patch("app.REGISTRY_PATH", Path(f.name)):
+                resp = client.post(
+                    "/api/registry/repos",
+                    headers={"X-API-Key": "test-key"},
+                    json={
+                        "repo": "https://github.com/test/repo",
+                        "importance": "high",
+                        "importance_score": 80,
+                        "max_sessions_per_cycle": 10,
+                        "auto_scan": False,
+                        "tags": ["web"],
+                    },
+                )
+                assert resp.status_code == 201
+                data = resp.get_json()
+                assert data["importance"] == "high"
+                assert data["importance_score"] == 80
+                assert data["max_sessions_per_cycle"] == 10
+                assert data["auto_scan"] is False
+                assert data["tags"] == ["web"]
+                assert data["auto_dispatch"] is True
+            os.unlink(f.name)
+
+    def test_registry_update_repo_by_index(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump({
+                "version": "1.0",
+                "repos": [{"repo": "https://github.com/test/repo", "enabled": True, "importance": "low"}],
+            }, f)
+            f.flush()
+            with patch("app.REGISTRY_PATH", Path(f.name)):
+                resp = client.put(
+                    "/api/registry/repos/0",
+                    headers={"X-API-Key": "test-key"},
+                    json={"importance": "critical", "importance_score": 95, "tags": ["core"]},
+                )
+                assert resp.status_code == 200
+                data = resp.get_json()
+                assert data["importance"] == "critical"
+                assert data["importance_score"] == 95
+                assert data["tags"] == ["core"]
+                assert data["repo"] == "https://github.com/test/repo"
+            os.unlink(f.name)
+
+    def test_registry_update_repo_invalid_index(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump({"version": "1.0", "repos": []}, f)
+            f.flush()
+            with patch("app.REGISTRY_PATH", Path(f.name)):
+                resp = client.put(
+                    "/api/registry/repos/5",
+                    headers={"X-API-Key": "test-key"},
+                    json={"importance": "high"},
+                )
+                assert resp.status_code == 404
+            os.unlink(f.name)
+
+    def test_registry_update_repo_requires_auth(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        resp = client.put(
+            "/api/registry/repos/0",
+            json={"importance": "high"},
+        )
+        assert resp.status_code == 401
+
+    def test_registry_update_repo_requires_body(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump({"version": "1.0", "repos": [{"repo": "test"}]}, f)
+            f.flush()
+            with patch("app.REGISTRY_PATH", Path(f.name)):
+                resp = client.put(
+                    "/api/registry/repos/0",
+                    headers={"X-API-Key": "test-key"},
+                )
+                assert resp.status_code == 400
+            os.unlink(f.name)
+
+    def test_registry_add_repo_rejects_invalid_importance(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump({"version": "1.0", "repos": []}, f)
+            f.flush()
+            with patch("app.REGISTRY_PATH", Path(f.name)):
+                resp = client.post(
+                    "/api/registry/repos",
+                    headers={"X-API-Key": "test-key"},
+                    json={"repo": "https://github.com/t/r", "importance": "invalid"},
+                )
+                assert resp.status_code == 400
+                assert "importance" in resp.get_json()["error"]
+            os.unlink(f.name)
+
+    def test_registry_add_repo_rejects_invalid_score(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump({"version": "1.0", "repos": []}, f)
+            f.flush()
+            with patch("app.REGISTRY_PATH", Path(f.name)):
+                resp = client.post(
+                    "/api/registry/repos",
+                    headers={"X-API-Key": "test-key"},
+                    json={"repo": "https://github.com/t/r", "importance_score": 200},
+                )
+                assert resp.status_code == 400
+                assert "importance_score" in resp.get_json()["error"]
+            os.unlink(f.name)
+
+    def test_registry_update_repo_rejects_invalid_schedule(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump({"version": "1.0", "repos": [{"repo": "test"}]}, f)
+            f.flush()
+            with patch("app.REGISTRY_PATH", Path(f.name)):
+                resp = client.put(
+                    "/api/registry/repos/0",
+                    headers={"X-API-Key": "test-key"},
+                    json={"schedule": "every_minute"},
+                )
+                assert resp.status_code == 400
+                assert "schedule" in resp.get_json()["error"]
+            os.unlink(f.name)
+
+
+class TestOrchestratorObjectives:
+    def test_objectives_round_trip(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        import tempfile
+        objectives = [
+            {"objective": "Fix all critical XSS", "target_count": 10, "severity": "critical"},
+            {"objective": "Reduce injection backlog", "target_count": 5},
+        ]
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump({"orchestrator": {}, "repos": []}, f)
+            f.flush()
+            with patch("app._ORCHESTRATOR_REGISTRY_PATH", Path(f.name)), \
+                 patch("app._load_orchestrator_registry", return_value={"orchestrator": {}, "repos": []}):
+                resp = client.put(
+                    "/api/orchestrator/config",
+                    headers={"X-API-Key": "test-key"},
+                    json={"objectives": objectives},
+                )
+                assert resp.status_code == 200
+                data = resp.get_json()
+                assert len(data["objectives"]) == 2
+                assert data["objectives"][0]["objective"] == "Fix all critical XSS"
+                assert data["objectives"][0]["target_count"] == 10
+                assert data["objectives"][0]["severity"] == "critical"
+                assert data["objectives"][1]["objective"] == "Reduce injection backlog"
             os.unlink(f.name)
