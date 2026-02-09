@@ -643,6 +643,8 @@ def _serialize_orch_config(orch_config: dict) -> dict:
         "objectives": orch_config.get("objectives", []),
         "alert_on_objective_met": orch_config.get("alert_on_objective_met", False),
         "alert_webhook_url": orch_config.get("alert_webhook_url", ""),
+        "alert_on_verified_fix": orch_config.get("alert_on_verified_fix", True),
+        "alert_severities": orch_config.get("alert_severities", ["critical", "high"]),
     }
 
 
@@ -880,6 +882,8 @@ def api_orchestrator_config_update():
         "objectives",
         "alert_on_objective_met",
         "alert_webhook_url",
+        "alert_on_verified_fix",
+        "alert_severities",
     )
     for key in allowed_keys:
         if key in body:
@@ -891,6 +895,63 @@ def api_orchestrator_config_update():
         f.write("\n")
 
     return jsonify(_serialize_orch_config(orch_config))
+
+
+@app.route("/api/orchestrator/fix-rates")
+def api_orchestrator_fix_rates():
+    conn = get_connection()
+    try:
+        issues = query_issues(conn)
+        verification_records = load_verification_records(RUNS_DIR)
+        fp_fix_map = build_fingerprint_fix_map(verification_records)
+
+        by_cwe: dict[str, dict] = {}
+        by_repo: dict[str, dict] = {}
+        by_severity: dict[str, dict] = {}
+
+        for issue in issues:
+            fp = issue.get("fingerprint", "")
+            cwe = issue.get("cwe_family", "unknown") or "unknown"
+            repo = issue.get("target_repo", "unknown") or "unknown"
+            sev = issue.get("severity_tier", "unknown") or "unknown"
+            is_fixed = fp in fp_fix_map or issue.get("derived_state") in ("fixed", "verified_fixed")
+
+            for _group_key, group_dict, group_val in [
+                ("cwe", by_cwe, cwe),
+                ("repo", by_repo, repo),
+                ("severity", by_severity, sev),
+            ]:
+                if group_val not in group_dict:
+                    group_dict[group_val] = {"total": 0, "fixed": 0}
+                group_dict[group_val]["total"] += 1
+                if is_fixed:
+                    group_dict[group_val]["fixed"] += 1
+
+        def _compute_rates(group_dict: dict) -> list[dict]:
+            result = []
+            for name, counts in sorted(group_dict.items(), key=lambda x: x[1]["total"], reverse=True):
+                total = counts["total"]
+                fixed = counts["fixed"]
+                rate = round(fixed / max(total, 1) * 100, 1)
+                result.append({"name": name, "total": total, "fixed": fixed, "fix_rate": rate})
+            return result
+
+        total_issues = len(issues)
+        total_fixed = sum(
+            1 for i in issues
+            if i.get("fingerprint", "") in fp_fix_map
+            or i.get("derived_state") in ("fixed", "verified_fixed")
+        )
+        overall_rate = round(total_fixed / max(total_issues, 1) * 100, 1)
+
+        return jsonify({
+            "overall": {"total": total_issues, "fixed": total_fixed, "fix_rate": overall_rate},
+            "by_cwe_family": _compute_rates(by_cwe),
+            "by_repo": _compute_rates(by_repo),
+            "by_severity": _compute_rates(by_severity),
+        })
+    finally:
+        conn.close()
 
 
 def _load_registry() -> dict:
@@ -944,12 +1005,45 @@ def api_registry_add_repo():
     entry = {
         "repo": repo_url,
         "enabled": body.get("enabled", True),
+        "importance": body.get("importance", "medium"),
+        "importance_score": body.get("importance_score", 50),
         "schedule": body.get("schedule", "weekly"),
+        "max_sessions_per_cycle": body.get("max_sessions_per_cycle", 5),
+        "auto_scan": body.get("auto_scan", True),
+        "auto_dispatch": body.get("auto_dispatch", True),
+        "tags": body.get("tags", []),
         "overrides": body.get("overrides", {}),
     }
     registry.setdefault("repos", []).append(entry)
     _save_registry(registry)
     return jsonify(entry), 201
+
+
+@app.route("/api/registry/repos/<int:idx>", methods=["PUT"])
+@require_api_key
+def api_registry_update_repo(idx):
+    body = flask_request.get_json(silent=True)
+    if not body:
+        return jsonify({"error": "Request body is required"}), 400
+    registry = _load_registry()
+    repos = registry.get("repos", [])
+    if idx < 0 or idx >= len(repos):
+        return jsonify({"error": "Invalid repo index"}), 404
+
+    repo_entry = repos[idx]
+    allowed_repo_keys = (
+        "enabled", "importance", "importance_score", "schedule",
+        "max_sessions_per_cycle", "auto_scan", "auto_dispatch",
+        "tags", "overrides",
+    )
+    for key in allowed_repo_keys:
+        if key in body:
+            repo_entry[key] = body[key]
+
+    repos[idx] = repo_entry
+    registry["repos"] = repos
+    _save_registry(registry)
+    return jsonify(repo_entry)
 
 
 @app.route("/api/registry/repos", methods=["DELETE"])

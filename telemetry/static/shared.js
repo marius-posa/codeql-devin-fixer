@@ -706,6 +706,12 @@ function renderRegistryTable(registry, containerId, countId, callbacks) {
       : '<span style="color:var(--text-muted)">defaults</span>';
     var enabled = r.enabled !== false;
     var schedule = r.schedule || 'weekly';
+    var importance = r.importance || '-';
+    var importanceScore = r.importance_score != null ? r.importance_score : '-';
+    var maxSess = r.max_sessions_per_cycle != null ? r.max_sessions_per_cycle : '-';
+    var autoScan = r.auto_scan !== false;
+    var autoDispatch = r.auto_dispatch !== false;
+    var tags = (r.tags || []).join(', ') || '-';
 
     var enabledCell;
     if (_registryCallbacks.onToggle) {
@@ -719,6 +725,7 @@ function renderRegistryTable(registry, containerId, countId, callbacks) {
     var scheduleCell;
     if (_registryCallbacks.onScheduleChange) {
       scheduleCell = '<select class="registry-schedule-select" onchange="_changeRegistrySchedule(' + idx + ', this.value)">'
+        + '<option value="hourly"' + (schedule === 'hourly' ? ' selected' : '') + '>hourly</option>'
         + '<option value="daily"' + (schedule === 'daily' ? ' selected' : '') + '>daily</option>'
         + '<option value="weekly"' + (schedule === 'weekly' ? ' selected' : '') + '>weekly</option>'
         + '<option value="monthly"' + (schedule === 'monthly' ? ' selected' : '') + '>monthly</option>'
@@ -728,22 +735,38 @@ function renderRegistryTable(registry, containerId, countId, callbacks) {
     }
 
     var actionsCell = '';
-    if (_registryCallbacks.onRemove) {
-      actionsCell = '<button class="btn registry-remove-btn" onclick="_removeRegistryRepo(' + idx + ')" title="Remove from registry">Remove</button>';
+    if (_registryCallbacks.onRemove || _registryCallbacks.onEditRepo) {
+      if (_registryCallbacks.onEditRepo) {
+        actionsCell += '<button class="btn registry-edit-btn" onclick="_editRegistryRepo(' + idx + ')" title="Edit repo config" style="padding:2px 8px;font-size:11px;margin-right:4px">Edit</button>';
+      }
+      if (_registryCallbacks.onRemove) {
+        actionsCell += '<button class="btn registry-remove-btn" onclick="_removeRegistryRepo(' + idx + ')" title="Remove from registry">Remove</button>';
+      }
     }
 
     rows += '<tr>'
       + '<td><a href="' + escapeHtml(r.repo) + '" target="_blank">' + short + '</a></td>'
       + '<td>' + enabledCell + '</td>'
+      + '<td>' + escapeHtml(importance) + '</td>'
+      + '<td>' + importanceScore + '</td>'
       + '<td>' + scheduleCell + '</td>'
+      + '<td>' + maxSess + '</td>'
+      + '<td>' + (autoScan ? '<span style="color:var(--accent-green)">yes</span>' : '<span style="color:var(--text-muted)">no</span>') + '</td>'
+      + '<td>' + (autoDispatch ? '<span style="color:var(--accent-green)">yes</span>' : '<span style="color:var(--text-muted)">no</span>') + '</td>'
+      + '<td style="font-size:11px">' + escapeHtml(tags) + '</td>'
       + '<td style="font-size:11px">' + overrideStr + '</td>'
       + (actionsCell ? '<td style="white-space:nowrap">' + actionsCell + '</td>' : '')
       + '</tr>';
   });
   el.innerHTML = toolbar + '<table><thead><tr>'
-    + '<th>Repository</th><th>Status</th><th>Schedule</th><th>Overrides</th>'
-    + (_registryCallbacks.onRemove ? '<th></th>' : '')
+    + '<th>Repository</th><th>Status</th><th>Importance</th><th>Score</th><th>Schedule</th>'
+    + '<th>Max Sessions</th><th>Auto Scan</th><th>Auto Dispatch</th><th>Tags</th><th>Overrides</th>'
+    + (actionsCell ? '<th></th>' : '')
     + '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+function _editRegistryRepo(idx) {
+  if (_registryCallbacks.onEditRepo) _registryCallbacks.onEditRepo(idx);
 }
 
 function _toggleRegistryRepo(idx) {
@@ -815,6 +838,7 @@ document.addEventListener('DOMContentLoaded', function() {
       closeIssueDrawer();
       closeDispatchModal();
       _closeAddRepoModal();
+      if (typeof _closeRepoEditModal === 'function') _closeRepoEditModal();
     }
   });
   setTimeout(initTableScrollDetection, 500);
