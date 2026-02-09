@@ -33,9 +33,12 @@ from typing import Any
 import requests
 import yaml
 
-logger = logging.getLogger(__name__)
+try:
+    from devin_api import DEVIN_API_BASE
+except ImportError:
+    from scripts.devin_api import DEVIN_API_BASE
 
-DEVIN_API_BASE = "https://api.devin.ai/v1"
+logger = logging.getLogger(__name__)
 
 
 PLAYBOOK_SCHEMA_VERSION = 1

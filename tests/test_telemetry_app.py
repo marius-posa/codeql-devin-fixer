@@ -457,8 +457,7 @@ class TestOrchestratorEndpoints:
             assert state["dispatch_history"] == {}
 
     def test_load_orchestrator_registry_missing_file(self):
-        with patch("routes.orchestrator._ORCHESTRATOR_REGISTRY_PATH") as mock_path:
-            mock_path.exists.return_value = False
+        with patch("routes.registry.REGISTRY_PATH", Path("/nonexistent")):
             reg = _load_orchestrator_registry()
             assert reg["repos"] == []
 

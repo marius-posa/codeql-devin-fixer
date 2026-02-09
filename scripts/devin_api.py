@@ -14,8 +14,16 @@ MAX_RETRIES = 3
 RETRY_DELAY = 5
 
 TERMINAL_STATUSES = frozenset(
-    {"finished", "blocked", "expired", "failed", "canceled", "cancelled"}
+    {"finished", "blocked", "expired", "failed", "canceled", "cancelled",
+     "stopped", "error"}
 )
+
+
+def clean_session_id(session_id: str) -> str:
+    """Strip the ``devin-`` prefix from a session ID if present."""
+    if session_id.startswith("devin-"):
+        return session_id[len("devin-"):]
+    return session_id
 
 
 def headers(api_key: str) -> dict[str, str]:

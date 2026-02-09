@@ -9,7 +9,14 @@ import requests
 from flask import Blueprint, jsonify, render_template, request as flask_request, send_file
 
 from config import RUNS_DIR, gh_headers
+
+try:
+    from devin_api import clean_session_id
+except ImportError:
+    from scripts.devin_api import clean_session_id
+
 from database import (
+    db_connection,
     get_connection,
     insert_run,
     query_runs,
@@ -77,7 +84,7 @@ def _link_prs_to_session_items(sessions: list[dict], prs: list[dict]) -> None:
         if s.get("pr_url"):
             continue
         sid = s.get("session_id", "")
-        clean = sid.replace("devin-", "") if sid.startswith("devin-") else sid
+        clean = clean_session_id(sid)
         if clean in pr_by_session:
             s["pr_url"] = pr_by_session[clean]
             continue
@@ -90,8 +97,7 @@ def _link_prs_to_session_items(sessions: list[dict], prs: list[dict]) -> None:
 @api_bp.route("/api/repo/<path:repo_url>")
 def api_repo_detail(repo_url):
     full_url = "https://github.com/" + repo_url
-    conn = get_connection()
-    try:
+    with db_connection() as conn:
         runs = query_all_runs(conn, target_repo=full_url)
         sessions = query_all_sessions(conn, target_repo=full_url)
         all_prs = query_all_prs(conn)
@@ -146,69 +152,51 @@ def api_repo_detail(repo_url):
             "prs": _paginate(repo_prs, page, per_page),
             "issues": _paginate(issues, page, per_page),
         })
-    finally:
-        conn.close()
 
 
 @api_bp.route("/api/runs")
 def api_runs():
     page, per_page = _get_pagination()
-    conn = get_connection()
-    try:
+    with db_connection() as conn:
         return jsonify(query_runs(conn, page=page, per_page=per_page))
-    finally:
-        conn.close()
 
 
 @api_bp.route("/api/sessions")
 def api_sessions():
     page, per_page = _get_pagination()
-    conn = get_connection()
-    try:
+    with db_connection() as conn:
         result = query_sessions(conn, page=page, per_page=per_page)
         all_prs = query_all_prs(conn)
         _link_prs_to_session_items(result["items"], all_prs)
         return jsonify(result)
-    finally:
-        conn.close()
 
 
 @api_bp.route("/api/prs")
 def api_prs():
     page, per_page = _get_pagination()
-    conn = get_connection()
-    try:
+    with db_connection() as conn:
         return jsonify(query_prs(conn, page=page, per_page=per_page))
-    finally:
-        conn.close()
 
 
 @api_bp.route("/api/stats")
 def api_stats():
     period = flask_request.args.get("period", "all")
-    conn = get_connection()
-    try:
+    with db_connection() as conn:
         result = query_stats(conn, period=period)
         result["period"] = period
         return jsonify(result)
-    finally:
-        conn.close()
 
 
 @api_bp.route("/api/repos")
 def api_repos():
-    conn = get_connection()
-    try:
+    with db_connection() as conn:
         return jsonify(query_repos(conn))
-    finally:
-        conn.close()
 
 
 @api_bp.route("/api/poll", methods=["POST"])
 @require_api_key
 def api_poll():
-    conn = get_connection()
-    try:
+    with db_connection() as conn:
         sessions = query_all_sessions(conn)
         updated = poll_devin_sessions_db(conn, sessions)
         conn.commit()
@@ -218,22 +206,17 @@ def api_poll():
         conn.commit()
         _audit("poll_sessions", details=json.dumps({"polled": len(updated), "prs_found": prs_count}))
         return jsonify({"sessions": updated, "polled": len(updated), "prs_found": prs_count})
-    finally:
-        conn.close()
 
 
 @api_bp.route("/api/poll-prs", methods=["POST"])
 @require_api_key
 def api_poll_prs():
-    conn = get_connection()
-    try:
+    with db_connection() as conn:
         prs_count = fetch_prs_from_github_to_db(conn)
         conn.commit()
         all_prs = query_all_prs(conn)
         _audit("poll_prs", details=json.dumps({"prs_found": prs_count}))
         return jsonify({"prs": all_prs, "total": prs_count})
-    finally:
-        conn.close()
 
 
 @api_bp.route("/api/refresh", methods=["POST"])
@@ -245,9 +228,8 @@ def api_refresh():
         return jsonify({"error": "GITHUB_TOKEN and ACTION_REPO required"}), 400
 
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
-    conn = get_connection()
     downloaded = 0
-    try:
+    with db_connection() as conn:
         gh_page = 1
         while True:
             url = (f"https://api.github.com/repos/{action_repo}"
@@ -292,8 +274,6 @@ def api_refresh():
             "total_files": total_files,
             "prs_found": prs_count,
         })
-    finally:
-        conn.close()
 
 
 @api_bp.route("/api/config")
@@ -313,8 +293,7 @@ def api_config():
 
 @api_bp.route("/api/report/pdf")
 def api_report_pdf():
-    conn = get_connection()
-    try:
+    with db_connection() as conn:
         repo_filter = flask_request.args.get("repo", "")
         if repo_filter:
             runs = query_all_runs(conn, target_repo=repo_filter)
@@ -332,15 +311,12 @@ def api_report_pdf():
             filename += f"-{short}"
         filename += ".pdf"
         return send_file(buf, mimetype="application/pdf", as_attachment=True, download_name=filename)
-    finally:
-        conn.close()
 
 
 @api_bp.route("/api/backfill", methods=["POST"])
 @require_api_key
 def api_backfill():
-    conn = get_connection()
-    try:
+    with db_connection() as conn:
         patched = backfill_pr_urls(conn)
         conn.commit()
 
@@ -381,14 +357,11 @@ def api_backfill():
 
         _audit("backfill", details=json.dumps({"patched_files": patched_files, "db_patched": patched}))
         return jsonify({"patched_files": patched_files, "db_patched": patched})
-    finally:
-        conn.close()
 
 
 @api_bp.route("/api/issues")
 def api_issues():
-    conn = get_connection()
-    try:
+    with db_connection() as conn:
         repo_filter = flask_request.args.get("repo", "")
         issues = query_issues(conn, target_repo=repo_filter)
 
@@ -404,8 +377,6 @@ def api_issues():
 
         page, per_page = _get_pagination()
         return jsonify(_paginate(issues, page, per_page))
-    finally:
-        conn.close()
 
 
 @api_bp.route("/api/issues/search")
@@ -414,24 +385,18 @@ def api_issues_search():
     if not q:
         return jsonify({"error": "q parameter is required"}), 400
     repo_filter = flask_request.args.get("repo", "")
-    conn = get_connection()
-    try:
+    with db_connection() as conn:
         results = search_issues(conn, q, target_repo=repo_filter)
         page, per_page = _get_pagination()
         return jsonify(_paginate(results, page, per_page))
-    finally:
-        conn.close()
 
 
 @api_bp.route("/api/sla")
 def api_sla():
-    conn = get_connection()
-    try:
+    with db_connection() as conn:
         repo_filter = flask_request.args.get("repo", "")
         issues = query_issues(conn, target_repo=repo_filter)
         return jsonify(compute_sla_summary(issues))
-    finally:
-        conn.close()
 
 
 @api_bp.route("/api/verification")
@@ -453,8 +418,7 @@ def api_dispatch_preflight():
     if not target_repo:
         return jsonify({"error": "target_repo is required"}), 400
 
-    conn = get_connection()
-    try:
+    with db_connection() as conn:
         all_prs = query_all_prs(conn)
         open_prs = [
             p for p in all_prs
@@ -490,8 +454,6 @@ def api_dispatch_preflight():
                 for p in repo_open_prs
             ],
         })
-    finally:
-        conn.close()
 
 
 @api_bp.route("/api/dispatch", methods=["POST"])
@@ -549,12 +511,9 @@ def api_audit_log():
     page, per_page = _get_pagination()
     action_filter = flask_request.args.get("action", "")
     user_filter = flask_request.args.get("user", "")
-    conn = get_connection()
-    try:
+    with db_connection() as conn:
         return jsonify(query_audit_logs(conn, page=page, per_page=per_page,
                                         action_filter=action_filter, user_filter=user_filter))
-    finally:
-        conn.close()
 
 
 @api_bp.route("/api/audit-log/export", methods=["POST"])
@@ -562,8 +521,7 @@ def api_audit_log():
 def api_audit_log_export():
     body = flask_request.get_json(silent=True) or {}
     since = body.get("since", "")
-    conn = get_connection()
-    try:
+    with db_connection() as conn:
         entries = export_audit_logs(conn, since=since)
         AUDIT_LOG_DIR.mkdir(parents=True, exist_ok=True)
         from datetime import datetime, timezone
@@ -574,5 +532,3 @@ def api_audit_log_export():
             f.write("\n")
         _audit("export_audit_log", details=json.dumps({"file": str(export_path), "entries": len(entries)}))
         return jsonify({"file": str(export_path), "entries": len(entries)})
-    finally:
-        conn.close()
