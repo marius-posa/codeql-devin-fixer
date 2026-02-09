@@ -919,3 +919,57 @@ class TestAuditLogEndpoints:
         data = resp.get_json()
         assert "entries" in data
         assert "file" in data
+
+
+class TestServerSideSessions:
+    def test_session_type_is_cachelib(self):
+        assert app.config["SESSION_TYPE"] == "cachelib"
+
+    def test_session_cookie_httponly(self):
+        assert app.config["SESSION_COOKIE_HTTPONLY"] is True
+
+    def test_session_cookie_samesite(self):
+        assert app.config["SESSION_COOKIE_SAMESITE"] == "Lax"
+
+    def test_session_not_permanent(self):
+        assert app.config["SESSION_PERMANENT"] is False
+
+    def test_session_data_persists_server_side(self, client):
+        with client.session_transaction() as sess:
+            sess["gh_user"] = {"login": "testuser"}
+        resp = client.get("/api/me")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["logged_in"] is True
+        assert data["user"]["login"] == "testuser"
+
+    def test_logout_clears_server_session(self, client):
+        with client.session_transaction() as sess:
+            sess["gh_user"] = {"login": "testuser"}
+            sess["gh_token"] = "ghp_fake_token"
+        resp = client.get("/logout")
+        assert resp.status_code == 302
+        with client.session_transaction() as sess:
+            assert "gh_user" not in sess
+            assert "gh_token" not in sess
+
+
+class TestCorsConfiguration:
+    def test_cors_default_restricts_origins(self):
+        from app import _cors_origins
+        assert isinstance(_cors_origins, list)
+        for origin in _cors_origins:
+            assert "localhost" in origin or "127.0.0.1" in origin
+
+    def test_cors_env_override(self, monkeypatch):
+        monkeypatch.setenv("CORS_ORIGINS", "https://example.com,https://other.com")
+        raw = os.environ.get("CORS_ORIGINS", "")
+        origins = [o.strip() for o in raw.split(",") if o.strip()]
+        assert origins == ["https://example.com", "https://other.com"]
+
+    def test_cors_headers_present_on_response(self, client):
+        resp = client.get("/api/config")
+        assert resp.status_code == 200
+        assert "X-Content-Type-Options" in resp.headers
+        assert resp.headers["X-Content-Type-Options"] == "nosniff"
+        assert resp.headers["X-Frame-Options"] == "DENY"

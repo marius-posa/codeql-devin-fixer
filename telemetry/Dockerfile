@@ -11,6 +11,8 @@ COPY scripts/pipeline_config.py ./scripts/pipeline_config.py
 
 COPY telemetry/ ./
 
+RUN mkdir -p /app/flask_session
+
 ENV FLASK_APP=app.py
 ENV PYTHONUNBUFFERED=1
 

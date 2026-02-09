@@ -10,7 +10,10 @@ services:
       - DEVIN_API_KEY=${DEVIN_API_KEY:-}
       - ACTION_REPO=${ACTION_REPO:-}
       - TELEMETRY_API_KEY=${TELEMETRY_API_KEY:-}
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-}
       - CACHE_TTL=${CACHE_TTL:-120}
+      - CORS_ORIGINS=${CORS_ORIGINS:-}
+      - SESSION_COOKIE_SECURE=${SESSION_COOKIE_SECURE:-true}
     volumes:
       - telemetry-data:/app/runs
     restart: unless-stopped
