@@ -17,7 +17,7 @@
     "delay_seconds": 30
   },
   "orchestrator": {
-    "global_session_limit": 20,
+    "global_session_limit": 8,
     "global_session_limit_period_hours": 24,
     "objectives": [],
     "alert_on_verified_fix": true,
