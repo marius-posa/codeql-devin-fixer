@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -136,6 +137,16 @@ def _run_fork(
         return {"error": str(exc), "status": "failed"}
 
 
+_REPO_URL_RE = re.compile(
+    r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?$"
+)
+
+
+def _validate_repo_url(url: str) -> None:
+    if not _REPO_URL_RE.match(url):
+        raise ValueError(f"Invalid repository URL: {url!r}")
+
+
 def _redact_token(text: str, token: str) -> str:
     if token and token in text:
         return text.replace(token, "***")
@@ -144,6 +155,7 @@ def _redact_token(text: str, token: str) -> str:
 
 def _run_clone(repo_url: str, clone_dir: str, github_token: str) -> dict:
     try:
+        _validate_repo_url(repo_url)
         cmd = ["git", "clone", "--depth", "1", "--single-branch"]
         clone_env = {**os.environ}
         if github_token:
