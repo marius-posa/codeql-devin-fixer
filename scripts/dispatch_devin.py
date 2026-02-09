@@ -948,16 +948,25 @@ def main() -> None:
                     cwe_family=batch["cwe_family"],
                     batch_id=sess["batch_id"],
                     pr_url=sess.get("url", ""),
-                    diff_summary=f"Automated fix for {batch['issue_count']} {batch['cwe_family']} issues",
+                    diff_summary=(
+                        f"Automated fix for {batch['issue_count']} "
+                        f"{batch['cwe_family']} issues"
+                    ),
                     issue_count=batch["issue_count"],
                     severity_tier=batch.get("severity_tier", "medium"),
                     repo_url=repo_url,
                     parent_folder_id=knowledge_folder_id,
                     github_token=github_token,
                 )
-                logger.info("Stored knowledge for batch %s (%s)", sess["batch_id"], batch["cwe_family"])
+                logger.info(
+                    "Stored knowledge for batch %s (%s)",
+                    sess["batch_id"], batch["cwe_family"],
+                )
             except Exception as exc:
-                logger.warning("Failed to store knowledge for batch %s: %s", sess["batch_id"], exc)
+                logger.warning(
+                    "Failed to store knowledge for batch %s: %s",
+                    sess["batch_id"], exc,
+                )
 
     if enable_retry and not dry_run:
         created_sessions = [s for s in sessions if s["status"] == "created"]
@@ -988,7 +997,10 @@ def main() -> None:
                     max_acu=max_acu,
                 )
                 if retry_results:
-                    logger.info("Retry-with-feedback processed %d session(s)", len(retry_results))
+                    logger.info(
+                        "Retry-with-feedback processed %d session(s)",
+                        len(retry_results),
+                    )
                     retry_path = os.path.join(output_dir, "retry_results.json")
                     with open(retry_path, "w") as rf:
                         json.dump(retry_results, rf, indent=2)
