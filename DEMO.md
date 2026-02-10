@@ -1,17 +1,17 @@
-# CodeQL Devin Fixer — Demo Narrative & Highlights (MP-65)
+# CodeQL Devin Fixer — Demo Narrative & Highlights
 
-This repository is a full-stack security remediation platform that automates the end‑to‑end flow from finding vulnerabilities to shipping verified fixes. It combines:
+Full-stack security remediation platform that automates the end‑to‑end flow from finding vulnerabilities to shipping verified fixes. Combines:
 - CodeQL static analysis (finding issues)
 - Devin AI agents (fixing issues via PRs)
-- An orchestrator (prioritization, batching, multi‑repo scheduling)
-- A verification loop (re‑scan PRs to confirm fixes)
-- Centralized telemetry (Flask dashboard + SQLite) for runs, sessions, and outcomes
+- Multi-repo orchestrator (prioritization, batching, scheduling)
+- Closed-loop verification (re‑scan PRs to confirm fixes)
+- Centralized telemetry (Flask dashboard + SQLite)
 
 Why this repo is special
-- End‑to‑end automation: scanning → batching → AI fix PRs → verification → telemetry. Few projects cover the whole lifecycle in one system.
-- Devin‑native: prompts and session metadata are engineered for reliability (idempotent sessions, rich tagging, CWE‑aware playbooks, wave‑based dispatch, prompt‑injection sanitization).
-- Multi‑repo at scale: the orchestrator plans across many repos, prioritizing by severity (CVSS) and batching by CWE family to improve fix consistency and success rate.
-- Closed‑loop quality: verification re‑runs CodeQL on PR branches, compares fingerprints, and feeds results back into fix‑learning to continuously improve.
+- End‑to‑end automation: scanning → batching → AI fix PRs → verification → telemetry.
+- Deep Devin integration: 8 API endpoints including Knowledge API, Send Message API, Playbooks API, structured output, idempotent sessions, rich tagging, CWE‑aware playbooks, wave‑based dispatch, and prompt‑injection sanitization.
+- Multi‑repo at scale: the orchestrator plans across many repos, prioritizing by CVSS severity and batching by CWE family.
+- Closed‑loop quality: verification re‑runs CodeQL on PR branches, compares fingerprints, and feeds results back via retry-with-feedback and Knowledge API.
 
 High‑level architecture
 
@@ -40,12 +40,15 @@ Key components (where to look)
 - action.yml — Composite GitHub Action that runs CodeQL, parses SARIF, and dispatches Devin sessions
 - scripts/
   - dispatch_devin.py — Builds Devin prompts, tags sessions, defends against prompt injection, creates sessions (idempotent)
-  - orchestrator.py — Multi‑repo scheduling, severity‑tier waves, rate limiting, fix‑learning integration
+  - orchestrator/ — Multi‑repo scheduling package: scanner, dispatcher, state management, alerts, agent mode
   - verify_results.py — Re‑runs CodeQL on PR branches, compares fingerprints to confirm fixes
+  - knowledge.py — Devin Knowledge API client for storing/retrieving fix patterns
+  - retry_feedback.py — Send Message API for retry-with-feedback loop
+  - playbook_manager.py — CWE playbooks + Devin Playbooks API sync
   - repo_context.py — Gathers repo signals (pkg managers, tests, style) to enrich prompts
 - playbooks/ — CWE‑specific playbooks that guide Devin with structured, auditable instructions
-- telemetry/ — Flask dashboard + SQLite to track runs, sessions, PRs, fix rates
-- docs/ — Architecture notes and solution reviews
+- telemetry/ — Flask dashboard (5 Blueprints) + SQLite to track runs, sessions, PRs, fix rates
+- docs/ — Architecture docs, config reference, and GitHub Pages static site
 
 How Devin is used here
 - Prompts are CWE‑aware, include precise locations and diffs to change, and instruct Devin to create PRs on forks (not upstream) using consistent naming.
@@ -55,13 +58,13 @@ How Devin is used here
 
 Demo flow (suggested script)
 1) Quickstart (Basic Mode)
-   - Trigger the workflow (workflows/codeql-fixer.yml) on a target repo with `mode: basic`.
+   - Trigger the workflow (`.github/workflows/codeql-fixer.yml`) on a target repo with `mode: basic`.
    - Watch Action logs as CodeQL runs and SARIF is parsed.
    - Observe Devin sessions created (tags include repo, CWE, severity, batch).
    - Show the resulting PRs created by Devin (titles follow the playbook conventions).
 
 2) Orchestrator Mode
-   - Run `scripts/orchestrator.py` against a repo set (repo_registry.json).
+   - Run `python -m scripts.orchestrator.cli cycle` against a repo set (`repo_registry.json`).
    - Highlight prioritization (CVSS), CWE batching, and wave‑based dispatch with fix‑rate gating.
    - Emphasize cost/control benefits and better fix coherence.
 
@@ -95,27 +98,29 @@ Expanded standout features + how to demo in UI
 
 - Wave-based dispatch with gating
   - What to say: We dispatch by severity tiers in waves; if fix-rate drops below threshold, we halt further waves to save cost and redirect effort.
-  - How to demo: Open scripts/orchestrator.py and point to the wave logic. In telemetry, filter by a run and talk through the phases/waves and resulting PRs.
+  - How to demo: Open `scripts/orchestrator/dispatcher.py` and point to the wave logic. In telemetry, filter by a run and talk through the phases/waves and resulting PRs.
 
 - Prompt-injection defense
   - What to say: We sanitize inbound text before prompting (scripts/dispatch_devin.py: sanitize_prompt_text) to defend against injection.
   - How to demo: Show the sanitize function in scripts/dispatch_devin.py. Call out examples of what gets stripped.
 
 - Idempotency + retry + knowledge assist
-  - What to say: Sessions are created with idempotent semantics. We also integrated a Knowledge API and retry-with-feedback pipeline (see recent MP-60 commits) to improve success on hard CWEs.
-  - How to demo: Point to dispatch_devin.py where idempotency is set and to recent MP-60 commits in git log (knowledge + retry). In telemetry, highlight improvements in fix-rate for those CWEs.
+  - What to say: Sessions are created with idempotent semantics. The Knowledge API (`scripts/knowledge.py`) stores successful fix patterns, and the retry-with-feedback pipeline (`scripts/retry_feedback.py`) sends targeted guidance to Devin sessions that need rework.
+  - How to demo: Show `scripts/knowledge.py` and `scripts/retry_feedback.py`. Point to `dispatch_devin.py` where idempotency is set. In telemetry, highlight improvements in fix-rate for those CWEs.
 
 - Fingerprint-based verification
   - What to say: We re-run CodeQL on PR branches and compare stable fingerprints—objective proof that the target issue is actually gone.
   - How to demo: Open scripts/verify_results.py and show fingerprint comparison. In telemetry, locate a PR marked verified and narrate the before/after.
 
 - Central telemetry dashboard
-  - What to say: Single pane of glass for runs, sessions, PRs, and outcomes over time.
-  - How to demo: Launch telemetry/app.py. Walk:
-    1) Overview: total runs, sessions, verified PRs, fix-rate trend
-    2) Runs list: pick a recent run; open detail
-    3) Sessions tab: show tags (repo, CWE, severity, batch) and dispatch timing
-    4) PRs tab: link out to GitHub; point to verification status
+  - What to say: Single pane of glass with 6 tabs: Overview, Repositories, Issues, Activity, Orchestrator, Settings. Dark/light theme, Chart.js charts, PDF reports.
+  - How to demo: Launch `telemetry/app.py`. Walk:
+    1) Overview tab: total runs, sessions, verified PRs, fix-rate trend charts
+    2) Repositories tab: per-repo metrics with drill-down
+    3) Issues tab: fingerprint-based tracking with SLA status
+    4) Activity tab: sessions and PRs with status filters
+    5) Orchestrator tab: plan preview, scan/dispatch controls, fix rates by CWE
+    6) Settings tab: configuration and audit log
 
 Screenshots to include (optional)
 - GitHub Actions run (CodeQL + dispatch step)
@@ -130,8 +135,9 @@ How to run a minimal demo locally
 - For telemetry: `pip install -r telemetry/requirements.txt` then `python telemetry/app.py`
 
 References
-- Linear ticket: MP-65 — Demo path
-- Devin run (for context): https://app.devin.ai/sessions/30beb52769dc4aa09d39c02cf0687756
+- [Architecture](docs/architecture.md)
+- [Configuration Reference](docs/CONFIG_REFERENCE.md)
+- [Live Dashboard](https://marius-posa.github.io/codeql-devin-fixer/)
 
 Notes
-- This file is meant for presentations and demos. Keep it updated as capabilities evolve (e.g., new CWE playbooks, improved verification heuristics, orchestrator agent mode).
+- This file is meant for presentations and demos. Keep it updated as capabilities evolve.

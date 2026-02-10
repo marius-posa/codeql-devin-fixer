@@ -1,6 +1,6 @@
 # Contributing to CodeQL Devin Fixer
 
-Thank you for your interest in contributing! This guide covers how to set up the development environment, run tests, and submit changes.
+This guide covers how to set up the development environment, run tests, and submit changes.
 
 ## Development Environment
 
@@ -21,7 +21,7 @@ python -m venv .venv
 source .venv/bin/activate
 
 pip install -r telemetry/requirements.txt
-pip install pytest requests jinja2
+pip install pytest requests jinja2 pyyaml
 ```
 
 ### Telemetry Dashboard
@@ -45,16 +45,44 @@ docker compose up --build
 ## Project Structure
 
 ```
-action.yml                 # Composite action definition
-scripts/                   # Pipeline scripts (parsing, dispatch, telemetry)
-telemetry/                 # Flask dashboard backend
-  app.py                   # Main Flask application
-  templates/               # Server-rendered HTML templates
-docs/                      # Static frontend dashboard
-tests/                     # Test suite
+action.yml                       # Composite GitHub Action definition
+.github/workflows/               # GitHub Actions workflows
+scripts/                         # Pipeline scripts
+  parse_sarif.py                 # SARIF parsing, severity scoring, batching
+  dispatch_devin.py              # Devin session creation with wave dispatch
+  fork_repo.py                   # Fork management and sync
+  persist_logs.py                # Log persistence to fork repos
+  persist_telemetry.py           # Telemetry record storage to SQLite
+  verify_results.py              # Fix verification via fingerprint comparison
+  pipeline_config.py             # Centralized config with TypedDicts
+  devin_api.py                   # Shared Devin API utilities
+  knowledge.py                   # Devin Knowledge API client
+  retry_feedback.py              # Send Message API for retry-with-feedback
+  playbook_manager.py            # CWE-specific playbooks + Devin Playbooks API
+  orchestrator/                  # Multi-repo orchestrator package
+    cli.py                       # Command routing (scan, dispatch, cycle, plan, status)
+    dispatcher.py                # Session dispatch with rate limiting
+    scanner.py                   # Scan triggering and SARIF retrieval
+    state.py                     # State persistence and cooldown
+    alerts.py                    # Alert processing and delivery
+    agent.py                     # Orchestrator agent mode
+telemetry/                       # Flask dashboard backend
+  app.py                         # Flask entry point (Blueprint registration)
+  routes/                        # Modular route Blueprints
+    api.py                       # Core API (runs, sessions, PRs, issues, stats)
+    orchestrator.py              # Orchestrator controls
+    registry.py                  # Repo registry CRUD
+    demo.py                      # Demo data management
+  database.py                    # SQLite schema, queries, migrations
+  helpers.py                     # Shared auth, pagination, audit utilities
+github_app/                      # GitHub App for webhook automation
+playbooks/                       # CWE-specific fix instructions (YAML)
+charts/telemetry/                # Helm chart for Kubernetes deployment
+docs/                            # GitHub Pages static site + documentation
+tests/                           # Test suite (32 files, ~11,400 lines)
 ```
 
-See `docs/architecture.md` for a detailed flow diagram.
+See [docs/architecture.md](docs/architecture.md) for detailed flow diagrams and [docs/CONFIG_REFERENCE.md](docs/CONFIG_REFERENCE.md) for the complete configuration reference.
 
 ## Running Tests
 
@@ -70,15 +98,20 @@ python -m pytest tests/test_parse_sarif.py -v
 
 ### Test Categories
 
-| Directory/File | What it tests |
+| File | What it tests |
 |---|---|
-| `tests/test_parse_sarif.py` | SARIF parsing, severity classification, batching |
-| `tests/test_dispatch_devin.py` | Prompt generation, session creation |
-| `tests/test_contracts.py` | Data format contracts between pipeline stages |
-| `tests/test_fork_repo.py` | Fork creation and sync logic |
-| `tests/test_resilience.py` | Retry and error handling |
-| `tests/test_services.py` | Telemetry service integrations |
-| `tests/test_telemetry_app.py` | Flask API endpoints |
+| `test_parse_sarif.py` | SARIF parsing, severity classification, batching |
+| `test_dispatch_devin.py` | Prompt generation, session creation, wave dispatch |
+| `test_contracts.py` | Data format contracts between pipeline stages |
+| `test_fork_repo.py` | Fork creation and sync logic |
+| `test_resilience.py` | Retry and error handling |
+| `test_orchestrator.py` | Orchestrator scheduling, priority scoring, dispatch logic |
+| `test_telemetry_app.py` | Flask API endpoints and Blueprint routing |
+| `test_telemetry_auth.py` | API key and OAuth authentication |
+| `test_database.py` | SQLite schema, queries, and migrations |
+| `test_verification.py` | Fix verification and fingerprint comparison |
+| `test_webhook.py` | Webhook delivery and HMAC signing |
+| `test_playbook_manager.py` | CWE playbook loading and Devin API sync |
 
 ## Making Changes
 
@@ -97,7 +130,7 @@ docs/architecture-diagram
 - Follow existing patterns in the file you're editing
 - Use type annotations on public function signatures
 - Keep functions focused and under ~50 lines where practical
-- Use the existing utility modules (`github_utils.py`, `retry_utils.py`, `pipeline_config.py`)
+- Use the existing utility modules (`github_utils.py`, `retry_utils.py`, `pipeline_config.py`, `devin_api.py`)
 
 ### Commit Messages
 
@@ -106,7 +139,7 @@ Use conventional commit format:
 ```
 feat(parse): add support for custom CWE family mappings
 fix(dispatch): handle empty batch list gracefully
-docs: add architecture diagram
+docs: update architecture diagram
 test: add coverage for webhook delivery
 ```
 
@@ -130,15 +163,16 @@ If you add a new script to `scripts/`:
 
 ### Adding New API Endpoints
 
-If you add endpoints to `telemetry/app.py`:
+If you add endpoints to the telemetry dashboard:
 
-1. Use the existing `_paginate()` helper for list endpoints
-2. Gate mutating endpoints behind `@require_api_key`
-3. Add tests to `tests/test_telemetry_app.py`
+1. Add routes to the appropriate Blueprint in `telemetry/routes/`
+2. Use the existing `_paginate()` helper for list endpoints
+3. Gate mutating endpoints behind `@require_api_key`
+4. Add tests to `tests/test_telemetry_app.py`
 
 ## Per-Repo Configuration
 
-Target repositories can include a `.codeql-fixer.yml` file to customize behavior. See the example in `.codeql-fixer.example.yml` for available options.
+Target repositories can include a `.codeql-fixer.yml` file to customize behavior. See `.codeql-fixer.example.yml` for a template and [docs/CONFIG_REFERENCE.md](docs/CONFIG_REFERENCE.md) for the full option reference.
 
 ## Reporting Issues
 
