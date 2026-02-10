@@ -690,15 +690,18 @@ def dispatch_wave(
     for batch in wave_batches:
         family = batch["cwe_family"]
 
-        batch_acu = resolve_machine_acu(
-            explicit_max_acu=max_acu,
-            machine_type_name=machine_type,
-            target_dir=target_dir,
-            issue_count=batch.get("issue_count", 1),
-            file_count=batch.get("file_count", 0),
-            severity_tier=batch.get("severity_tier", "medium"),
-            cross_family=batch.get("cross_family", False),
-        )
+        if max_acu is not None or machine_type:
+            batch_acu = resolve_machine_acu(
+                explicit_max_acu=max_acu,
+                machine_type_name=machine_type,
+                target_dir=target_dir,
+                issue_count=batch.get("issue_count", 1),
+                file_count=batch.get("file_count", 0),
+                severity_tier=batch.get("severity_tier", "medium"),
+                cross_family=batch.get("cross_family", False),
+            )
+        else:
+            batch_acu = max_acu
         if fix_learn and batch_acu:
             batch_acu = fix_learn.compute_acu_budget(family, batch_acu)
         elif fix_learn and not batch_acu:

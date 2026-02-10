@@ -155,10 +155,13 @@ def resolve_machine_acu(
     Priority order:
     1. *explicit_max_acu* -- user-provided ``MAX_ACU_PER_SESSION`` override.
     2. *machine_type_name* -- explicit ``MACHINE_TYPE`` env var.
-    3. Auto-selection via :func:`select_machine_type`.
+    3. Auto-selection via :func:`select_machine_type` based on batch
+       and repo characteristics.
 
-    Returns ``None`` when no limit should be imposed (i.e. the user did
-    not set any ACU configuration and auto-selection is disabled).
+    Callers should only invoke this function when at least one of
+    *explicit_max_acu* or *machine_type_name* is provided.  When neither
+    is set, the caller should preserve the previous ``max_acu`` value
+    (which may be ``None`` to indicate no limit).
     """
     if explicit_max_acu is not None and explicit_max_acu > 0:
         return explicit_max_acu
