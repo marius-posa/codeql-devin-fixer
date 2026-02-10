@@ -17,8 +17,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-from github_app.log_utils import sanitize_log
-
 log = logging.getLogger(__name__)
 
 _SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
@@ -67,7 +65,7 @@ def trigger_scan(scan_config: dict) -> dict:
     output_dir = os.path.join(work_dir, "output")
     os.makedirs(output_dir, exist_ok=True)
 
-    log.info("Starting scan for %s in %s", sanitize_log(target_repo), work_dir)
+    log.info("Starting scan in %s", work_dir)
 
     steps: list[dict] = []
 
