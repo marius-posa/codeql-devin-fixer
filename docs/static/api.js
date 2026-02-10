@@ -839,36 +839,24 @@ async function updateRegistryOnGitHub(registry) {
 }
 
 async function fetchOrchestratorState() {
-  var cfg = getConfig();
-  var repo = cfg.actionRepo;
-  var url = GH_API + '/repos/' + repo + '/contents/telemetry/orchestrator_state.json?ref=main';
-  try {
-    var resp = await fetch(url, { headers: ghHeaders() });
-    if (!resp.ok) return null;
-    var meta = await resp.json();
-    if (!meta.download_url) return null;
-    var dataResp = await fetch(meta.download_url);
-    if (!dataResp.ok) return null;
-    return await dataResp.json();
-  } catch (e) {
-    return null;
-  }
+  return null;
 }
 
 function buildOrchestratorStatus(state, registry, issues, verificationRecords) {
-  if (!state) return null;
   var orchConfig = (registry || {}).orchestrator || {};
   var maxSessions = orchConfig.global_session_limit || 20;
   var periodHours = orchConfig.global_session_limit_period_hours || 24;
-  var rlData = state.rate_limiter || {};
-  var timestamps = rlData.created_timestamps || rlData.timestamps || [];
-  var cutoff = new Date(Date.now() - periodHours * 3600000);
   var used = 0;
-  for (var i = 0; i < timestamps.length; i++) {
-    try {
-      var ts = new Date(timestamps[i]);
-      if (ts > cutoff) used++;
-    } catch (e) {}
+  if (state) {
+    var rlData = state.rate_limiter || {};
+    var timestamps = rlData.created_timestamps || rlData.timestamps || [];
+    var cutoff = new Date(Date.now() - periodHours * 3600000);
+    for (var i = 0; i < timestamps.length; i++) {
+      try {
+        var ts = new Date(timestamps[i]);
+        if (ts > cutoff) used++;
+      } catch (e) {}
+    }
   }
   var stateCounts = {};
   for (var j = 0; j < (issues || []).length; j++) {
@@ -889,10 +877,10 @@ function buildOrchestratorStatus(state, registry, issues, verificationRecords) {
       met: current >= (obj.target_count || 0),
     };
   });
-  var dispatchHistory = state.dispatch_history || {};
+  var dispatchHistory = state ? (state.dispatch_history || {}) : {};
   return {
     timestamp: new Date().toISOString(),
-    last_cycle: state.last_cycle || null,
+    last_cycle: state ? (state.last_cycle || null) : null,
     issue_state_breakdown: stateCounts,
     total_issues: (issues || []).length,
     rate_limit: {
@@ -902,7 +890,7 @@ function buildOrchestratorStatus(state, registry, issues, verificationRecords) {
       period_hours: periodHours,
     },
     objective_progress: objectiveProgress,
-    scan_schedule: state.scan_schedule || {},
+    scan_schedule: state ? (state.scan_schedule || {}) : {},
     dispatch_history_entries: Object.keys(dispatchHistory).length,
   };
 }

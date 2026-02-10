@@ -781,7 +781,7 @@ function renderOrchestratorPanel() {
   var labelEl = document.getElementById('orchestrator-status-label');
   var histEl = document.getElementById('orchestrator-history-container');
   if (!orchestratorStatus) {
-    el.innerHTML = '<div class="empty-state">Orchestrator data unavailable. Ensure orchestrator_state.json exists in the repo.</div>';
+    el.innerHTML = '<div class="empty-state">Orchestrator rate-limit and dispatch history require the telemetry server. Issue counts and objectives are shown below.</div>';
     if (histEl) histEl.innerHTML = '';
     return;
   }
