@@ -5,9 +5,7 @@ on:
     branches: [main]
     paths:
       - 'telemetry/templates/dashboard.html'
-      - 'telemetry/static/shared.js'
       - 'telemetry/static/shared.css'
-      - 'telemetry/static/api.js'
 
 jobs:
   sync:
@@ -24,13 +22,11 @@ jobs:
             sed -i 's|/static/api.js|static/api.js|g' docs/index.html
           fi
 
-      - name: Sync static assets
+      - name: Sync CSS only
         run: |
-          for f in shared.js shared.css api.js; do
-            if [ -f "telemetry/static/$f" ]; then
-              cp "telemetry/static/$f" "docs/static/$f"
-            fi
-          done
+          if [ -f telemetry/static/shared.css ]; then
+            cp telemetry/static/shared.css docs/static/shared.css
+          fi
 
       - name: Check for changes
         id: changes

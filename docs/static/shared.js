@@ -533,7 +533,7 @@ function _renderDrawerBase(issue) {
   if (issue.description) html += _drawerField('Description', escapeHtml(issue.description));
   if (issue.resolution) html += _drawerField('Resolution', escapeHtml(issue.resolution));
   if (issue.cwe_family && issue.cwe_family !== 'other') {
-    var cweLink = 'https://cwe.mitre.org/data/definitions/' + encodeURIComponent(issue.cwe_family) + '.html';
+    var cweLink = 'https://cwe.mitre.org/cgi-bin/jumpmenu.cgi?id=' + encodeURIComponent(issue.cwe_family);
     html += _drawerField('CWE Reference', '<a href="' + cweLink + '" target="_blank">View ' + escapeHtml(issue.cwe_family) + ' on MITRE</a>');
   }
   html += '</div>';

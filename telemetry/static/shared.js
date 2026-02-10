@@ -580,7 +580,7 @@ function _renderDrawerBase(issue) {
   html += '<div class="drawer-section-title">Details</div>';
   html += _drawerField('Rule', issue.rule_id || '-');
   html += _drawerField('Severity', '<span class="badge ' + badgeClass(issue.severity_tier) + '">' + escapeHtml(issue.severity_tier || '-') + '</span>');
-  html += _drawerField('Status', '<span class="badge ' + badgeClass(issue.status) + '">' + escapeHtml(issue.status) + '</span>');
+  html += _drawerField('Status', '<span id="drawer-status-badge" class="badge ' + badgeClass(issue.status) + '">' + escapeHtml(issue.status) + '</span>');
   html += _drawerField('Category', escapeHtml(issue.cwe_family || '-'));
   var fileVal = '<span style="font-family:monospace;font-size:11px">' + escapeHtml(issue.file || '-') + '</span>';
   if (issue.source_url) {
@@ -592,7 +592,7 @@ function _renderDrawerBase(issue) {
   if (issue.description) html += _drawerField('Description', escapeHtml(issue.description));
   if (issue.resolution) html += _drawerField('Resolution', escapeHtml(issue.resolution));
   if (issue.cwe_family && issue.cwe_family !== 'other') {
-    var cweLink = 'https://cwe.mitre.org/data/definitions/' + encodeURIComponent(issue.cwe_family) + '.html';
+    var cweLink = 'https://cwe.mitre.org/cgi-bin/jumpmenu.cgi?id=' + encodeURIComponent(issue.cwe_family);
     html += _drawerField('CWE Reference', '<a href="' + cweLink + '" target="_blank">View ' + escapeHtml(issue.cwe_family) + ' on MITRE</a>');
   }
   html += '</div>';
@@ -696,7 +696,7 @@ async function _drawerSetStatus(fingerprint, newStatus) {
     var data = await res.json();
     if (data.success) {
       if (_drawerIssue) _drawerIssue.status = newStatus;
-      var statusEl = document.querySelector('.drawer-body .badge');
+      var statusEl = document.getElementById('drawer-status-badge');
       if (statusEl) {
         statusEl.className = 'badge ' + badgeClass(newStatus);
         statusEl.textContent = newStatus;
