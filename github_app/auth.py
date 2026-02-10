@@ -15,6 +15,7 @@ expire (with a 60-second safety margin).
 from __future__ import annotations
 
 import ipaddress
+import re
 import socket
 import time
 import threading
@@ -29,6 +30,10 @@ JWT_EXPIRY_SECONDS = 600
 GITHUB_API_BASE = "https://api.github.com"
 
 ALLOWED_HOSTS = {"api.github.com"}
+
+_INSTALLATION_TOKEN_URL_RE = re.compile(
+    r"\Ahttps://api\.github\.com/app/installations/[1-9][0-9]*/access_tokens\Z"
+)
 
 _PRIVATE_NETWORKS = [
     ipaddress.ip_network("127.0.0.0/8"),
@@ -97,7 +102,12 @@ class GitHubAppAuth:
                     return token
 
         token_jwt = self.generate_jwt()
-        url = f"{GITHUB_API_BASE}/app/installations/{safe_id}/access_tokens"
+        sanitized_id = str(int(safe_id))
+        url = GITHUB_API_BASE + "/app/installations/" + sanitized_id + "/access_tokens"
+        if not _INSTALLATION_TOKEN_URL_RE.match(url):
+            raise ValueError(
+                f"Constructed URL does not match expected GitHub API pattern: {url!r}"
+            )
         _validate_url(url)
         resp = requests.post(
             url,
