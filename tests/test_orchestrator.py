@@ -37,6 +37,14 @@ from scripts.orchestrator import (
     cmd_cycle,
     SEVERITY_WEIGHTS,
     SCHEDULE_INTERVALS,
+    AGENT_TRIAGE_OUTPUT_SCHEMA,
+    build_agent_triage_input,
+    parse_agent_decisions,
+    merge_agent_scores,
+    build_effectiveness_report,
+    save_agent_triage_results,
+    load_agent_triage_results,
+    cmd_agent_triage,
 )
 from scripts.fix_learning import FixLearning
 import database as database_mod
@@ -1187,3 +1195,234 @@ class TestCmdCycle:
         assert result == 0
         output = json.loads(capsys.readouterr().out)
         assert output["repo_filter"] == "https://github.com/owner/repo"
+
+
+class TestAgentTriageOutputSchema:
+    def test_schema_has_required_fields(self):
+        assert "properties" in AGENT_TRIAGE_OUTPUT_SCHEMA
+        assert "decisions" in AGENT_TRIAGE_OUTPUT_SCHEMA["properties"]
+        assert "status" in AGENT_TRIAGE_OUTPUT_SCHEMA["properties"]
+        assert AGENT_TRIAGE_OUTPUT_SCHEMA["required"] == ["status", "decisions"]
+
+    def test_decision_item_schema(self):
+        items = AGENT_TRIAGE_OUTPUT_SCHEMA["properties"]["decisions"]["items"]
+        assert "fingerprint" in items["properties"]
+        assert "priority_score" in items["properties"]
+        assert "dispatch" in items["properties"]
+        assert "reasoning" in items["properties"]
+
+
+class TestBuildAgentTriageInput:
+    def test_builds_input_with_issues(self):
+        issues = [
+            {
+                "fingerprint": "fp-1",
+                "rule_id": "js/sql-injection",
+                "severity_tier": "high",
+                "cwe_family": "injection",
+                "target_repo": "https://github.com/owner/repo",
+                "file": "src/db.js",
+                "start_line": 42,
+                "message": "SQL injection",
+                "appearances": 2,
+                "status": "new",
+                "sla_status": "on_track",
+                "priority_score": 0.7,
+            }
+        ]
+        fl = FixLearning(runs=[])
+        orch_config = {"objectives": []}
+        rate_limiter_info = {"remaining": 5, "max": 10, "period_hours": 24}
+
+        result = build_agent_triage_input(issues, fl, orch_config, rate_limiter_info)
+
+        assert result["total_issues"] == 1
+        assert len(result["issue_inventory"]) == 1
+        assert result["issue_inventory"][0]["fingerprint"] == "fp-1"
+        assert result["issue_inventory"][0]["deterministic_score"] == 0.7
+        assert result["sla_deadlines"]["critical_hours"] == 24
+        assert result["acu_budget"]["remaining_sessions"] == 5
+        assert result["acu_budget"]["max_sessions"] == 10
+        assert "timestamp" in result
+
+    def test_builds_input_empty_issues(self):
+        fl = FixLearning(runs=[])
+        result = build_agent_triage_input([], fl, {}, {"remaining": 0, "max": 0})
+        assert result["total_issues"] == 0
+        assert result["issue_inventory"] == []
+
+
+class TestParseAgentDecisions:
+    def test_parses_valid_output(self):
+        structured_output = {
+            "status": "done",
+            "decisions": [
+                {
+                    "fingerprint": "fp-1",
+                    "priority_score": 85,
+                    "reasoning": "Critical SQL injection",
+                    "dispatch": True,
+                },
+                {
+                    "fingerprint": "fp-2",
+                    "priority_score": 30,
+                    "reasoning": "Low impact",
+                    "dispatch": False,
+                },
+            ],
+        }
+        decisions = parse_agent_decisions(structured_output)
+        assert len(decisions) == 2
+        assert decisions[0]["fingerprint"] == "fp-1"
+        assert decisions[0]["agent_priority_score"] == 85.0
+        assert decisions[0]["dispatch"] is True
+        assert decisions[1]["fingerprint"] == "fp-2"
+        assert decisions[1]["agent_priority_score"] == 30.0
+        assert decisions[1]["dispatch"] is False
+
+    def test_parses_none_output(self):
+        assert parse_agent_decisions(None) == []
+
+    def test_parses_empty_decisions(self):
+        assert parse_agent_decisions({"status": "done", "decisions": []}) == []
+
+    def test_skips_entries_without_fingerprint(self):
+        structured_output = {
+            "status": "done",
+            "decisions": [
+                {"priority_score": 50, "dispatch": True},
+                {"fingerprint": "fp-1", "priority_score": 80, "dispatch": True},
+            ],
+        }
+        decisions = parse_agent_decisions(structured_output)
+        assert len(decisions) == 1
+        assert decisions[0]["fingerprint"] == "fp-1"
+
+
+class TestMergeAgentScores:
+    def test_merges_matching_fingerprints(self):
+        plan = [
+            {"fingerprint": "fp-1", "priority_score": 0.7},
+            {"fingerprint": "fp-2", "priority_score": 0.5},
+        ]
+        agent_decisions = [
+            {"fingerprint": "fp-1", "agent_priority_score": 85, "reasoning": "High impact", "dispatch": True},
+        ]
+        merged = merge_agent_scores(plan, agent_decisions)
+        assert len(merged) == 2
+        assert merged[0]["agent_priority_score"] == 85
+        assert merged[0]["agent_reasoning"] == "High impact"
+        assert merged[0]["agent_dispatch"] is True
+        assert merged[1]["agent_priority_score"] is None
+        assert merged[1]["agent_dispatch"] is None
+
+    def test_merges_empty_agent_decisions(self):
+        plan = [{"fingerprint": "fp-1", "priority_score": 0.7}]
+        merged = merge_agent_scores(plan, [])
+        assert len(merged) == 1
+        assert merged[0]["agent_priority_score"] is None
+
+    def test_preserves_original_fields(self):
+        plan = [{"fingerprint": "fp-1", "priority_score": 0.7, "rule_id": "js/xss"}]
+        agent_decisions = [{"fingerprint": "fp-1", "agent_priority_score": 90, "dispatch": True}]
+        merged = merge_agent_scores(plan, agent_decisions)
+        assert merged[0]["rule_id"] == "js/xss"
+        assert merged[0]["priority_score"] == 0.7
+
+
+class TestBuildEffectivenessReport:
+    def test_basic_report(self):
+        dispatch_history = {
+            "fp-1": {"dispatch_count": 1, "recommendation_source": "agent"},
+            "fp-2": {"dispatch_count": 1, "recommendation_source": "deterministic"},
+        }
+        agent_triage = {
+            "decisions": [
+                {"fingerprint": "fp-1", "dispatch": True},
+                {"fingerprint": "fp-3", "dispatch": False},
+            ],
+        }
+        fp_fix_map = {"fp-1": {"fixed_by_session": "s1"}}
+
+        report = build_effectiveness_report(dispatch_history, agent_triage, fp_fix_map)
+
+        assert report["agent"]["recommended"] == 1
+        assert report["agent"]["not_recommended"] == 1
+        assert report["agent"]["dispatched"] == 1
+        assert report["agent"]["fixed"] == 1
+        assert report["agent"]["fix_rate"] == 100.0
+        assert report["deterministic"]["dispatched"] == 1
+        assert report["deterministic"]["fixed"] == 0
+        assert report["deterministic"]["fix_rate"] == 0.0
+        assert "timestamp" in report
+
+    def test_empty_history(self):
+        report = build_effectiveness_report({}, {}, {})
+        assert report["agent"]["dispatched"] == 0
+        assert report["deterministic"]["dispatched"] == 0
+        assert report["agent"]["recommended"] == 0
+
+
+class TestSaveAndLoadAgentTriageResults:
+    def test_save_and_load(self, tmp_env):
+        decisions = [
+            {"fingerprint": "fp-1", "agent_priority_score": 80, "dispatch": True},
+        ]
+        save_agent_triage_results(decisions, "sess-agent-1", "Focus on injection")
+        loaded = load_agent_triage_results()
+        assert loaded["session_id"] == "sess-agent-1"
+        assert loaded["strategy_notes"] == "Focus on injection"
+        assert len(loaded["decisions"]) == 1
+        assert "timestamp" in loaded
+
+    def test_load_empty_returns_empty(self, tmp_env):
+        loaded = load_agent_triage_results()
+        assert loaded == {}
+
+
+class TestCmdAgentTriage:
+    def test_dry_run_empty_db(self, tmp_env, capsys):
+        class Args:
+            repo = ""
+            json = True
+            dry_run = True
+
+        result = cmd_agent_triage(Args())
+        assert result == 0
+        output = json.loads(capsys.readouterr().out)
+        assert output["status"] == "no_issues"
+
+    def test_dry_run_with_issues(self, tmp_env, capsys):
+        run = _sample_run(run_number=1, label="agent-r1")
+        run["sessions"] = []
+        conn = get_connection(tmp_env["db_path"])
+        init_db(conn)
+        insert_run(conn, run)
+        conn.commit()
+        conn.close()
+
+        class Args:
+            repo = ""
+            json = True
+            dry_run = True
+
+        result = cmd_agent_triage(Args())
+        assert result == 0
+        output = json.loads(capsys.readouterr().out)
+        assert output["status"] == "dry_run"
+        assert output["total_issues"] > 0
+        assert len(output["decisions"]) > 0
+        for d in output["decisions"]:
+            assert "fingerprint" in d
+            assert "agent_priority_score" in d
+
+    def test_requires_api_key_without_dry_run(self, tmp_env, monkeypatch):
+        monkeypatch.delenv("DEVIN_API_KEY", raising=False)
+
+        class Args:
+            repo = ""
+            json = False
+            dry_run = False
+
+        result = cmd_agent_triage(Args())
+        assert result == 1

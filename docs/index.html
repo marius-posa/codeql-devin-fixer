@@ -141,14 +141,30 @@
         Orchestrator
         <span id="orchestrator-status-label" class="panel-header-count"></span>
         <button class="btn btn-sm ml-auto" onclick="triggerOrchestratorCycleStatic()" id="btn-orch-cycle" title="Dispatches the orchestrator.yml workflow">Run Cycle</button>
+        <button class="btn btn-sm ml-4" onclick="triggerAgentTriage()" id="btn-orch-agent" style="background:#8957e5;border-color:#a371f7;color:#fff">Agent Triage</button>
       </div>
       <div class="panel-body" id="orchestrator-panel-container"><div class="skeleton skeleton-chart skeleton-chart-120"></div></div>
       <div class="panel-body" id="orchestrator-config-container"></div>
       <div class="panel-body table-scroll-wrapper" id="orchestrator-history-container"></div>
     </div>
     <div class="panel">
-      <div class="panel-header">Issue Prioritization<span id="priority-count" class="panel-header-count ml-8"></span></div>
+      <div class="panel-header">
+        Issue Prioritization<span id="priority-count" class="panel-header-count ml-8"></span>
+        <div class="ml-auto" style="display:flex;align-items:center;gap:8px">
+          <label style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:4px">
+            <span>Sort by:</span>
+            <select id="priority-sort-select" onchange="renderOrchestratorPriorityTable()" style="font-size:11px;padding:2px 6px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px">
+              <option value="deterministic">Deterministic</option>
+              <option value="agent">Agent (LLM)</option>
+            </select>
+          </label>
+        </div>
+      </div>
       <div class="panel-body table-scroll-wrapper" id="orchestrator-priority-container"><div class="skeleton skeleton-chart skeleton-chart-120"></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">Effectiveness Comparison<span id="effectiveness-label" style="color:var(--text-muted);font-weight:400;font-size:12px;margin-left:8px"></span></div>
+      <div class="panel-body" id="orchestrator-effectiveness-container"><div class="skeleton skeleton-chart" style="height:80px"></div></div>
     </div>
     <div class="panel">
       <div class="panel-header">Fix Rates</div>
@@ -465,6 +481,8 @@ let orchestratorHistory = null;
 let orchestratorPlan = null;
 let orchestratorConfig = null;
 let fixRatesData = null;
+let agentPlanData = null;
+let effectivenessData = null;
 let _orchestratorState = null;
 
 function switchTab(tabId) {
@@ -771,6 +789,7 @@ function renderAll() {
   renderOrchestratorConfigPanel();
   renderOrchestratorQuickView();
   renderOrchestratorPriorityTable();
+  renderEffectivenessPanel();
   renderFixRatesPanel();
   renderRegistryPanel();
   renderAuditLogPanel();
@@ -928,28 +947,104 @@ function renderOrchestratorPriorityTable() {
     return;
   }
   var items = orchestratorPlan.planned_dispatches;
-  if (countEl) countEl.textContent = items.length + ' issues';
+
+  var agentDecisions = (agentPlanData || {}).planned_dispatches || [];
+  var agentMap = {};
+  agentDecisions.forEach(function(d) {
+    if (d.fingerprint) agentMap[d.fingerprint] = d;
+  });
+  var hasAgentData = agentDecisions.length > 0;
+  var sortSelect = document.getElementById('priority-sort-select');
+  var sortBy = sortSelect ? sortSelect.value : 'deterministic';
+
+  if (countEl) countEl.textContent = items.length + ' issues' + (hasAgentData ? ' (agent data available)' : '');
+
+  var merged = items.map(function(d) {
+    var entry = Object.assign({}, d);
+    var agent = agentMap[d.fingerprint];
+    if (agent) {
+      entry.agent_priority_score = agent.agent_priority_score;
+      entry.agent_reasoning = agent.agent_reasoning || '';
+      entry.agent_dispatch = agent.agent_dispatch;
+    }
+    return entry;
+  });
+
+  if (sortBy === 'agent' && hasAgentData) {
+    merged.sort(function(a, b) { return (b.agent_priority_score || 0) - (a.agent_priority_score || 0); });
+  } else {
+    merged.sort(function(a, b) { return (b.priority_score || 0) - (a.priority_score || 0); });
+  }
+
   var rows = '';
-  items.slice(0, 100).forEach(function(item, idx) {
-    var sev = item.severity_tier || '';
-    var score = item.priority_score || 0;
-    var barW = Math.min(score / 30 * 100, 100);
-    var barColor = score >= 20 ? 'var(--accent-red)' : score >= 10 ? 'var(--accent-orange)' : 'var(--accent-green)';
-    var repo = (item.target_repo || '').replace('https://github.com/', '');
-    var rule = item.rule_id || '';
+  merged.slice(0, 100).forEach(function(d, idx) {
+    var sev = d.severity_tier || '';
+    var detScore = (d.priority_score || 0).toFixed ? (d.priority_score || 0).toFixed(1) : (d.priority_score || 0);
+    var agentScore = d.agent_priority_score != null ? d.agent_priority_score.toFixed(1) : '-';
+    var primaryScore = sortBy === 'agent' && d.agent_priority_score != null ? d.agent_priority_score : (d.priority_score || 0);
+    var barW = Math.min(Math.round(primaryScore / 30 * 100), 100);
+    var barColor = primaryScore >= 20 ? 'var(--accent-red)' : primaryScore >= 10 ? 'var(--accent-orange)' : 'var(--accent-green)';
+    var repo = (d.target_repo || '').replace('https://github.com/', '');
+    var rule = d.rule_id || '';
+    var reasoningTip = d.agent_reasoning ? ' title="' + escapeHtml(d.agent_reasoning) + '"' : '';
+    var agentDispatchIcon = '';
+    if (d.agent_dispatch === true) agentDispatchIcon = '<span style="color:var(--accent-green);font-size:10px" title="Agent recommends dispatch">&#9650;</span> ';
+    else if (d.agent_dispatch === false) agentDispatchIcon = '<span style="color:var(--accent-red);font-size:10px" title="Agent does not recommend dispatch">&#9660;</span> ';
     rows += '<tr>'
       + '<td>' + (idx + 1) + '</td>'
-      + '<td><span class="issue-id">' + escapeHtml((item.fingerprint || '').slice(0, 12)) + '</span></td>'
+      + '<td><span class="issue-id">' + escapeHtml((d.fingerprint || '').slice(0, 12)) + '</span></td>'
       + '<td>' + escapeHtml(repo) + '</td>'
       + '<td>' + escapeHtml(rule) + '</td>'
       + '<td><span class="badge ' + badgeClass(sev) + '">' + escapeHtml(sev) + '</span></td>'
       + '<td class="priority-bar-wrap"><div class="priority-bar-inner">'
       + '<div class="flex-1 progress-track progress-track-xs">'
       + '<div class="progress-fill" style="background:' + barColor + ';width:' + barW + '%"></div></div>'
-      + '<span class="priority-score">' + score + '</span></div></td>'
+      + '<span class="priority-score">' + detScore + '</span></div></td>'
+      + '<td style="min-width:80px"' + reasoningTip + '>' + agentDispatchIcon + '<span class="priority-score">' + agentScore + '</span></td>'
       + '</tr>';
   });
-  el.innerHTML = '<table><thead><tr><th>#</th><th>Fingerprint</th><th>Repo</th><th>Rule</th><th>Severity</th><th>Priority Score</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  el.innerHTML = '<table><thead><tr><th>#</th><th>Fingerprint</th><th>Repo</th><th>Rule</th><th>Severity</th><th>Det. Score</th><th>Agent Score</th></tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+function renderEffectivenessPanel() {
+  var el = document.getElementById('orchestrator-effectiveness-container');
+  var labelEl = document.getElementById('effectiveness-label');
+  if (!el) return;
+  if (!effectivenessData || !effectivenessData.has_agent_data) {
+    el.innerHTML = '<div class="empty-state"><span class="empty-state-icon">&#x2696;</span><div class="empty-state-text">No effectiveness data yet. Run Agent Triage via the Flask telemetry server to compare approaches.</div></div>';
+    if (labelEl) labelEl.textContent = '';
+    return;
+  }
+  if (labelEl) labelEl.textContent = effectivenessData.timestamp ? 'as of ' + formatDate(effectivenessData.timestamp) : '';
+  var agent = effectivenessData.agent || {};
+  var det = effectivenessData.deterministic || {};
+  var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">';
+  html += '<div style="background:var(--bg-tertiary);border-radius:8px;padding:16px">';
+  html += '<div style="font-size:13px;font-weight:600;color:#a371f7;margin-bottom:8px">Agent (LLM)</div>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">';
+  html += '<div><span style="color:var(--text-muted)">Recommended:</span> ' + (agent.recommended || 0) + '</div>';
+  html += '<div><span style="color:var(--text-muted)">Dispatched:</span> ' + (agent.dispatched || 0) + '</div>';
+  html += '<div><span style="color:var(--text-muted)">Fixed:</span> ' + (agent.fixed || 0) + '</div>';
+  html += '<div><span style="color:var(--text-muted)">Fix Rate:</span> <strong>' + (agent.fix_rate || 0) + '%</strong></div>';
+  html += '</div></div>';
+  html += '<div style="background:var(--bg-tertiary);border-radius:8px;padding:16px">';
+  html += '<div style="font-size:13px;font-weight:600;color:#388bfd;margin-bottom:8px">Deterministic</div>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">';
+  html += '<div><span style="color:var(--text-muted)">Dispatched:</span> ' + (det.dispatched || 0) + '</div>';
+  html += '<div><span style="color:var(--text-muted)">Fixed:</span> ' + (det.fixed || 0) + '</div>';
+  html += '<div><span style="color:var(--text-muted)">Fix Rate:</span> <strong>' + (det.fix_rate || 0) + '%</strong></div>';
+  html += '</div></div>';
+  html += '</div>';
+  if (agentPlanData && agentPlanData.strategy_notes) {
+    html += '<div style="margin-top:12px;padding:10px;background:var(--bg-tertiary);border-radius:6px;font-size:12px;color:var(--text-secondary)">';
+    html += '<strong style="color:#a371f7">Agent Strategy:</strong> ' + escapeHtml(agentPlanData.strategy_notes);
+    html += '</div>';
+  }
+  el.innerHTML = html;
+}
+
+function triggerAgentTriage() {
+  setStatus('Agent Triage requires the Flask telemetry server. Run the server locally to use this feature.');
 }
 
 function renderFixRatesPanel() {

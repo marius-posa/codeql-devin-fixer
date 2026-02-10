@@ -1488,6 +1488,11 @@ def load_orchestrator_state(conn: sqlite3.Connection) -> dict:
                 state["objective_progress"] = json.loads(v) if v else []
             except (json.JSONDecodeError, ValueError):
                 state["objective_progress"] = []
+        elif k == "agent_triage":
+            try:
+                state["agent_triage"] = json.loads(v) if v else {}
+            except (json.JSONDecodeError, ValueError):
+                state["agent_triage"] = {}
 
     ts_rows = conn.execute(
         "SELECT timestamp FROM rate_limiter_timestamps ORDER BY timestamp"
@@ -1537,6 +1542,11 @@ def save_orchestrator_state(conn: sqlite3.Connection, state: dict) -> None:
         "INSERT OR REPLACE INTO orchestrator_kv (key, value) VALUES (?, ?)",
         ("objective_progress", json.dumps(obj_progress)),
     )
+    if "agent_triage" in state:
+        conn.execute(
+            "INSERT OR REPLACE INTO orchestrator_kv (key, value) VALUES (?, ?)",
+            ("agent_triage", json.dumps(state["agent_triage"])),
+        )
 
     conn.execute("DELETE FROM rate_limiter_timestamps")
     rl = state.get("rate_limiter", {})

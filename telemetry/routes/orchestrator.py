@@ -1,4 +1,4 @@
-"""Orchestrator blueprint -- plan, dispatch, scan, cycle, config, and fix-rates."""
+"""Orchestrator blueprint -- plan, dispatch, scan, cycle, config, agent-triage, and fix-rates."""
 
 import json
 import os
@@ -12,7 +12,7 @@ from database import db_connection, get_connection, init_db, query_issues, load_
 from verification import load_verification_records, build_fingerprint_fix_map
 from helpers import require_api_key, _audit, _paginate, _get_pagination
 from extensions import limiter
-from routes.registry import _load_registry as _load_orchestrator_registry, _save_registry as _save_orchestrator_registry, REGISTRY_PATH as _ORCHESTRATOR_REGISTRY_PATH
+from routes.registry import _load_registry as _load_orchestrator_registry, _save_registry as _save_orchestrator_registry, REGISTRY_PATH as _ORCHESTRATOR_REGISTRY_PATH  # noqa: F401
 
 orchestrator_bp = Blueprint("orchestrator", __name__)
 
@@ -311,6 +311,139 @@ def api_orchestrator_config_update():
 
     _audit("update_orchestrator_config", details=json.dumps({k: body[k] for k in allowed_keys if k in body}))
     return jsonify(_serialize_orch_config(orch_config))
+
+
+@orchestrator_bp.route("/api/orchestrator/agent-triage", methods=["POST"])
+@limiter.limit("5/minute")
+@require_api_key
+def api_orchestrator_agent_triage():
+    body = flask_request.get_json(silent=True) or {}
+    repo_filter = body.get("repo", "")
+    dry_run = body.get("dry_run", False)
+
+    if not dry_run and not os.environ.get("DEVIN_API_KEY"):
+        return jsonify({"error": "DEVIN_API_KEY not configured on server"}), 400
+
+    cmd = ["python3", "-m", "scripts.orchestrator", "agent-triage", "--json"]
+    if repo_filter:
+        cmd.extend(["--repo", repo_filter])
+    if dry_run:
+        cmd.append("--dry-run")
+
+    result = subprocess.run(
+        cmd, capture_output=True, text=True, timeout=360,
+        cwd=str(_ORCHESTRATOR_DIR.parent),
+        env={**os.environ},
+    )
+    _audit("orchestrator_agent_triage", resource=repo_filter, details=json.dumps({"dry_run": dry_run}))
+    try:
+        return jsonify(json.loads(result.stdout))
+    except (json.JSONDecodeError, ValueError):
+        if result.returncode != 0:
+            return jsonify({"error": "Agent triage failed", "stderr": result.stderr[:500]}), 500
+        return jsonify({"error": "Invalid agent triage output", "raw": result.stdout[:500]}), 500
+
+
+@orchestrator_bp.route("/api/orchestrator/agent-plan")
+def api_orchestrator_agent_plan():
+    state = _load_orchestrator_state()
+    agent_triage = state.get("agent_triage", {})
+    if not agent_triage:
+        return jsonify({"status": "no_results", "decisions": [], "message": "No agent triage results available. Run agent triage first."})
+
+    result = subprocess.run(
+        ["python3", "-m", "scripts.orchestrator", "plan", "--json"],
+        capture_output=True, text=True, timeout=60,
+        cwd=str(_ORCHESTRATOR_DIR.parent),
+    )
+    det_plan = {}
+    try:
+        det_plan = json.loads(result.stdout)
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    det_dispatches = det_plan.get("planned_dispatches", [])
+    agent_decisions = agent_triage.get("decisions", [])
+    agent_map = {d["fingerprint"]: d for d in agent_decisions if d.get("fingerprint")}
+
+    merged = []
+    for dispatch in det_dispatches:
+        entry = dict(dispatch)
+        fp = entry.get("fingerprint", "")
+        agent = agent_map.get(fp)
+        if agent:
+            entry["agent_priority_score"] = agent.get("agent_priority_score", None)
+            entry["agent_reasoning"] = agent.get("reasoning", "")
+            entry["agent_dispatch"] = agent.get("dispatch", True)
+        else:
+            entry["agent_priority_score"] = None
+            entry["agent_reasoning"] = ""
+            entry["agent_dispatch"] = None
+        merged.append(entry)
+
+    return jsonify({
+        "timestamp": agent_triage.get("timestamp", ""),
+        "session_id": agent_triage.get("session_id", ""),
+        "strategy_notes": agent_triage.get("strategy_notes", ""),
+        "planned_dispatches": merged,
+        "total_issues": det_plan.get("total_issues", 0),
+        "eligible_issues": det_plan.get("eligible_issues", 0),
+    })
+
+
+@orchestrator_bp.route("/api/orchestrator/effectiveness")
+def api_orchestrator_effectiveness():
+    state = _load_orchestrator_state()
+    dispatch_history = state.get("dispatch_history", {})
+    agent_triage = state.get("agent_triage", {})
+
+    verification_records = load_verification_records(RUNS_DIR)
+    fp_fix_map = build_fingerprint_fix_map(verification_records)
+
+    agent_decisions = agent_triage.get("decisions", [])
+    agent_fps = {d["fingerprint"] for d in agent_decisions if d.get("dispatch")}
+    all_agent_fps = {d["fingerprint"] for d in agent_decisions}
+
+    agent_dispatched = 0
+    agent_fixed = 0
+    det_dispatched = 0
+    det_fixed = 0
+
+    for fp, history in dispatch_history.items():
+        source = "deterministic"
+        if isinstance(history, dict):
+            source = history.get("recommendation_source", "deterministic")
+        elif isinstance(history, list) and history:
+            last = history[-1] if history else {}
+            source = last.get("recommendation_source", "deterministic")
+
+        is_fixed = fp in fp_fix_map
+
+        if source == "agent":
+            agent_dispatched += 1
+            if is_fixed:
+                agent_fixed += 1
+        else:
+            det_dispatched += 1
+            if is_fixed:
+                det_fixed += 1
+
+    return jsonify({
+        "agent": {
+            "recommended": len(agent_fps),
+            "not_recommended": len(all_agent_fps) - len(agent_fps),
+            "dispatched": agent_dispatched,
+            "fixed": agent_fixed,
+            "fix_rate": round(agent_fixed / max(agent_dispatched, 1) * 100, 1),
+        },
+        "deterministic": {
+            "dispatched": det_dispatched,
+            "fixed": det_fixed,
+            "fix_rate": round(det_fixed / max(det_dispatched, 1) * 100, 1),
+        },
+        "has_agent_data": bool(agent_decisions),
+        "timestamp": agent_triage.get("timestamp", ""),
+    })
 
 
 @orchestrator_bp.route("/api/orchestrator/fix-rates")
