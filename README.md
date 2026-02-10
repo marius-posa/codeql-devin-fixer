@@ -1,18 +1,29 @@
 # CodeQL Devin Fixer
 
-A GitHub Action and platform that runs [CodeQL](https://codeql.github.com/) security analysis on any repository, prioritizes vulnerabilities by severity, groups them into batches, and creates [Devin](https://devin.ai) AI agent sessions to automatically fix each batch with a pull request.
+Automated security vulnerability remediation powered by [Devin](https://devin.ai) AI agents. Point it at any repository, and the platform scans with [CodeQL](https://codeql.github.com/), prioritizes findings by CVSS severity, batches them by CWE family, and dispatches Devin sessions that create verified fix PRs -- end to end, with no human in the loop.
 
-**[Live Dashboard (GitHub Pages)](https://marius-posa.github.io/codeql-devin-fixer/)** | **[Architecture](docs/architecture.md)** | **[Contributing](CONTRIBUTING.md)** | **[Changelog](CHANGELOG.md)**
+**[Live Dashboard](https://marius-posa.github.io/codeql-devin-fixer/)** | **[Architecture](docs/architecture.md)** | **[Configuration Reference](docs/CONFIG_REFERENCE.md)** | **[Contributing](CONTRIBUTING.md)** | **[Changelog](CHANGELOG.md)**
+
+### Highlights
+
+- **End-to-end automation** -- from CodeQL scan to merged fix PR, including verification that the vulnerability is actually gone
+- **Deep Devin integration** -- 8 API endpoints: session dispatch with structured output, Knowledge API for organizational memory, Send Message API for retry-with-feedback, and Playbooks API for CWE-specific fix instructions
+- **Closed-loop verification** -- re-runs CodeQL on fix PRs and compares stable fingerprints to objectively confirm each issue is resolved
+- **Multi-repo orchestration** -- schedules scans across a fleet of repositories with CVSS-weighted priority scoring, SLA tracking, and wave-based dispatch with fix-rate gating
+- **Rich telemetry dashboard** -- Flask + SQLite web UI with 6 tabs, dark/light theme, Chart.js trend charts, issue lifecycle tracking, PDF compliance reports, and GitHub OAuth
+- **Highly configurable** -- five configuration surfaces (action inputs, per-repo YAML, orchestrator registry, dashboard env, GitHub App env) with clear precedence rules
+- **Production-ready** -- rate limiting, audit logging, server-side sessions, CORS restriction, prompt-injection defense, Docker and Helm deployment
+
+Supports any language CodeQL can analyze: JavaScript/TypeScript, Python, Java, Go, Ruby, C#, C/C++, and Swift.
 
 ---
 
 ## Table of Contents
 
-- [Scope](#scope)
 - [Architecture](#architecture)
 - [How It Works](#how-it-works)
 - [Installation and Quick Start](#installation-and-quick-start)
-- [GitHub App Installation](#github-app)
+- [GitHub App](#github-app)
 - [Telemetry Dashboard](#telemetry-dashboard)
 - [Orchestrator](#orchestrator)
 - [Creative Use of Devin](#creative-use-of-devin)
@@ -24,25 +35,6 @@ A GitHub Action and platform that runs [CodeQL](https://codeql.github.com/) secu
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 - [Solution Reviews](#solution-reviews)
-
----
-
-## Scope
-
-CodeQL Devin Fixer is a **full-stack security remediation platform** that automates the entire lifecycle of finding and fixing security vulnerabilities using AI. It is designed for security engineers, DevOps teams, and development teams who want to continuously improve the security posture of their repositories.
-
-| Layer | Component | Purpose |
-|-------|-----------|---------|
-| **Scanning** | GitHub Action (`action.yml`) | Runs CodeQL analysis, parses SARIF results, dispatches Devin sessions |
-| **Fixing** | Devin API integration (8 endpoints) | AI agent sessions that read code, understand vulnerabilities, and create fix PRs |
-| **Orchestration** | Multi-repo orchestrator (`scripts/orchestrator/`) | Schedules scans across a fleet of repositories with priority-based dispatch |
-| **Verification** | Verification loop (`scripts/verify_results.py`) | Re-runs CodeQL on fix PRs to confirm vulnerabilities are resolved |
-| **Telemetry** | Flask dashboard (`telemetry/`) | Centralized web UI with 6 tabs aggregating metrics across all repos, runs, sessions, and PRs |
-| **Automation** | GitHub App (`github_app/`) | Webhook-driven automation for scan-on-push and event-based triggers |
-| **Knowledge** | Knowledge API + Fix Learning | Stores successful fix patterns and learns from historical outcomes |
-| **Deployment** | Docker + Helm (`telemetry/Dockerfile`, `charts/`) | Container and Kubernetes deployment for the telemetry dashboard |
-
-The platform supports **any repository** that CodeQL can analyze: JavaScript/TypeScript, Python, Java, Go, Ruby, C#, C/C++, and Swift.
 
 ---
 
@@ -83,9 +75,11 @@ codeql-devin-fixer/
 +-- action.yml                    # Composite GitHub Action definition
 +-- .github/workflows/
 |   +-- codeql-fixer.yml          # Main action workflow
-|   +-- orchestrator.yml          # Scheduled multi-repo orchestration (every 6h)
+|   +-- orchestrator.yml          # Scheduled multi-repo orchestration
 |   +-- poll-sessions.yml         # Devin session status polling
+|   +-- scheduled-scan.yml        # Scheduled security scanning
 |   +-- verify-fix.yml            # PR fix verification workflow
+|   +-- deploy-pages.yml          # GitHub Pages deployment
 +-- scripts/                      # Pipeline scripts
 |   +-- parse_sarif.py            # SARIF parsing, severity scoring, fingerprinting, batching
 |   +-- dispatch_devin.py         # Devin session creation with wave dispatch
@@ -100,6 +94,9 @@ codeql-devin-fixer/
 |   +-- playbook_manager.py       # CWE-specific playbooks + Devin Playbooks API sync
 |   +-- fix_learning.py           # Historical fix rate analysis
 |   +-- repo_context.py           # Repository context enrichment (deps, tests, style)
+|   +-- load_repo_config.py       # Per-repo .codeql-fixer.yml loader
+|   +-- machine_config.py         # Machine-level configuration
+|   +-- webhook.py                # Webhook delivery for pipeline events
 |   +-- logging_config.py         # Structured JSON logging
 |   +-- retry_utils.py            # Exponential backoff utilities
 |   +-- github_utils.py           # GitHub API helpers
@@ -109,6 +106,7 @@ codeql-devin-fixer/
 |       +-- scanner.py            # Scan triggering and SARIF retrieval
 |       +-- state.py              # State persistence, cooldown, dispatch history
 |       +-- alerts.py             # Alert processing and delivery
+|       +-- agent.py              # Orchestrator agent mode
 +-- telemetry/                    # Flask dashboard backend
 |   +-- app.py                    # Flask entry point (Blueprint registration, sessions, CORS)
 |   +-- routes/                   # Modular route Blueprints
@@ -116,7 +114,6 @@ codeql-devin-fixer/
 |   |   +-- orchestrator.py       # Orchestrator controls (plan, scan, dispatch, cycle)
 |   |   +-- registry.py           # Repo registry CRUD
 |   |   +-- demo.py               # Demo data management
-|   |   +-- oauth.py              # GitHub OAuth flow
 |   +-- helpers.py                # Shared auth, pagination, audit utilities
 |   +-- extensions.py             # Rate limiter configuration
 |   +-- database.py               # SQLite schema, queries, migrations, audit logging
@@ -151,8 +148,9 @@ codeql-devin-fixer/
 +-- docs/                         # GitHub Pages static site + solution reviews
 |   +-- index.html                # Static dashboard (mirrors telemetry UI)
 |   +-- architecture.md           # Architecture diagrams and data flow
+|   +-- CONFIG_REFERENCE.md       # Complete configuration reference
 |   +-- SOLUTION_REVIEW_V*.md     # Solution reviews V1-V5
-+-- tests/                        # Test suite (31 files, ~9,800 lines)
++-- tests/                        # Test suite (33 files, ~11,500 lines)
 +-- repo_registry.json            # Multi-repo scan configuration
 +-- CONTRIBUTING.md               # Contribution guide
 +-- CHANGELOG.md                  # Version history
