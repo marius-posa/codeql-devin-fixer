@@ -1003,6 +1003,88 @@ class TestServerSideSessions:
             assert "gh_token" not in sess
 
 
+class TestIssueDetailEndpoint:
+    def test_issue_detail_returns_404_for_unknown(self, client):
+        resp = client.get("/api/issues/nonexistent/detail")
+        assert resp.status_code == 404
+        data = resp.get_json()
+        assert "error" in data
+
+    def test_issue_detail_returns_data(self, client, sample_run):
+        run = {**sample_run, "issue_fingerprints": [
+            {"fingerprint": "fp-test-1", "id": "CQLF-R1-0001",
+             "rule_id": "js/sql-injection", "severity_tier": "high",
+             "cwe_family": "injection", "file": "src/db.js",
+             "start_line": 42, "description": "SQL injection",
+             "resolution": "Use params", "code_churn": 5},
+        ]}
+        _seed_db(runs=[run])
+        from database import refresh_fingerprint_issues
+        conn = get_connection(pathlib.Path(_test_db_path))
+        init_db(conn)
+        refresh_fingerprint_issues(conn)
+        conn.commit()
+        conn.close()
+        resp = client.get("/api/issues/fp-test-1/detail")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["fingerprint"] == "fp-test-1"
+        assert data["rule_id"] == "js/sql-injection"
+        assert "sla_status" in data
+        assert "source_url" in data
+
+
+class TestIssueStatusEndpoint:
+    def test_status_update_requires_auth(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        resp = client.patch("/api/issues/fp-1/status", json={"status": "false_positive"})
+        assert resp.status_code == 401
+
+    def test_status_update_requires_body(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        resp = client.patch(
+            "/api/issues/fp-1/status",
+            headers={"X-API-Key": "test-key"},
+            json={},
+        )
+        assert resp.status_code == 400
+
+    def test_status_update_rejects_unknown(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        resp = client.patch(
+            "/api/issues/nonexistent/status",
+            headers={"X-API-Key": "test-key"},
+            json={"status": "false_positive"},
+        )
+        assert resp.status_code == 400
+
+
+class TestDispatchImpactEndpoint:
+    def test_impact_requires_target_repo(self, client):
+        resp = client.get("/api/dispatch/impact")
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert "error" in data
+
+    def test_impact_returns_data(self, client, sample_run):
+        _seed_db(runs=[sample_run])
+        resp = client.get("/api/dispatch/impact?target_repo=https://github.com/owner/repo")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["target_repo"] == "https://github.com/owner/repo"
+        assert "last_scan_issues" in data
+        assert "last_scan_batches" in data
+        assert "avg_issues_per_run" in data
+        assert "recent_runs" in data
+
+    def test_impact_empty_repo(self, client):
+        resp = client.get("/api/dispatch/impact?target_repo=https://github.com/unknown/repo")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["last_scan_issues"] == 0
+        assert data["recent_runs"] == []
+
+
 class TestCorsConfiguration:
     def test_cors_default_restricts_origins(self):
         from app import _cors_origins
