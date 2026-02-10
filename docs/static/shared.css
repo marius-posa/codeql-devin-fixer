@@ -761,6 +761,33 @@ tr.sla-breached:hover { background: rgba(248, 81, 73, 0.15); }
 .mb-2 { margin-bottom: 2px; }
 .breached-cell { color: var(--accent-red); font-weight: 600; }
 
+.btn-orch-action {
+  padding: 12px 28px; font-size: 15px; font-weight: 600;
+  border-radius: 8px; min-width: 180px; justify-content: center;
+}
+.btn-orch-agent {
+  background: linear-gradient(135deg, #238636, #2ea043);
+  border-color: #2ea043; color: #fff;
+}
+.btn-orch-agent:hover { background: linear-gradient(135deg, #2ea043, #3fb950); }
+.orch-actions-row {
+  display: flex; gap: 16px; justify-content: center;
+  padding: 16px 0; flex-wrap: wrap;
+}
+
+.badge-open { background: rgba(56,139,253,0.15); color: #58a6ff; }
+.badge-merged { background: rgba(163,113,247,0.15); color: #a371f7; }
+.badge-closed { background: rgba(248,81,73,0.15); color: #f85149; }
+.badge-verified { background: rgba(63,185,80,0.15); color: #3fb950; }
+.badge-partial { background: rgba(210,153,34,0.15); color: #d29922; }
+.badge-needs-work { background: rgba(248,81,73,0.15); color: #f85149; }
+.badge-on-track { background: rgba(63,185,80,0.15); color: #3fb950; }
+.badge-at-risk { background: rgba(210,153,34,0.15); color: #d29922; }
+.badge-breached { background: rgba(248,81,73,0.15); color: #f85149; }
+.badge-met { background: rgba(56,139,253,0.15); color: #58a6ff; }
+
+.skeleton-chart-100 { height: 100px; }
+
 @media(max-width: 600px) {
   .container { padding: 12px; }
   header { padding: 12px 0; }

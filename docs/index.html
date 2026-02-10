@@ -38,6 +38,9 @@
     <button class="tab-btn" data-tab="issues" onclick="switchTab('issues')">
       <span class="tab-icon">&#x1F50D;</span>Issues
     </button>
+    <button class="tab-btn" data-tab="prs" onclick="switchTab('prs')">
+      <span class="tab-icon">&#x1F4CB;</span>PRs
+    </button>
     <button class="tab-btn" data-tab="activity" onclick="switchTab('activity')">
       <span class="tab-icon">&#x1F680;</span>Activity
     </button>
@@ -100,6 +103,24 @@
       </div>
       <div class="panel-body panel-body-scroll" id="issues-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
     </div>
+  </div>
+
+  <div class="tab-content" id="tab-prs">
+    <div class="panel">
+      <div class="panel-header">PRs Pending Merge<span id="prs-pending-count" class="panel-header-count"></span></div>
+      <div class="panel-body panel-body-scroll" id="prs-pending-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">PR Stats by Repository</div>
+      <div class="panel-body" id="prs-repo-stats-container"><div class="skeleton skeleton-chart skeleton-chart-100"></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        All Pull Requests
+        <span id="prs-all-count" class="panel-header-count"></span>
+      </div>
+      <div class="panel-body panel-body-scroll" id="prs-all-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
+    </div>
     <div class="panel">
       <div class="panel-header">
         Fix Verification
@@ -113,7 +134,7 @@
   <div class="tab-content" id="tab-activity">
     <div class="panel">
       <div class="panel-header">
-        Run History
+        Workflow Runs
         <span id="runs-count" class="panel-header-count"></span>
       </div>
       <div class="panel-body panel-body-scroll" id="runs-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
@@ -125,14 +146,6 @@
       </div>
       <div class="panel-body panel-body-scroll" id="sessions-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
     </div>
-    <div class="panel">
-      <div class="panel-header">
-        Pull Requests
-        <span id="prs-count" class="panel-header-count"></span>
-      </div>
-      <div class="panel-body panel-body-scroll" id="prs-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
-    </div>
-
   </div>
 
   <div class="tab-content" id="tab-orchestrator">
@@ -140,8 +153,12 @@
       <div class="panel-header">
         Orchestrator
         <span id="orchestrator-status-label" class="panel-header-count"></span>
-        <button class="btn btn-sm ml-auto" onclick="triggerOrchestratorCycleStatic()" id="btn-orch-cycle" title="Dispatches the orchestrator.yml workflow">Run Cycle</button>
-        <button class="btn btn-sm ml-4" onclick="triggerAgentTriage()" id="btn-orch-agent" style="background:#8957e5;border-color:#a371f7;color:#fff">Agent Triage</button>
+      </div>
+      <div class="panel-body" id="orchestrator-actions-container">
+        <div class="orch-actions-row">
+          <button class="btn btn-orch-action" onclick="triggerOrchestratorCycleStatic()" id="btn-orch-cycle" title="Dispatches the orchestrator.yml workflow">&#x1F504; Run Cycle</button>
+          <button class="btn btn-orch-action btn-orch-agent" onclick="triggerAgentTriage()" id="btn-orch-agent">&#x1F916; Triage with Devin</button>
+        </div>
       </div>
       <div class="panel-body" id="orchestrator-panel-container"><div class="skeleton skeleton-chart skeleton-chart-120"></div></div>
       <div class="panel-body" id="orchestrator-config-container"></div>
@@ -520,11 +537,42 @@ function renderSeverityChartJs(container, data) {
   var values = labels.map(function(k) { return data[k]; });
   var colors = { critical: '#f85149', high: '#f0883e', medium: '#d29922', low: '#58a6ff', note: '#8b949e' };
   var bgColors = labels.map(function(l) { return colors[l.toLowerCase()] || '#8b949e'; });
+  var sevByRepo = {};
+  (allIssues || []).forEach(function(issue) {
+    var sev = (issue.severity_tier || '').toLowerCase();
+    var repo = repoShort(issue.target_repo) || 'unknown';
+    if (!sevByRepo[sev]) sevByRepo[sev] = {};
+    sevByRepo[sev][repo] = (sevByRepo[sev][repo] || 0) + 1;
+  });
   destroyChart('severity');
   _chartInstances['severity'] = new Chart(canvas, {
     type: 'doughnut',
     data: { labels: labels, datasets: [{ data: values, backgroundColor: bgColors, borderWidth: 0 }] },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: getComputedStyle(document.body).getPropertyValue('--text-primary').trim() || '#e6edf3', font: { size: 11 } } } } }
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom', labels: { color: getComputedStyle(document.body).getPropertyValue('--text-primary').trim() || '#e6edf3', font: { size: 11 } } },
+        tooltip: {
+          callbacks: {
+            afterBody: function(items) {
+              if (!items.length) return '';
+              var sev = labels[items[0].dataIndex].toLowerCase();
+              var repos = sevByRepo[sev] || {};
+              var entries = Object.entries(repos).sort(function(a, b) { return b[1] - a[1]; });
+              if (entries.length === 0) return '';
+              var lines = [];
+              var shown = entries.slice(0, 5);
+              shown.forEach(function(e) { lines.push('  ' + e[0] + ': ' + e[1]); });
+              if (entries.length > 5) {
+                var otherCount = entries.slice(5).reduce(function(s, e) { return s + e[1]; }, 0);
+                lines.push('  Other: ' + otherCount);
+              }
+              return lines;
+            }
+          }
+        }
+      }
+    }
   });
 }
 
@@ -532,13 +580,30 @@ function renderCategoryChartJs(container, data) {
   if (!data || typeof Chart === 'undefined') return;
   container.innerHTML = '<canvas></canvas>';
   var canvas = container.querySelector('canvas');
-  var labels = Object.keys(data).slice(0, 10);
-  var values = labels.map(function(k) { return data[k]; });
+  var sorted = Object.entries(data).sort(function(a, b) { return b[1] - a[1]; }).slice(0, 15);
+  var labels = sorted.map(function(e) { return e[0]; });
+  var values = sorted.map(function(e) { return e[1]; });
+  var truncated = labels.map(function(l) { return l.length > 18 ? l.slice(0, 16) + '...' : l; });
   destroyChart('category');
   _chartInstances['category'] = new Chart(canvas, {
     type: 'bar',
-    data: { labels: labels, datasets: [{ data: values, backgroundColor: '#388bfd', borderRadius: 4 }] },
-    options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#8b949e' }, grid: { color: 'rgba(139,148,158,0.1)' } }, y: { ticks: { color: '#8b949e', font: { size: 10 } }, grid: { display: false } } } }
+    data: { labels: truncated, datasets: [{ data: values, backgroundColor: '#388bfd', borderRadius: 4 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: function(items) { return items.length ? labels[items[0].dataIndex] : ''; },
+            label: function(item) { return item.formattedValue + ' issues'; }
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#8b949e' }, grid: { color: 'rgba(139,148,158,0.1)' } },
+        y: { ticks: { color: '#8b949e', font: { size: 10 } }, grid: { display: false } }
+      }
+    }
   });
 }
 
@@ -556,11 +621,19 @@ function renderTrendChartJs(container, runs) {
     data: {
       labels: labels,
       datasets: [
-        { label: 'Issues Found', data: issuesData, borderColor: '#f0883e', backgroundColor: 'rgba(240,136,62,0.1)', fill: true, tension: 0.3, pointRadius: 3 },
-        { label: 'Sessions', data: sessionsData, borderColor: '#a371f7', backgroundColor: 'rgba(163,113,247,0.1)', fill: true, tension: 0.3, pointRadius: 3 }
+        { label: 'Issues Found', data: issuesData, borderColor: '#f0883e', backgroundColor: 'rgba(240,136,62,0.1)', fill: true, tension: 0.3, pointRadius: 3, yAxisID: 'y' },
+        { label: 'Sessions', data: sessionsData, borderColor: '#a371f7', backgroundColor: 'rgba(163,113,247,0.1)', fill: true, tension: 0.3, pointRadius: 3, yAxisID: 'y1' }
       ]
     },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#8b949e' } } }, scales: { x: { ticks: { color: '#8b949e', maxRotation: 45 }, grid: { color: 'rgba(139,148,158,0.1)' } }, y: { ticks: { color: '#8b949e' }, grid: { color: 'rgba(139,148,158,0.1)' } } } }
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#8b949e' } } },
+      scales: {
+        x: { ticks: { color: '#8b949e', maxRotation: 45 }, grid: { color: 'rgba(139,148,158,0.1)' } },
+        y: { type: 'linear', position: 'left', title: { display: true, text: 'Issues Found', color: '#f0883e', font: { size: 11 } }, ticks: { color: '#f0883e' }, grid: { color: 'rgba(139,148,158,0.1)' } },
+        y1: { type: 'linear', position: 'right', title: { display: true, text: 'Sessions', color: '#a371f7', font: { size: 11 } }, ticks: { color: '#a371f7' }, grid: { drawOnChartArea: false } }
+      }
+    }
   });
 }
 
@@ -643,6 +716,13 @@ function renderReposTable(repos) {
     + '</tr></thead><tbody>' + rows + '</tbody></table>';
 }
 
+function _detectTriggerType(run) {
+  var label = run.run_label || '';
+  if (label.indexOf('orchestrator_dispatch') !== -1) return 'orchestrator';
+  if (label.indexOf('orchestrator') !== -1) return 'orchestrator';
+  return 'manual';
+}
+
 function renderRunsTable(runs) {
   const el = document.getElementById('runs-table-container');
   document.getElementById('runs-count').textContent = runs.length;
@@ -653,18 +733,23 @@ function renderRunsTable(runs) {
   const sorted = [...runs].sort(function(a, b) { return (b.run_number || 0) - (a.run_number || 0); });
   let rows = '';
   sorted.forEach(function(r) {
+    var trigger = _detectTriggerType(r);
+    var triggerBadge = trigger === 'orchestrator'
+      ? '<span class="badge badge-running">orchestrator</span>'
+      : '<span class="badge badge-unknown">manual</span>';
     rows += '<tr>'
       + '<td><strong>#' + (r.run_number || '-') + '</strong></td>'
       + '<td><a href="' + escapeHtml(r.target_repo) + '" target="_blank">' + escapeHtml(repoShort(r.target_repo)) + '</a></td>'
       + '<td>' + (r.issues_found || 0) + '</td>'
       + '<td>' + (r.batches_created || 0) + '</td>'
       + '<td>' + (r.sessions || []).length + '</td>'
+      + '<td>' + triggerBadge + '</td>'
       + '<td>' + formatDate(r.timestamp) + '</td>'
       + '</tr>';
   });
   el.innerHTML = '<table><thead><tr>'
     + '<th>Run</th><th>Target Repo</th><th>Issues</th><th>Batches</th>'
-    + '<th>Sessions</th><th>Timestamp</th>'
+    + '<th>Sessions</th><th>Trigger</th><th>Timestamp</th>'
     + '</tr></thead><tbody>' + rows + '</tbody></table>';
 }
 
@@ -769,6 +854,147 @@ function renderVerificationPanel(records) {
     + '</tr></thead><tbody>' + rows + '</tbody></table>';
 }
 
+var DEFAULT_SLA_HOURS = { critical: 48, high: 96, medium: 168, low: 336 };
+var SLA_AT_RISK_THRESHOLD = 0.75;
+
+function computeIssueSla(issue) {
+  var sev = (issue.severity_tier || '').toLowerCase();
+  var limit = DEFAULT_SLA_HOURS[sev] || 0;
+  if (!limit || !issue.first_seen_date) return { sla_status: 'unknown', sla_limit_hours: limit, sla_hours_elapsed: null, sla_hours_remaining: null };
+  var foundAt = new Date(issue.first_seen_date);
+  var fixedAt = issue.status === 'fixed' && issue.last_seen_date ? new Date(issue.last_seen_date) : null;
+  var ref = fixedAt || new Date();
+  var elapsed = (ref - foundAt) / 3600000;
+  var remaining = limit - elapsed;
+  var status;
+  if (fixedAt) {
+    status = elapsed <= limit ? 'met' : 'breached';
+  } else {
+    if (elapsed > limit) status = 'breached';
+    else if (elapsed >= limit * SLA_AT_RISK_THRESHOLD) status = 'at-risk';
+    else status = 'on-track';
+  }
+  return { sla_status: status, sla_limit_hours: limit, sla_hours_elapsed: Math.round(elapsed * 10) / 10, sla_hours_remaining: Math.round(remaining * 10) / 10 };
+}
+
+function computeSlaData(issues) {
+  var result = { total_on_track: 0, total_at_risk: 0, total_breached: 0, total_met: 0, by_severity: {}, time_to_fix_by_severity: {} };
+  var fixTimes = {};
+  issues.forEach(function(issue) {
+    var sla = computeIssueSla(issue);
+    issue.sla_status = sla.sla_status;
+    issue.sla_hours_elapsed = sla.sla_hours_elapsed;
+    issue.sla_hours_remaining = sla.sla_hours_remaining;
+    issue.sla_limit_hours = sla.sla_limit_hours;
+    if (sla.sla_status === 'on-track') result.total_on_track++;
+    else if (sla.sla_status === 'at-risk') result.total_at_risk++;
+    else if (sla.sla_status === 'breached') result.total_breached++;
+    else if (sla.sla_status === 'met') result.total_met++;
+    var sev = (issue.severity_tier || '').toLowerCase();
+    if (sev && sla.sla_status !== 'unknown') {
+      if (!result.by_severity[sev]) result.by_severity[sev] = {};
+      result.by_severity[sev][sla.sla_status] = (result.by_severity[sev][sla.sla_status] || 0) + 1;
+    }
+    if (sla.sla_status === 'met' && sla.sla_hours_elapsed != null && sev) {
+      if (!fixTimes[sev]) fixTimes[sev] = [];
+      fixTimes[sev].push(sla.sla_hours_elapsed);
+    }
+  });
+  Object.keys(fixTimes).forEach(function(sev) {
+    var times = fixTimes[sev].sort(function(a, b) { return a - b; });
+    var sum = times.reduce(function(s, t) { return s + t; }, 0);
+    result.time_to_fix_by_severity[sev] = {
+      count: times.length,
+      min: Math.round(times[0] * 10) / 10,
+      max: Math.round(times[times.length - 1] * 10) / 10,
+      avg: Math.round(sum / times.length * 10) / 10,
+      median: Math.round(times[Math.floor(times.length / 2)] * 10) / 10
+    };
+  });
+  return result;
+}
+
+function renderPrsTabPending(prs) {
+  var el = document.getElementById('prs-pending-container');
+  var countEl = document.getElementById('prs-pending-count');
+  var pending = prs.filter(function(p) { return p.state === 'open' && !p.merged; });
+  if (countEl) countEl.textContent = pending.length;
+  if (pending.length === 0) {
+    el.innerHTML = '<div class="empty-state">No PRs pending merge.</div>';
+    return;
+  }
+  var rows = pending.map(function(p) {
+    var sessionLink = '-';
+    if (p.session_id) {
+      var sid = p.session_id.slice(0, 8);
+      sessionLink = p.session_url ? '<a href="'+escapeHtml(p.session_url)+'" target="_blank">'+escapeHtml(sid)+'...</a>' : escapeHtml(sid);
+    }
+    var verified = (p._verification_label === 'verified-fix');
+    var verBadge = verified ? ' <span class="badge badge-verified">verified</span>' : '';
+    return '<tr>'
+      + '<td><a href="'+escapeHtml(p.html_url)+'" target="_blank">#'+p.pr_number+'</a>'+verBadge+'</td>'
+      + '<td>'+escapeHtml(p.title)+'</td>'
+      + '<td>'+escapeHtml(p.repo || '')+'</td>'
+      + '<td>'+sessionLink+'</td>'
+      + '<td>'+(p.issue_ids || []).map(function(id) { return '<span class="issue-id">'+escapeHtml(id)+'</span>'; }).join(' ') || '-'+'</td>'
+      + '<td>'+formatDate(p.created_at)+'</td>'
+      + '</tr>';
+  }).join('');
+  el.innerHTML = '<table><thead><tr><th>PR</th><th>Title</th><th>Repo</th><th>Devin Session</th><th>Issues</th><th>Created</th></tr></thead><tbody>'+rows+'</tbody></table>';
+}
+
+function renderPrsTabRepoStats(prs) {
+  var el = document.getElementById('prs-repo-stats-container');
+  var repoMap = {};
+  prs.forEach(function(p) {
+    var repo = p.repo || 'unknown';
+    if (!repoMap[repo]) repoMap[repo] = { open: 0, merged: 0, closed: 0, total: 0 };
+    repoMap[repo].total++;
+    if (p.merged) repoMap[repo].merged++;
+    else if (p.state === 'open') repoMap[repo].open++;
+    else repoMap[repo].closed++;
+  });
+  var repos = Object.entries(repoMap).sort(function(a, b) { return b[1].total - a[1].total; });
+  if (repos.length === 0) {
+    el.innerHTML = '<div class="empty-state">No PR data available.</div>';
+    return;
+  }
+  var rows = repos.map(function(entry) {
+    var name = entry[0], s = entry[1];
+    return '<tr><td>'+escapeHtml(name)+'</td><td>'+s.total+'</td>'
+      + '<td><span class="badge badge-open">'+s.open+'</span></td>'
+      + '<td><span class="badge badge-merged">'+s.merged+'</span></td>'
+      + '<td><span class="badge badge-closed">'+s.closed+'</span></td></tr>';
+  }).join('');
+  el.innerHTML = '<table><thead><tr><th>Repository</th><th>Total</th><th>Open</th><th>Merged</th><th>Closed</th></tr></thead><tbody>'+rows+'</tbody></table>';
+}
+
+function _enrichPrsWithVerification(prs, records) {
+  var verMap = {};
+  (records || []).forEach(function(r) {
+    if (r.pr_url) {
+      var summary = r.summary || {};
+      var label = 'codeql-needs-work';
+      if ((summary.total_targeted || 0) > 0) {
+        if (summary.fixed_count === summary.total_targeted) label = 'verified-fix';
+        else if (summary.fixed_count > 0) label = 'codeql-partial-fix';
+      }
+      verMap[r.pr_url] = label;
+    }
+  });
+  prs.forEach(function(p) {
+    p._verification_label = verMap[p.html_url] || null;
+  });
+}
+
+function renderPrsTab() {
+  _enrichPrsWithVerification(allPrs, verificationRecords);
+  renderPrsTabPending(allPrs);
+  renderPrsTabRepoStats(allPrs);
+  renderPrsTable(allPrs, 'prs-all-table-container', 'prs-all-count');
+  renderVerificationPanel(verificationRecords);
+}
+
 function showAllSkeletons() {
   document.querySelectorAll('.skeleton').forEach(function(el) { el.style.display = ''; });
 }
@@ -781,10 +1007,9 @@ function renderAll() {
   renderReposTable(allRepos);
   renderRunsTable(allRuns);
   renderSessionsTable(allSessions, 'sessions-table-container', 'sessions-count');
-  renderPrsTable(allPrs, 'prs-table-container', 'prs-count');
   renderSlaPanel(slaData);
   renderIssuesTable(allIssues, 'issues-table-container', 'issues-count');
-  renderVerificationPanel(verificationRecords);
+  renderPrsTab();
   renderOrchestratorPanel();
   renderOrchestratorConfigPanel();
   renderOrchestratorQuickView();
@@ -1043,8 +1268,20 @@ function renderEffectivenessPanel() {
   el.innerHTML = html;
 }
 
-function triggerAgentTriage() {
-  setStatus('Agent Triage requires the Flask telemetry server. Run the server locally to use this feature.');
+async function triggerAgentTriage() {
+  var btn = document.getElementById('btn-orch-agent');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Triaging...';
+  setStatus('Dispatching agent triage workflow...');
+  _logAuditEntry('agent_triage', 'orchestrator', 'Triggered agent triage from dashboard');
+  var result = await triggerOrchestratorWorkflow('triage');
+  if (result.error) {
+    setStatus('Triage error: ' + result.error);
+  } else {
+    setStatus('Agent triage workflow dispatched successfully');
+  }
+  btn.disabled = false;
+  btn.innerHTML = '&#x1F916; Triage with Devin';
 }
 
 function renderFixRatesPanel() {
@@ -1241,6 +1478,7 @@ async function fetchAll() {
     stats = aggregateStats(filteredRuns, sessions, prs);
     allRepos = buildReposDict(filteredRuns, sessions, prs);
     allIssues = trackIssuesAcrossRuns(filteredRuns);
+    slaData = computeSlaData(allIssues);
 
     registryData = await fetchRegistry();
     verificationRecords = await loadVerificationRecords();
@@ -1461,22 +1699,53 @@ fetchPrsFromGitHub = async function(runs) {
   return _origFetchPrs(runs);
 };
 
-function fetchAuditLog(){
-  var el = document.getElementById('audit-log-container');
-  if (el) el.innerHTML = '<div class="empty-state">Audit log is available when running the Flask telemetry server.</div>';
+function _getAuditLog() {
+  try { return JSON.parse(localStorage.getItem('dashboard_audit_log') || '[]'); } catch(e) { return []; }
+}
+
+function _logAuditEntry(action, resource, details) {
+  var log = _getAuditLog();
+  log.unshift({ timestamp: new Date().toISOString(), user: 'dashboard', action: action, resource: resource || '', details: details || '' });
+  if (log.length > 500) log = log.slice(0, 500);
+  localStorage.setItem('dashboard_audit_log', JSON.stringify(log));
+}
+
+function fetchAuditLog() {
+  renderAuditLogPanel();
 }
 
 function renderAuditLogPanel() {
   var el = document.getElementById('audit-log-container');
   if (!el) return;
-  if (!auditLogData) {
-    el.innerHTML = '<div class="empty-state">Audit log is available when running the Flask telemetry server.</div>';
+  var log = _getAuditLog();
+  var actionFilter = (document.getElementById('audit-action-filter') || {}).value || '';
+  var userFilter = (document.getElementById('audit-user-filter') || {}).value || '';
+  var filtered = log;
+  if (actionFilter) filtered = filtered.filter(function(e) { return e.action === actionFilter; });
+  if (userFilter) filtered = filtered.filter(function(e) { return (e.user || '').indexOf(userFilter) !== -1; });
+  var countEl = document.getElementById('audit-log-count');
+  if (countEl) countEl.textContent = filtered.length;
+  if (filtered.length === 0) {
+    el.innerHTML = '<div class="empty-state"><span class="empty-state-icon">&#x1F4DC;</span><div class="empty-state-text">No audit log entries yet. Actions you take in the dashboard will be logged here.</div></div>';
     return;
   }
+  var rows = filtered.slice(0, 100).map(function(e) {
+    return '<tr><td>' + formatDate(e.timestamp) + '</td><td>' + escapeHtml(e.user) + '</td><td><span class="badge badge-unknown">' + escapeHtml(e.action) + '</span></td><td>' + escapeHtml(e.resource) + '</td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtml(e.details) + '">' + escapeHtml(e.details) + '</td></tr>';
+  }).join('');
+  el.innerHTML = '<table><thead><tr><th>Time</th><th>User</th><th>Action</th><th>Resource</th><th>Details</th></tr></thead><tbody>' + rows + '</tbody></table>';
 }
 
 function exportAuditLog() {
-  setStatus('Audit log export is available when running the Flask telemetry server.');
+  var log = _getAuditLog();
+  if (log.length === 0) { setStatus('No audit log entries to export.'); return; }
+  var blob = new Blob([JSON.stringify(log, null, 2)], { type: 'application/json' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'audit_log_' + new Date().toISOString().slice(0, 10) + '.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  _logAuditEntry('export_audit_log', '', 'Exported ' + log.length + ' entries');
+  setStatus('Exported ' + log.length + ' audit log entries');
 }
 
 async function init(){

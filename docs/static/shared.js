@@ -91,11 +91,23 @@ function renderBarChart(container, data) {
   `).join('') + '</div>';
 }
 
+var VALID_SESSION_STATUSES = ['created', 'started', 'running', 'finished', 'stopped'];
+
+function _normalizeSessionStatus(status) {
+  var s = (status || '').toLowerCase();
+  if (VALID_SESSION_STATUSES.indexOf(s) !== -1) return s;
+  if (s.startsWith('error')) return 'error';
+  return 'error';
+}
+
 function renderSessionsTable(sessions, containerId, countId) {
   const el = document.getElementById(containerId);
   const countEl = document.getElementById(countId);
-  if (countEl) countEl.textContent = sessions.length;
-  if (sessions.length === 0) {
+  var normalized = sessions.map(function(s) {
+    return Object.assign({}, s, { status: _normalizeSessionStatus(s.status) });
+  });
+  if (countEl) countEl.textContent = normalized.length;
+  if (normalized.length === 0) {
     el.innerHTML = '<div class="empty-state"><span class="empty-state-icon">&#x1F916;</span><div class="empty-state-text">No Devin sessions created yet.</div></div>';
     return;
   }
@@ -104,7 +116,7 @@ function renderSessionsTable(sessions, containerId, countId) {
       <th>Session</th><th>Status</th><th>Target</th><th>Run</th>
       <th>Batch</th><th>Issues</th><th>PR</th>
     </tr></thead>
-    <tbody>${sessions.map(s => `<tr>
+    <tbody>${normalized.map(s => `<tr>
       <td>${s.session_url ? '<a href="'+escapeHtml(s.session_url)+'" target="_blank">'+escapeHtml(s.session_id.slice(0,8))+'...</a>' : escapeHtml(s.session_id) || '-'}</td>
       <td><span class="badge ${badgeClass(s.status)}">${escapeHtml(s.status)}</span></td>
       <td><a href="${escapeHtml(s.target_repo)}" target="_blank">${escapeHtml(repoShort(s.target_repo))}</a></td>
