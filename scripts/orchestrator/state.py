@@ -27,7 +27,7 @@ if str(_SCRIPTS_DIR) not in sys.path:
 if str(_TELEMETRY_DIR) not in sys.path:
     sys.path.insert(0, str(_TELEMETRY_DIR))
 
-from database import get_connection, init_db, is_db_empty, query_all_sessions, query_all_prs, query_issues  # noqa: E402
+from database import get_connection, is_db_empty, query_all_sessions, query_all_prs, query_issues  # noqa: E402
 from database import load_orchestrator_state, save_orchestrator_state, is_orchestrator_state_empty  # noqa: E402
 from devin_api import clean_session_id  # noqa: E402
 from migrate_json_to_sqlite import migrate_json_files  # noqa: E402
@@ -149,7 +149,6 @@ def _migrate_json_state_to_db(conn: sqlite3.Connection) -> None:
 def load_state() -> dict[str, Any]:
     conn = get_connection()
     try:
-        init_db(conn)
         if is_orchestrator_state_empty(conn):
             _migrate_json_state_to_db(conn)
         return load_orchestrator_state(conn)
@@ -168,7 +167,6 @@ def load_state() -> dict[str, Any]:
 def save_state(state: dict[str, Any]) -> None:
     conn = get_connection()
     try:
-        init_db(conn)
         save_orchestrator_state(conn, state)
     finally:
         conn.close()
@@ -421,7 +419,6 @@ def build_global_issue_state(
 ) -> dict[str, Any]:
     conn = get_connection()
     try:
-        init_db(conn)
         _ensure_db_hydrated(conn)
         issues = query_issues(conn, target_repo=repo_filter)
         sessions = query_all_sessions(conn, target_repo=repo_filter)

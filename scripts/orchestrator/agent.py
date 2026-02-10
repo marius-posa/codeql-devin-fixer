@@ -25,12 +25,14 @@ except ImportError:
 
 from database import get_connection, init_db, insert_audit_log, auto_export_audit_log  # noqa: E402
 from fix_learning import FixLearning  # noqa: E402
+from issue_tracking import DEFAULT_SLA_HOURS  # noqa: E402
 
 logger = setup_logging(__name__)
 
 try:
     from devin_api import (  # noqa: E402
         DEVIN_API_BASE,
+        clean_session_id,
         request_with_retry,
         TERMINAL_STATUSES,
     )
@@ -116,10 +118,7 @@ def build_agent_triage_input(
         }
 
     sla_deadlines = {
-        "critical_hours": 24,
-        "high_hours": 72,
-        "medium_hours": 168,
-        "low_hours": 720,
+        f"{k}_hours": v for k, v in DEFAULT_SLA_HOURS.items()
     }
 
     acu_budget = {
@@ -209,8 +208,7 @@ def create_agent_triage_session(
     session_id = resp.get("session_id", "")
     session_url = resp.get("url", "")
     if not session_url and session_id:
-        clean_id = session_id.replace("devin-", "")
-        session_url = f"https://app.devin.ai/sessions/{clean_id}"
+        session_url = f"https://app.devin.ai/sessions/{clean_session_id(session_id)}"
 
     return {
         "session_id": session_id,
@@ -229,8 +227,7 @@ def poll_agent_session(
     if not _HAS_DEVIN_API:
         raise RuntimeError("devin_api module not available")
 
-    clean_id = session_id.replace("devin-", "")
-    url = f"{DEVIN_API_BASE}/sessions/{clean_id}"
+    url = f"{DEVIN_API_BASE}/sessions/{clean_session_id(session_id)}"
     start = time.time()
 
     while time.time() - start < timeout_seconds:

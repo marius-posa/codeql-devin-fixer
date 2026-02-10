@@ -1240,7 +1240,7 @@ class TestBuildAgentTriageInput:
         assert len(result["issue_inventory"]) == 1
         assert result["issue_inventory"][0]["fingerprint"] == "fp-1"
         assert result["issue_inventory"][0]["deterministic_score"] == 0.7
-        assert result["sla_deadlines"]["critical_hours"] == 24
+        assert result["sla_deadlines"]["critical_hours"] == 48
         assert result["acu_budget"]["remaining_sessions"] == 5
         assert result["acu_budget"]["max_sessions"] == 10
         assert "timestamp" in result

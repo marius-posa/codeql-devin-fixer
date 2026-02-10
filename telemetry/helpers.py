@@ -8,6 +8,7 @@ import functools
 import hmac
 import logging
 import os
+from typing import Any
 
 from flask import jsonify, request as flask_request
 
@@ -62,18 +63,26 @@ def _get_audit_user() -> str:
     return "anonymous"
 
 
-def _audit(action: str, resource: str = "", details: str = "") -> None:
+def _audit(
+    action: str,
+    resource: str = "",
+    details: str = "",
+    conn: "sqlite3.Connection | None" = None,
+) -> None:
     try:
-        conn = get_connection()
+        own_conn = conn is None
+        if own_conn:
+            conn = get_connection()
         try:
             insert_audit_log(conn, _get_audit_user(), action, resource, details)
         finally:
-            conn.close()
+            if own_conn:
+                conn.close()
     except Exception:
         logging.getLogger(__name__).warning("audit log write failed: action=%s", action, exc_info=True)
 
 
-def _paginate(items: list, page: int, per_page: int) -> dict:
+def _paginate(items: list[dict[str, Any]], page: int, per_page: int) -> dict[str, Any]:
     total = len(items)
     start = (page - 1) * per_page
     end = start + per_page

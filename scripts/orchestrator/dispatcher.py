@@ -23,7 +23,7 @@ try:
 except ImportError:
     from scripts.logging_config import setup_logging
 
-from database import get_connection, init_db, insert_run, insert_audit_log, auto_export_audit_log  # noqa: E402
+from database import get_connection, insert_run, insert_audit_log, auto_export_audit_log  # noqa: E402
 from fix_learning import CWE_FIX_HINTS, FixLearning  # noqa: E402
 from github_utils import gh_headers, parse_repo_url  # noqa: E402
 
@@ -122,7 +122,6 @@ def cmd_ingest(args: argparse.Namespace) -> int:
 
     conn = get_connection()
     try:
-        init_db(conn)
         result = insert_run(conn, telemetry_record)
         conn.commit()
 
@@ -352,7 +351,6 @@ def _record_dispatch_session(
 
     conn = get_connection()
     try:
-        init_db(conn)
         insert_run(conn, run_data)
         conn.commit()
     finally:

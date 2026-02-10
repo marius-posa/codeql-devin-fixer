@@ -139,6 +139,7 @@ class FamilyStats:
     finished_sessions: int = 0
     failed_sessions: int = 0
     total_issues: int = 0
+    avg_acu: float | None = None
 
     @property
     def fix_rate(self) -> float:
