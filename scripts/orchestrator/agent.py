@@ -31,7 +31,6 @@ logger = setup_logging(__name__)
 try:
     from devin_api import (  # noqa: E402
         DEVIN_API_BASE,
-        headers as devin_headers,
         request_with_retry,
         TERMINAL_STATUSES,
     )
@@ -345,14 +344,9 @@ def build_effectiveness_report(
         source = "deterministic"
         if isinstance(history, dict):
             source = history.get("recommendation_source", "deterministic")
-            dispatched = history.get("dispatch_count", 0) > 0
         elif isinstance(history, list) and history:
             last = history[-1] if history else {}
             source = last.get("recommendation_source", "deterministic")
-            dispatched = True
-        else:
-            dispatched = False
-
         is_fixed = fp in fp_fix_map
 
         if source == "agent":

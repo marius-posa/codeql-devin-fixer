@@ -12,7 +12,7 @@ from database import db_connection, get_connection, init_db, query_issues, load_
 from verification import load_verification_records, build_fingerprint_fix_map
 from helpers import require_api_key, _audit, _paginate, _get_pagination
 from extensions import limiter
-from routes.registry import _load_registry as _load_orchestrator_registry, _save_registry as _save_orchestrator_registry, REGISTRY_PATH as _ORCHESTRATOR_REGISTRY_PATH
+from routes.registry import _load_registry as _load_orchestrator_registry, _save_registry as _save_orchestrator_registry, REGISTRY_PATH as _ORCHESTRATOR_REGISTRY_PATH  # noqa: F401
 
 orchestrator_bp = Blueprint("orchestrator", __name__)
 
@@ -397,9 +397,8 @@ def api_orchestrator_effectiveness():
     dispatch_history = state.get("dispatch_history", {})
     agent_triage = state.get("agent_triage", {})
 
-    with db_connection() as conn:
-        verification_records = load_verification_records(RUNS_DIR)
-        fp_fix_map = build_fingerprint_fix_map(verification_records)
+    verification_records = load_verification_records(RUNS_DIR)
+    fp_fix_map = build_fingerprint_fix_map(verification_records)
 
     agent_decisions = agent_triage.get("decisions", [])
     agent_fps = {d["fingerprint"] for d in agent_decisions if d.get("dispatch")}

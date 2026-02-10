@@ -656,6 +656,64 @@ class TestOrchestratorEndpoints:
         assert data["overall"]["fixed"] == 0
         assert data["overall"]["fix_rate"] == 0.0
 
+    def test_orchestrator_agent_triage_requires_env(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        monkeypatch.delenv("DEVIN_API_KEY", raising=False)
+        resp = client.post(
+            "/api/orchestrator/agent-triage",
+            headers={"X-API-Key": "test-key"},
+            json={},
+        )
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert "DEVIN_API_KEY" in data["error"]
+
+    def test_orchestrator_agent_triage_dry_run(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        monkeypatch.delenv("DEVIN_API_KEY", raising=False)
+        with patch("routes.orchestrator.subprocess.run") as mock_run:
+            mock_run.return_value = type("R", (), {
+                "returncode": 0,
+                "stdout": json.dumps({"status": "dry_run", "decisions": [], "total_issues": 0}),
+                "stderr": "",
+            })()
+            resp = client.post(
+                "/api/orchestrator/agent-triage",
+                headers={"X-API-Key": "test-key"},
+                json={"dry_run": True},
+            )
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["status"] == "dry_run"
+
+    def test_orchestrator_agent_plan_no_results(self, client):
+        resp = client.get("/api/orchestrator/agent-plan")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["status"] == "no_results"
+        assert data["decisions"] == []
+
+    def test_orchestrator_effectiveness_returns_json(self, client):
+        resp = client.get("/api/orchestrator/effectiveness")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "agent" in data
+        assert "deterministic" in data
+        assert "has_agent_data" in data
+        assert "recommended" in data["agent"]
+        assert "dispatched" in data["agent"]
+        assert "fix_rate" in data["agent"]
+        assert "dispatched" in data["deterministic"]
+        assert "fix_rate" in data["deterministic"]
+
+    def test_orchestrator_effectiveness_empty_state(self, client):
+        resp = client.get("/api/orchestrator/effectiveness")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["has_agent_data"] is False
+        assert data["agent"]["dispatched"] == 0
+        assert isinstance(data["deterministic"]["dispatched"], int)
+
 
 class TestRegistryRepoEndpoints:
     def test_registry_add_repo_includes_new_fields(self, client, monkeypatch):
