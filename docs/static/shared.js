@@ -296,8 +296,46 @@ function openDispatchModal(targetRepo) {
     document.getElementById('d-target-repo').value = targetRepo;
   }
   checkPreflightStatic();
+  fetchImpactPreviewStatic();
   const firstInput = modal.querySelector('input, select, textarea');
   if (firstInput) firstInput.focus();
+}
+
+var _impactTimer = null;
+function fetchImpactPreviewStatic() {
+  var container = document.getElementById('dispatch-impact');
+  if (!container) return;
+  var targetRepo = document.getElementById('d-target-repo').value.trim();
+  if (!targetRepo) { container.innerHTML = ''; container.style.display = 'none'; return; }
+  clearTimeout(_impactTimer);
+  _impactTimer = setTimeout(function() {
+    try {
+      if (!window._cachedRuns || !window._cachedSessions) { container.innerHTML = ''; container.style.display = 'none'; return; }
+      var repoRuns = window._cachedRuns.filter(function(r) { return r.target_repo === targetRepo; });
+      repoRuns.sort(function(a, b) { return (b.timestamp || '').localeCompare(a.timestamp || ''); });
+      var lastScanIssues = repoRuns.length > 0 ? (repoRuns[0].issues_found || 0) : 0;
+      var repoSessions = (window._cachedSessions || []).filter(function(s) { return s.target_repo === targetRepo && s.session_id; });
+      var finishedSessions = repoSessions.filter(function(s) { return s.status === 'finished' || s.status === 'stopped'; });
+      var batchSize = parseInt(document.getElementById('d-batch-size').value) || 5;
+      var maxSessions = parseInt(document.getElementById('d-max-sessions').value) || 5;
+      var estBatches = lastScanIssues > 0 ? Math.ceil(lastScanIssues / batchSize) : 0;
+      var estSessions = Math.min(estBatches, maxSessions);
+      var avgAcu = repoSessions.length > 0 ? Math.round(repoSessions.length * 10 / Math.max(finishedSessions.length, 1)) / 10 : 0;
+      var projectedAcu = estSessions > 0 ? (estSessions * avgAcu).toFixed(1) : '-';
+      var avgIssues = repoRuns.length > 0 ? Math.round(repoRuns.reduce(function(s, r) { return s + (r.issues_found || 0); }, 0) / repoRuns.length * 10) / 10 : 0;
+      var html = '<div class="drawer-section-title">Estimated Impact</div>';
+      html += '<div class="dispatch-preview-row"><span class="dispatch-preview-label">Issues from last scan</span><span class="dispatch-preview-value">' + lastScanIssues + '</span></div>';
+      html += '<div class="dispatch-preview-row"><span class="dispatch-preview-label">Estimated batches</span><span class="dispatch-preview-value">' + estBatches + '</span></div>';
+      html += '<div class="dispatch-preview-row"><span class="dispatch-preview-label">Sessions to create</span><span class="dispatch-preview-value">' + estSessions + '</span></div>';
+      html += '<div class="dispatch-preview-row"><span class="dispatch-preview-label">Projected ACU usage</span><span class="dispatch-preview-value">' + projectedAcu + '</span></div>';
+      html += '<div class="dispatch-preview-row"><span class="dispatch-preview-label">Wave config</span><span class="dispatch-preview-value">' + batchSize + ' issues/batch, ' + maxSessions + ' max sessions</span></div>';
+      if (repoRuns.length > 0) {
+        html += '<div class="dispatch-preview-row"><span class="dispatch-preview-label">Historical avg issues/run</span><span class="dispatch-preview-value">' + avgIssues + '</span></div>';
+      }
+      container.innerHTML = html;
+      container.style.display = 'block';
+    } catch (e) { container.innerHTML = ''; container.style.display = 'none'; }
+  }, 400);
 }
 
 function closeDispatchModal() {
@@ -472,28 +510,38 @@ function _openDrawerByFp(fingerprint) {
   var issue = _issuesAllData.find(function(i) { return i.fingerprint === fingerprint; });
   if (issue) openIssueDrawer(issue);
 }
-function openIssueDrawer(issue) {
-  _drawerIssue = issue;
-  var overlay = document.getElementById('drawer-overlay');
-  var drawer = document.getElementById('issue-drawer');
-  if (!overlay || !drawer) return;
-  overlay.classList.add('active');
-  drawer.classList.add('active');
-  var body = drawer.querySelector('.drawer-body');
-  if (!body) return;
+
+function _renderDrawerBase(issue) {
   var html = '<div class="drawer-section">';
   html += '<div class="drawer-section-title">Details</div>';
   html += _drawerField('Rule', issue.rule_id || '-');
   html += _drawerField('Severity', '<span class="badge ' + badgeClass(issue.severity_tier) + '">' + escapeHtml(issue.severity_tier || '-') + '</span>');
   html += _drawerField('Status', '<span class="badge ' + badgeClass(issue.status) + '">' + escapeHtml(issue.status) + '</span>');
   html += _drawerField('Category', escapeHtml(issue.cwe_family || '-'));
-  html += _drawerField('File', '<span style="font-family:monospace;font-size:11px">' + escapeHtml(issue.file || '-') + '</span>');
-  html += _drawerField('Line', issue.start_line || '-');
+  var sourceUrl = '';
+  if (issue.target_repo && issue.file) {
+    var repoPath = issue.target_repo.replace('https://github.com/', '');
+    sourceUrl = 'https://github.com/' + repoPath + '/blob/main/' + issue.file + '#L' + (issue.start_line || 1);
+  }
+  var fileVal = '<span style="font-family:monospace;font-size:11px">' + escapeHtml(issue.file || '-') + '</span>';
+  if (sourceUrl) {
+    fileVal = '<a href="' + escapeHtml(sourceUrl) + '" target="_blank" style="font-family:monospace;font-size:11px">' + escapeHtml(issue.file || '-') + ':' + (issue.start_line || '') + '</a>';
+  }
+  html += _drawerField('File', fileVal);
+  if (!sourceUrl) html += _drawerField('Line', issue.start_line || '-');
   html += _drawerField('Fingerprint', '<span style="font-family:monospace;font-size:10px">' + escapeHtml(issue.fingerprint || '-') + '</span>');
   if (issue.description) html += _drawerField('Description', escapeHtml(issue.description));
   if (issue.resolution) html += _drawerField('Resolution', escapeHtml(issue.resolution));
+  if (issue.cwe_family && issue.cwe_family !== 'other') {
+    var cweLink = 'https://cwe.mitre.org/data/definitions/' + encodeURIComponent(issue.cwe_family) + '.html';
+    html += _drawerField('CWE Reference', '<a href="' + cweLink + '" target="_blank">View ' + escapeHtml(issue.cwe_family) + ' on MITRE</a>');
+  }
   html += '</div>';
-  html += '<div class="drawer-section">';
+  return html;
+}
+
+function _renderDrawerHistory(issue) {
+  var html = '<div class="drawer-section">';
   html += '<div class="drawer-section-title">History (' + (issue.appearances || 0) + ' appearances)</div>';
   html += _drawerField('First Seen', issue.first_seen_date ? formatDate(issue.first_seen_date) : 'Run #' + issue.first_seen_run);
   html += _drawerField('Last Seen', issue.last_seen_date ? formatDate(issue.last_seen_date) : 'Run #' + issue.last_seen_run);
@@ -503,18 +551,55 @@ function openIssueDrawer(issue) {
   }
   if (issue.fix_duration_hours != null) html += _drawerField('Fix Duration', issue.fix_duration_hours + 'h');
   html += '</div>';
-  if (issue.sla_status && issue.sla_status !== 'unknown') {
-    html += '<div class="drawer-section">';
-    html += '<div class="drawer-section-title">SLA</div>';
-    html += _drawerField('Status', '<span class="badge ' + badgeClass(issue.sla_status) + '">' + escapeHtml(issue.sla_status) + '</span>');
-    if (issue.sla_limit_hours) html += _drawerField('SLA Limit', issue.sla_limit_hours + 'h');
-    if (issue.sla_hours_elapsed != null) html += _drawerField('Time Elapsed', issue.sla_hours_elapsed + 'h');
-    if (issue.sla_hours_remaining != null) {
-      var remainColor = issue.sla_hours_remaining < 0 ? 'var(--accent-red)' : (issue.sla_status === 'at-risk' ? 'var(--accent-orange)' : 'var(--accent-green)');
-      html += _drawerField('Time Remaining', '<span style="color:' + remainColor + '">' + issue.sla_hours_remaining + 'h</span>');
-    }
-    html += '</div>';
+  return html;
+}
+
+function _renderDrawerSla(issue) {
+  if (!issue.sla_status || issue.sla_status === 'unknown') return '';
+  var html = '<div class="drawer-section">';
+  html += '<div class="drawer-section-title">SLA</div>';
+  html += _drawerField('Status', '<span class="badge ' + badgeClass(issue.sla_status) + '">' + escapeHtml(issue.sla_status) + '</span>');
+  if (issue.sla_limit_hours) html += _drawerField('SLA Limit', issue.sla_limit_hours + 'h');
+  if (issue.sla_hours_elapsed != null) html += _drawerField('Time Elapsed', issue.sla_hours_elapsed + 'h');
+  if (issue.sla_hours_remaining != null) {
+    var remainColor = issue.sla_hours_remaining < 0 ? 'var(--accent-red)' : (issue.sla_status === 'at-risk' ? 'var(--accent-orange)' : 'var(--accent-green)');
+    html += _drawerField('Time Remaining', '<span style="color:' + remainColor + '">' + issue.sla_hours_remaining + 'h</span>');
   }
+  html += '</div>';
+  return html;
+}
+
+function _renderDrawerActions(issue) {
+  var fp = issue.fingerprint;
+  var html = '<div class="drawer-actions">';
+  html += '<button class="btn btn-primary" onclick="_drawerRedispatch(\'' + escapeHtml(fp) + '\')">Re-dispatch</button>';
+  html += '<button class="btn" onclick="closeIssueDrawer()">False Positive</button>';
+  html += '<button class="btn" onclick="closeIssueDrawer()">Won\'t Fix</button>';
+  html += '</div>';
+  return html;
+}
+
+function _drawerRedispatch(fingerprint) {
+  var issue = _drawerIssue;
+  if (issue && issue.target_repo) {
+    closeIssueDrawer();
+    openDispatchModal(issue.target_repo);
+  }
+}
+
+function openIssueDrawer(issue) {
+  _drawerIssue = issue;
+  var overlay = document.getElementById('drawer-overlay');
+  var drawer = document.getElementById('issue-drawer');
+  if (!overlay || !drawer) return;
+  overlay.classList.add('active');
+  drawer.classList.add('active');
+  var body = drawer.querySelector('.drawer-body');
+  if (!body) return;
+  var html = _renderDrawerBase(issue);
+  html += _renderDrawerHistory(issue);
+  html += _renderDrawerSla(issue);
+  html += _renderDrawerActions(issue);
   body.innerHTML = html;
 }
 function _drawerField(label, value) {
