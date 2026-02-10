@@ -15,9 +15,9 @@
       <span id="live-status"></span>
       <button class="btn" onclick="refreshData()" id="btn-refresh">Refresh Data</button>
       <button class="btn btn-primary" onclick="pollSessions()" id="btn-poll">Poll Sessions</button>
-      <button class="btn btn-primary" onclick="openDispatchModal()" id="btn-dispatch" style="background:#1f6feb;border-color:#388bfd">Trigger Action</button>
+      <button class="btn btn-action" onclick="openDispatchModal()" id="btn-dispatch">Trigger Action</button>
       <a class="btn" href="/api/report/pdf" id="btn-pdf">PDF Report</a>
-      <button class="btn" id="btn-demo-toggle" onclick="toggleDemoData()" title="Toggle demo data" style="font-size:12px">Demo Data</button>
+      <button class="btn font-12" id="btn-demo-toggle" onclick="toggleDemoData()" title="Toggle demo data">Demo Data</button>
       <button class="density-toggle" id="density-toggle" title="Toggle compact mode">Compact</button>
       <button class="theme-toggle" id="theme-toggle"></button>
       <span id="user-info"></span>
@@ -51,8 +51,8 @@
   </nav>
 
   <div class="tab-content active" id="tab-overview">
-    <div class="period-selector" style="margin-bottom:16px;display:flex;gap:4px;align-items:center">
-      <span style="font-size:12px;color:var(--text-muted);margin-right:8px">Period:</span>
+    <div class="period-selector">
+      <span class="period-label">Period:</span>
       <button class="btn period-btn active" data-period="all" onclick="setPeriod('all')">All Time</button>
       <button class="btn period-btn" data-period="7d" onclick="setPeriod('7d')">7 Days</button>
       <button class="btn period-btn" data-period="30d" onclick="setPeriod('30d')">30 Days</button>
@@ -66,16 +66,16 @@
     <div class="grid-2">
       <div class="panel">
         <div class="panel-header">Severity Breakdown</div>
-        <div class="panel-body chart-canvas-wrap" id="severity-chart"><div class="skeleton skeleton-chart" style="height:200px"></div></div>
+        <div class="panel-body chart-canvas-wrap" id="severity-chart"><div class="skeleton skeleton-chart skeleton-chart-200"></div></div>
       </div>
       <div class="panel">
         <div class="panel-header">Category Breakdown</div>
-        <div class="panel-body chart-canvas-wrap" id="category-chart"><div class="skeleton skeleton-chart" style="height:200px"></div></div>
+        <div class="panel-body chart-canvas-wrap" id="category-chart"><div class="skeleton skeleton-chart skeleton-chart-200"></div></div>
       </div>
     </div>
-    <div class="panel" style="cursor:pointer" onclick="switchTab('orchestrator')">
-      <div class="panel-header">Orchestrator Quick View <span style="font-size:11px;color:var(--text-muted);font-weight:400">click to open full view &rarr;</span></div>
-      <div class="panel-body" id="orchestrator-quick-view"><div class="skeleton skeleton-chart" style="height:60px"></div></div>
+    <div class="panel panel-clickable" onclick="switchTab('orchestrator')">
+      <div class="panel-header">Orchestrator Quick View <span class="panel-header-hint">click to open full view &rarr;</span></div>
+      <div class="panel-body" id="orchestrator-quick-view"><div class="skeleton skeleton-chart skeleton-chart-xs"></div></div>
     </div>
   </div>
 
@@ -83,7 +83,7 @@
     <div class="panel">
       <div class="panel-header">
         Repositories Scanned
-        <span id="repo-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+        <span id="repo-count" class="panel-header-count"></span>
       </div>
       <div class="panel-body table-scroll-wrapper" id="repos-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
     </div>
@@ -93,21 +93,21 @@
     <div class="panel">
       <div class="panel-header">
         Issue Tracking
-        <span id="issues-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
-        <button class="btn btn-sm" onclick="exportAllIssuesCsv()" style="margin-left:auto">Export CSV</button>
+        <span id="issues-count" class="panel-header-count"></span>
+        <button class="btn btn-sm ml-auto" onclick="exportAllIssuesCsv()">Export CSV</button>
       </div>
       <div class="panel-body table-scroll-wrapper" id="issues-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
     </div>
     <div class="panel">
       <div class="panel-header">SLA Compliance</div>
-      <div class="panel-body" id="sla-panel-container"><div class="skeleton skeleton-chart" style="height:120px"></div></div>
+      <div class="panel-body" id="sla-panel-container"><div class="skeleton skeleton-chart skeleton-chart-120"></div></div>
     </div>
     <div class="panel">
       <div class="panel-header">
         Fix Verification
-        <span id="verification-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+        <span id="verification-count" class="panel-header-count"></span>
       </div>
-      <div class="panel-body" id="verification-stats-container"><div class="skeleton skeleton-chart" style="height:100px"></div></div>
+      <div class="panel-body" id="verification-stats-container"><div class="skeleton skeleton-chart skeleton-chart-100"></div></div>
       <div class="panel-body table-scroll-wrapper" id="verification-table-container"></div>
     </div>
   </div>
@@ -116,21 +116,21 @@
     <div class="panel">
       <div class="panel-header">
         Run History
-        <span id="runs-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+        <span id="runs-count" class="panel-header-count"></span>
       </div>
       <div class="panel-body table-scroll-wrapper" id="runs-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
     </div>
     <div class="panel">
       <div class="panel-header">
         Devin Sessions
-        <span id="sessions-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+        <span id="sessions-count" class="panel-header-count"></span>
       </div>
       <div class="panel-body table-scroll-wrapper" id="sessions-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
     </div>
     <div class="panel">
       <div class="panel-header">
         Pull Requests
-        <span id="prs-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+        <span id="prs-count" class="panel-header-count"></span>
       </div>
       <div class="panel-body table-scroll-wrapper" id="prs-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
     </div>
@@ -140,22 +140,22 @@
     <div class="panel">
       <div class="panel-header">
         Orchestrator
-        <span id="orchestrator-status-label" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
-        <button class="btn btn-sm" onclick="triggerOrchestratorScan()" style="margin-left:auto" id="btn-orch-scan">Scan Due Repos</button>
-        <button class="btn btn-sm" onclick="triggerOrchestratorDispatch()" id="btn-orch-dispatch" style="background:#1f6feb;border-color:#388bfd;color:#fff;margin-left:4px">Dispatch</button>
-        <button class="btn btn-sm" onclick="triggerOrchestratorCycle()" id="btn-orch-cycle" style="background:#238636;border-color:#2ea043;color:#fff;margin-left:4px">Run Cycle</button>
+        <span id="orchestrator-status-label" class="panel-header-count"></span>
+        <button class="btn btn-sm ml-auto" onclick="triggerOrchestratorScan()" id="btn-orch-scan">Scan Due Repos</button>
+        <button class="btn btn-sm btn-action ml-4" onclick="triggerOrchestratorDispatch()" id="btn-orch-dispatch">Dispatch</button>
+        <button class="btn btn-sm btn-success ml-4" onclick="triggerOrchestratorCycle()" id="btn-orch-cycle">Run Cycle</button>
       </div>
-      <div class="panel-body" id="orchestrator-panel-container"><div class="skeleton skeleton-chart" style="height:120px"></div></div>
+      <div class="panel-body" id="orchestrator-panel-container"><div class="skeleton skeleton-chart skeleton-chart-120"></div></div>
       <div class="panel-body" id="orchestrator-config-container"></div>
       <div class="panel-body table-scroll-wrapper" id="orchestrator-history-container"></div>
     </div>
     <div class="panel">
-      <div class="panel-header">Issue Prioritization<span id="priority-count" style="color:var(--text-muted);font-weight:400;font-size:12px;margin-left:8px"></span></div>
-      <div class="panel-body table-scroll-wrapper" id="orchestrator-priority-container"><div class="skeleton skeleton-chart" style="height:120px"></div></div>
+      <div class="panel-header">Issue Prioritization<span id="priority-count" class="panel-header-count ml-8"></span></div>
+      <div class="panel-body table-scroll-wrapper" id="orchestrator-priority-container"><div class="skeleton skeleton-chart skeleton-chart-120"></div></div>
     </div>
     <div class="panel">
       <div class="panel-header">Fix Rates</div>
-      <div class="panel-body" id="orchestrator-fix-rates-container"><div class="skeleton skeleton-chart" style="height:120px"></div></div>
+      <div class="panel-body" id="orchestrator-fix-rates-container"><div class="skeleton skeleton-chart skeleton-chart-120"></div></div>
     </div>
   </div>
 
@@ -163,20 +163,20 @@
     <div class="panel">
       <div class="panel-header">Demo Data</div>
       <div class="panel-body" id="demo-data-panel">
-        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-          <span id="demo-status-text" style="font-size:13px;color:var(--text-muted)">Checking...</span>
+        <div class="flex-row">
+          <span id="demo-status-text" class="text-muted-sm">Checking...</span>
           <button class="btn btn-sm" id="btn-demo-load" onclick="loadDemoData()">Load Demo Data</button>
-          <button class="btn btn-sm" id="btn-demo-clear" onclick="clearDemoData()" style="background:var(--accent-red);border-color:var(--accent-red);color:#fff">Clear Demo Data</button>
+          <button class="btn btn-sm btn-danger" id="btn-demo-clear" onclick="clearDemoData()">Clear Demo Data</button>
           <button class="btn btn-sm" id="btn-demo-reset" onclick="resetDemoData()">Regenerate</button>
           <button class="btn btn-sm" id="btn-demo-edit" onclick="openDemoEditor()">Edit JSON</button>
         </div>
-        <div id="demo-summary" style="margin-top:8px;font-size:12px;color:var(--text-muted)"></div>
+        <div id="demo-summary" class="text-sm-muted"></div>
       </div>
     </div>
     <div class="panel">
       <div class="panel-header">Export &amp; Reports</div>
       <div class="panel-body">
-        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+        <div class="flex-row">
           <button class="btn" onclick="exportAllIssuesCsv()">Export Issues CSV</button>
           <a class="btn" href="/api/report/pdf">PDF Report</a>
         </div>
@@ -189,19 +189,19 @@
     <div class="panel">
       <div class="panel-header">
         Scheduled Repo Registry
-        <span id="registry-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
+        <span id="registry-count" class="panel-header-count"></span>
       </div>
       <div class="panel-body table-scroll-wrapper" id="registry-table-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
     </div>
     <div class="panel">
       <div class="panel-header">
         Audit Log
-        <span id="audit-log-count" style="color:var(--text-muted);font-weight:400;font-size:12px;"></span>
-        <button class="btn btn-sm" onclick="exportAuditLog()" style="margin-left:auto">Export JSON</button>
+        <span id="audit-log-count" class="panel-header-count"></span>
+        <button class="btn btn-sm ml-auto" onclick="exportAuditLog()">Export JSON</button>
       </div>
       <div class="panel-body">
-        <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
-          <select class="form-input" id="audit-action-filter" onchange="fetchAuditLog()" style="width:auto;padding:4px 8px;font-size:12px">
+        <div class="filter-row">
+          <select class="form-input filter-input" id="audit-action-filter" onchange="fetchAuditLog()">
             <option value="">All actions</option>
             <option value="poll_sessions">poll_sessions</option>
             <option value="poll_prs">poll_prs</option>
@@ -218,7 +218,7 @@
             <option value="remove_registry_repo">remove_registry_repo</option>
             <option value="export_audit_log">export_audit_log</option>
           </select>
-          <input class="form-input" id="audit-user-filter" placeholder="Filter by user" onchange="fetchAuditLog()" style="width:auto;padding:4px 8px;font-size:12px">
+          <input class="form-input filter-input" id="audit-user-filter" placeholder="Filter by user" onchange="fetchAuditLog()">
         </div>
       </div>
       <div class="panel-body table-scroll-wrapper" id="audit-log-container"><div class="skeleton skeleton-table"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></div>
@@ -274,7 +274,7 @@
       <button class="modal-close" onclick="_closeRepoEditModal()">&times;</button>
     </div>
     <div class="modal-body">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-grid-2">
         <div class="form-group">
           <label for="edit-repo-importance">Importance</label>
           <select class="form-input" id="edit-repo-importance">
@@ -305,7 +305,7 @@
       </div>
       <div class="form-group">
         <label for="edit-repo-overrides">Overrides (JSON)</label>
-        <textarea class="form-input" id="edit-repo-overrides" rows="4" style="font-family:monospace;font-size:12px">{}</textarea>
+        <textarea class="form-input form-input-mono" id="edit-repo-overrides" rows="4">{}</textarea>
         <div class="hint">Override default settings for this repo (e.g. languages, severity_threshold)</div>
       </div>
       <div class="dispatch-result" id="edit-repo-result"></div>
@@ -318,14 +318,14 @@
 </div>
 
 <div class="modal-overlay" id="demo-editor-modal">
-  <div class="modal" style="max-width:900px">
+  <div class="modal modal-wide">
     <div class="modal-header">
       <h2>Edit Demo Data</h2>
       <button class="modal-close" onclick="closeDemoEditor()">&times;</button>
     </div>
     <div class="modal-body">
-      <div class="hint" style="margin-bottom:8px">Edit the raw JSON demo data below. Changes are saved to disk and reloaded into the database if demo data is currently active.</div>
-      <textarea class="form-input" id="demo-editor-textarea" rows="24" style="font-family:monospace;font-size:11px;white-space:pre;overflow:auto"></textarea>
+      <div class="hint hint-mb">Edit the raw JSON demo data below. Changes are saved to disk and reloaded into the database if demo data is currently active.</div>
+      <textarea class="form-input form-input-code" id="demo-editor-textarea" rows="24"></textarea>
       <div class="dispatch-result" id="demo-editor-result"></div>
     </div>
     <div class="modal-footer">
@@ -470,7 +470,7 @@ function renderSlaPanel(sla) {
     return ia - ib;
   });
   if (sevs.length > 0) {
-    html += '<div style="margin-top:12px"><div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Time to Fix by Severity</div>';
+    html += '<div class="mt-12"><div class="section-label mb-8">Time to Fix by Severity</div>';
     html += '<table class="ttf-table"><thead><tr><th>Severity</th><th>Fixed</th><th>Min</th><th>Avg</th><th>Median</th><th>Max</th></tr></thead><tbody>';
     sevs.forEach(function(sev) {
       var t = ttf[sev];
@@ -493,14 +493,14 @@ function renderSlaPanel(sla) {
     return ia - ib;
   });
   if (bsKeys.length > 0) {
-    html += '<div style="margin-top:16px"><div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">SLA Status by Severity</div>';
+    html += '<div class="mt-16"><div class="section-label mb-8">SLA Status by Severity</div>';
     html += '<table class="ttf-table"><thead><tr><th>Severity</th><th>On Track</th><th>At Risk</th><th>Breached</th><th>Met</th></tr></thead><tbody>';
     bsKeys.forEach(function(sev) {
       var s = bySev[sev];
       html += '<tr><td><span class="badge ' + badgeClass(sev) + '">' + escapeHtml(sev) + '</span></td>';
       html += '<td>' + (s['on-track'] || 0) + '</td>';
       html += '<td>' + (s['at-risk'] || 0) + '</td>';
-      html += '<td style="' + ((s['breached'] || 0) > 0 ? 'color:var(--accent-red);font-weight:600' : '') + '">' + (s['breached'] || 0) + '</td>';
+      html += '<td' + ((s['breached'] || 0) > 0 ? ' class="btn-danger"' : '') + '>' + (s['breached'] || 0) + '</td>';
       html += '<td>' + (s['met'] || 0) + '</td></tr>';
     });
     html += '</tbody></table></div>';
@@ -549,13 +549,13 @@ function renderReposTable(repos) {
       + '<td><a href="/repo/' + short + '">' + short + '</a></td>'
       + '<td>' + r.runs + '</td>'
       + '<td>' + r.issues_found + '</td>'
-      + '<td>' + r.sessions_created + (r.sessions_finished ? ' <span style="color:var(--accent-green);font-size:11px">(' + r.sessions_finished + ' done)</span>' : '') + '</td>'
+      + '<td>' + r.sessions_created + (r.sessions_finished ? ' <span class="sessions-done">(' + r.sessions_finished + ' done)</span>' : '') + '</td>'
       + '<td>' + r.prs_total + '</td>'
       + '<td>' + r.prs_merged + '</td>'
       + '<td>' + r.prs_open + '</td>'
       + '<td>' + formatDate(r.last_run) + '</td>'
-      + '<td style="white-space:nowrap"><a class="btn" style="padding:2px 10px;font-size:11px" href="/repo/' + short + '">View</a> '
-      + '<button class="btn" style="padding:2px 10px;font-size:11px;background:#1f6feb;border-color:#388bfd;color:#fff" onclick="openDispatchModal(this.dataset.repo)" data-repo="' + escapeHtml(r.repo) + '">Run</button></td>'
+      + '<td class="text-nowrap"><a class="btn btn-view-sm" href="/repo/' + short + '">View</a> '
+      + '<button class="btn btn-run-sm" onclick="openDispatchModal(this.dataset.repo)" data-repo="' + escapeHtml(r.repo) + '">Run</button></td>'
       + '</tr>';
   });
   el.innerHTML = '<table><thead><tr>'
@@ -667,7 +667,7 @@ function renderVerificationPanel(data) {
     return;
   }
   var fixRate = vStats.overall_fix_rate || 0;
-  statsEl.innerHTML = '<div class="metrics-grid" style="margin-bottom:0">'
+  statsEl.innerHTML = '<div class="metrics-grid metrics-grid-flush">'
     + '<div class="metric-card green"><div class="label">Issues Fixed</div><div class="value">' + (vStats.total_issues_fixed || 0) + '</div>'
     + '<div class="sub">of ' + (vStats.total_issues_targeted || 0) + ' targeted</div></div>'
     + '<div class="metric-card ' + fixRateColorClass(fixRate) + '"><div class="label">Verification Fix Rate</div><div class="value">' + fixRate + '%</div></div>'
@@ -736,7 +736,7 @@ function renderOrchestratorPanel() {
   var rlColor = rlPct > 80 ? 'var(--accent-red)' : rlPct > 50 ? 'var(--accent-yellow, #d29922)' : 'var(--accent-green)';
   if (labelEl) labelEl.textContent = s.last_cycle ? 'Last cycle: ' + formatDate(s.last_cycle) : 'No cycles run yet';
 
-  var html = '<div class="metrics-grid" style="margin-bottom:12px">';
+  var html = '<div class="metrics-grid metrics-grid-compact">';
   var breakdown = s.issue_state_breakdown || {};
   var stateOrder = ['new','recurring','session_dispatched','pr_open','pr_merged','fixed','verified_fixed'];
   var stateColors = {new:'orange',recurring:'orange',session_dispatched:'purple',pr_open:'blue',pr_merged:'cyan',fixed:'green',verified_fixed:'green'};
@@ -748,23 +748,23 @@ function renderOrchestratorPanel() {
   });
   html += '</div>';
 
-  html += '<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Rate Limit (' + rl.period_hours + 'h window)</div>';
-  html += '<div style="background:var(--bg-tertiary);border-radius:6px;height:20px;overflow:hidden;position:relative">';
-  html += '<div style="background:' + rlColor + ';height:100%;width:' + rlPct + '%;transition:width 0.3s"></div>';
-  html += '<span style="position:absolute;top:0;left:8px;line-height:20px;font-size:11px;color:var(--text-primary)">' + used + ' / ' + max + ' used (' + remaining + ' remaining)</span>';
+  html += '<div class="mb-12"><div class="section-label">Rate Limit (' + rl.period_hours + 'h window)</div>';
+  html += '<div class="progress-track">';
+  html += '<div class="progress-fill" style="background:' + rlColor + ';width:' + rlPct + '%"></div>';
+  html += '<span class="progress-label">' + used + ' / ' + max + ' used (' + remaining + ' remaining)</span>';
   html += '</div></div>';
 
   var objectives = s.objective_progress || [];
   if (objectives.length > 0) {
-    html += '<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Objectives</div>';
+    html += '<div class="mb-12"><div class="section-label">Objectives</div>';
     objectives.forEach(function(obj) {
       var pct = obj.target_count > 0 ? Math.round((obj.current_count / obj.target_count) * 100) : 0;
       var barColor = obj.met ? 'var(--accent-green)' : 'var(--accent-blue, #58a6ff)';
-      html += '<div style="margin-bottom:6px"><div style="font-size:12px;margin-bottom:2px">' + escapeHtml(obj.objective) + ' <span style="color:var(--text-muted)">' + obj.current_count + '/' + obj.target_count;
+      html += '<div class="mb-6"><div class="font-12 mb-2">' + escapeHtml(obj.objective) + ' <span class="text-muted">' + obj.current_count + '/' + obj.target_count;
       if (obj.met) html += ' (met)';
       html += '</span></div>';
-      html += '<div style="background:var(--bg-tertiary);border-radius:4px;height:14px;overflow:hidden">';
-      html += '<div style="background:' + barColor + ';height:100%;width:' + Math.min(pct, 100) + '%;transition:width 0.3s"></div></div></div>';
+      html += '<div class="progress-track progress-track-sm">';
+      html += '<div class="progress-fill" style="background:' + barColor + ';width:' + Math.min(pct, 100) + '%"></div></div></div>';
     });
     html += '</div>';
   }
@@ -782,7 +782,7 @@ function renderOrchestratorPanel() {
     var ranked = Object.keys(repoScores).map(function(r) {
       return { repo: r, avg: repoScores[r].total / repoScores[r].count, issues: repoScores[r].count };
     }).sort(function(a, b) { return b.avg - a.avg; });
-    html += '<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Repo Priority Ranking</div>';
+    html += '<div class="mb-12"><div class="section-label">Repo Priority Ranking</div>';
     html += '<table><thead><tr><th>Repo</th><th>Avg Priority</th><th>Eligible Issues</th></tr></thead><tbody>';
     ranked.forEach(function(r) {
       var name = r.repo.replace('https://github.com/', '');
@@ -807,7 +807,7 @@ function renderOrchestratorPanel() {
       + '<td>' + formatDate(e.dispatched_at) + '</td>'
       + '</tr>';
   });
-  histEl.innerHTML = '<div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;padding-top:8px">Recent Dispatch History</div>'
+  histEl.innerHTML = '<div class="section-label section-label-pt">Recent Dispatch History</div>'
     + '<table><thead><tr><th>Fingerprint</th><th>Session</th><th>Status</th><th>Dispatched</th></tr></thead><tbody>' + rows + '</tbody></table>';
 }
 
@@ -894,66 +894,66 @@ function renderOrchestratorConfigPanel() {
   var c = orchestratorConfig;
   var sevAll = ['critical','high','medium','low'];
   var alertSevs = c.alert_severities || [];
-  var html = '<div style="border-top:1px solid var(--border-primary);padding-top:12px">';
-  html += '<div style="display:flex;align-items:center;margin-bottom:8px"><div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px">Configuration</div>';
-  html += '<button class="btn btn-sm" onclick="_toggleOrchestratorConfigEdit()" id="btn-orch-config-edit" style="margin-left:auto">Edit</button></div>';
+  var html = '<div class="config-border-top">';
+  html += '<div class="config-header"><div class="section-label">Configuration</div>';
+  html += '<button class="btn btn-sm ml-auto" onclick="_toggleOrchestratorConfigEdit()" id="btn-orch-config-edit">Edit</button></div>';
   html += '<div id="orch-config-display">';
-  html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:13px">';
-  html += '<div><span style="color:var(--text-muted)">Session limit:</span> ' + (c.global_session_limit || 20) + ' / ' + (c.global_session_limit_period_hours || 24) + 'h</div>';
-  html += '<div><span style="color:var(--text-muted)">Alert on objective met:</span> ' + (c.alert_on_objective_met ? 'Yes' : 'No') + '</div>';
-  html += '<div><span style="color:var(--text-muted)">Alert on verified fix:</span> ' + (c.alert_on_verified_fix ? 'Yes' : 'No') + '</div>';
-  html += '<div><span style="color:var(--text-muted)">Alert severities:</span> ' + (alertSevs.length > 0 ? alertSevs.join(', ') : 'none') + '</div>';
-  html += '<div><span style="color:var(--text-muted)">Webhook:</span> ' + (c.alert_webhook_url ? '<span title="' + escapeHtml(c.alert_webhook_url) + '">configured</span>' : 'not set') + '</div>';
+  html += '<div class="config-grid">';
+  html += '<div><span class="text-muted">Session limit:</span> ' + (c.global_session_limit || 20) + ' / ' + (c.global_session_limit_period_hours || 24) + 'h</div>';
+  html += '<div><span class="text-muted">Alert on objective met:</span> ' + (c.alert_on_objective_met ? 'Yes' : 'No') + '</div>';
+  html += '<div><span class="text-muted">Alert on verified fix:</span> ' + (c.alert_on_verified_fix ? 'Yes' : 'No') + '</div>';
+  html += '<div><span class="text-muted">Alert severities:</span> ' + (alertSevs.length > 0 ? alertSevs.join(', ') : 'none') + '</div>';
+  html += '<div><span class="text-muted">Webhook:</span> ' + (c.alert_webhook_url ? '<span title="' + escapeHtml(c.alert_webhook_url) + '">configured</span>' : 'not set') + '</div>';
   html += '</div>';
   var objs = c.objectives || [];
   if (objs.length > 0) {
-    html += '<div style="margin-top:8px;font-size:12px"><span style="color:var(--text-muted)">Objectives:</span></div>';
-    html += '<table style="margin-top:4px;font-size:12px"><thead><tr><th>Objective</th><th>Target</th><th>Severity Filter</th></tr></thead><tbody>';
+    html += '<div class="mt-8 font-12"><span class="text-muted">Objectives:</span></div>';
+    html += '<table class="mt-4 font-12"><thead><tr><th>Objective</th><th>Target</th><th>Severity Filter</th></tr></thead><tbody>';
     objs.forEach(function(o) {
       html += '<tr><td>' + escapeHtml(o.objective || '') + '</td><td>' + (o.target_count || 0) + '</td><td>' + escapeHtml(o.severity || 'any') + '</td></tr>';
     });
     html += '</tbody></table>';
   } else {
-    html += '<div style="margin-top:6px;font-size:12px;color:var(--text-muted)">No objectives configured</div>';
+    html += '<div class="mt-6 font-12 text-muted">No objectives configured</div>';
   }
   html += '</div>';
   html += '<div id="orch-config-form" style="display:none">';
-  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">';
-  html += '<div class="form-group" style="margin:0"><label style="font-size:11px;color:var(--text-muted)">Session Limit</label>';
-  html += '<input class="form-input" id="orch-cfg-limit" type="number" value="' + (c.global_session_limit || 20) + '" style="padding:4px 8px"></div>';
-  html += '<div class="form-group" style="margin:0"><label style="font-size:11px;color:var(--text-muted)">Period (hours)</label>';
-  html += '<input class="form-input" id="orch-cfg-period" type="number" value="' + (c.global_session_limit_period_hours || 24) + '" style="padding:4px 8px"></div>';
+  html += '<div class="config-grid-2 mb-8">';
+  html += '<div class="form-group form-group-compact"><label class="form-label-sm">Session Limit</label>';
+  html += '<input class="form-input form-input-sm" id="orch-cfg-limit" type="number" value="' + (c.global_session_limit || 20) + '"></div>';
+  html += '<div class="form-group form-group-compact"><label class="form-label-sm">Period (hours)</label>';
+  html += '<input class="form-input form-input-sm" id="orch-cfg-period" type="number" value="' + (c.global_session_limit_period_hours || 24) + '"></div>';
   html += '</div>';
-  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">';
-  html += '<div class="form-group" style="margin:0"><label class="form-check"><input type="checkbox" id="orch-cfg-alert-obj"' + (c.alert_on_objective_met ? ' checked' : '') + '><span style="font-size:11px">Alert on objective met</span></label></div>';
-  html += '<div class="form-group" style="margin:0"><label class="form-check"><input type="checkbox" id="orch-cfg-alert-fix"' + (c.alert_on_verified_fix ? ' checked' : '') + '><span style="font-size:11px">Alert on verified fix</span></label></div>';
+  html += '<div class="config-grid-2 mb-8">';
+  html += '<div class="form-group form-group-compact"><label class="form-check"><input type="checkbox" id="orch-cfg-alert-obj"' + (c.alert_on_objective_met ? ' checked' : '') + '><span class="font-11">Alert on objective met</span></label></div>';
+  html += '<div class="form-group form-group-compact"><label class="form-check"><input type="checkbox" id="orch-cfg-alert-fix"' + (c.alert_on_verified_fix ? ' checked' : '') + '><span class="font-11">Alert on verified fix</span></label></div>';
   html += '</div>';
-  html += '<div class="form-group" style="margin:0;margin-bottom:8px"><label style="font-size:11px;color:var(--text-muted)">Alert Severities</label>';
-  html += '<div style="display:flex;gap:6px;margin-top:4px">';
+  html += '<div class="form-group form-group-compact mb-8"><label class="form-label-sm">Alert Severities</label>';
+  html += '<div class="flex-row-tight mt-4">';
   sevAll.forEach(function(s) {
     var checked = alertSevs.indexOf(s) >= 0 ? ' checked' : '';
-    html += '<label class="form-check"><input type="checkbox" class="orch-cfg-sev" value="' + s + '"' + checked + '><span style="font-size:11px">' + s + '</span></label>';
+    html += '<label class="form-check"><input type="checkbox" class="orch-cfg-sev" value="' + s + '"' + checked + '><span class="font-11">' + s + '</span></label>';
   });
   html += '</div></div>';
-  html += '<div class="form-group" style="margin:0;margin-bottom:8px"><label style="font-size:11px;color:var(--text-muted)">Webhook URL</label>';
-  html += '<input class="form-input" id="orch-cfg-webhook" type="text" value="' + escapeHtml(c.alert_webhook_url || '') + '" placeholder="https://hooks.slack.com/..." style="padding:4px 8px"></div>';
-  html += '<div id="orch-obj-editor" style="margin-bottom:8px">';
-  html += '<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">Objectives</div>';
+  html += '<div class="form-group form-group-compact mb-8"><label class="form-label-sm">Webhook URL</label>';
+  html += '<input class="form-input form-input-sm" id="orch-cfg-webhook" type="text" value="' + escapeHtml(c.alert_webhook_url || '') + '" placeholder="https://hooks.slack.com/..."></div>';
+  html += '<div id="orch-obj-editor" class="mb-8">';
+  html += '<div class="form-label-sm mb-4">Objectives</div>';
   html += '<div id="orch-obj-list">';
   objs.forEach(function(o, i) {
-    html += '<div class="orch-obj-row" style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:4px;margin-bottom:4px;align-items:center">';
-    html += '<input class="form-input orch-obj-name" value="' + escapeHtml(o.objective || '') + '" placeholder="Objective name" style="padding:4px 6px;font-size:12px">';
-    html += '<input class="form-input orch-obj-target" type="number" value="' + (o.target_count || 0) + '" placeholder="Target" style="padding:4px 6px;font-size:12px">';
-    html += '<select class="form-input orch-obj-sev" style="padding:4px 6px;font-size:12px"><option value="">any</option>';
+    html += '<div class="orch-obj-row">';
+    html += '<input class="form-input form-input-sm font-12 orch-obj-name" value="' + escapeHtml(o.objective || '') + '" placeholder="Objective name">';
+    html += '<input class="form-input form-input-sm font-12 orch-obj-target" type="number" value="' + (o.target_count || 0) + '" placeholder="Target">';
+    html += '<select class="form-input form-input-sm font-12 orch-obj-sev"><option value="">any</option>';
     sevAll.forEach(function(s) { html += '<option value="' + s + '"' + (o.severity === s ? ' selected' : '') + '>' + s + '</option>'; });
     html += '</select>';
-    html += '<button class="btn btn-sm" onclick="this.parentElement.remove()" style="color:var(--accent-red);padding:2px 6px">&times;</button>';
+    html += '<button class="btn btn-sm btn-remove-sm" onclick="this.parentElement.remove()">&times;</button>';
     html += '</div>';
   });
   html += '</div>';
-  html += '<button class="btn btn-sm" onclick="_addObjectiveRow()" style="font-size:11px;margin-top:2px">+ Add Objective</button>';
+  html += '<button class="btn btn-sm font-11 mt-2" onclick="_addObjectiveRow()">+ Add Objective</button>';
   html += '</div>';
-  html += '<div style="display:flex;gap:4px">';
+  html += '<div class="flex-row-tight">';
   html += '<button class="btn btn-sm btn-primary" onclick="_saveOrchestratorConfig()">Save</button>';
   html += '<button class="btn btn-sm" onclick="_toggleOrchestratorConfigEdit()">Cancel</button>';
   html += '</div></div></div>';
@@ -964,11 +964,10 @@ function _addObjectiveRow() {
   var list = document.getElementById('orch-obj-list');
   var div = document.createElement('div');
   div.className = 'orch-obj-row';
-  div.style.cssText = 'display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:4px;margin-bottom:4px;align-items:center';
-  div.innerHTML = '<input class="form-input orch-obj-name" value="" placeholder="Objective name" style="padding:4px 6px;font-size:12px">'
-    + '<input class="form-input orch-obj-target" type="number" value="0" placeholder="Target" style="padding:4px 6px;font-size:12px">'
-    + '<select class="form-input orch-obj-sev" style="padding:4px 6px;font-size:12px"><option value="">any</option><option value="critical">critical</option><option value="high">high</option><option value="medium">medium</option><option value="low">low</option></select>'
-    + '<button class="btn btn-sm" onclick="this.parentElement.remove()" style="color:var(--accent-red);padding:2px 6px">&times;</button>';
+  div.innerHTML = '<input class="form-input form-input-sm font-12 orch-obj-name" value="" placeholder="Objective name">'
+    + '<input class="form-input form-input-sm font-12 orch-obj-target" type="number" value="0" placeholder="Target">'
+    + '<select class="form-input form-input-sm font-12 orch-obj-sev"><option value="">any</option><option value="critical">critical</option><option value="high">high</option><option value="medium">medium</option><option value="low">low</option></select>'
+    + '<button class="btn btn-sm btn-remove-sm" onclick="this.parentElement.remove()">&times;</button>';
   list.appendChild(div);
 }
 
@@ -1031,18 +1030,18 @@ async function _saveOrchestratorConfig() {
 
 function renderOrchestratorQuickView() {
   var el = document.getElementById('orchestrator-quick-view');
-  if (!orchestratorStatus) { el.innerHTML = '<div style="color:var(--text-muted);font-size:12px">No orchestrator data</div>'; return; }
+  if (!orchestratorStatus) { el.innerHTML = '<div class="text-muted-sm">No orchestrator data</div>'; return; }
   var s = orchestratorStatus;
   var rl = s.rate_limit || {};
   var used = rl.used || 0, max = rl.max || 20, remaining = rl.remaining || 0;
   var rlPct = max > 0 ? Math.round((used / max) * 100) : 0;
   var rlColor = rlPct > 80 ? 'var(--accent-red)' : rlPct > 50 ? 'var(--accent-yellow, #d29922)' : 'var(--accent-green)';
-  var html = '<div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap">';
-  html += '<div style="font-size:13px"><span style="color:var(--text-muted)">Sessions:</span> <strong>' + used + '/' + max + '</strong> used</div>';
-  html += '<div style="flex:1;min-width:120px;max-width:300px"><div style="background:var(--bg-tertiary);border-radius:4px;height:14px;overflow:hidden">';
-  html += '<div style="background:' + rlColor + ';height:100%;width:' + rlPct + '%;transition:width 0.3s"></div></div></div>';
-  html += '<div style="font-size:13px"><span style="color:var(--text-muted)">Last cycle:</span> ' + (s.last_cycle ? formatDate(s.last_cycle) : 'never') + '</div>';
-  html += '<div style="font-size:13px"><span style="color:var(--text-muted)">Issues:</span> ' + (s.total_issues || 0) + '</div>';
+  var html = '<div class="orch-quick-row">';
+  html += '<div class="font-13"><span class="text-muted">Sessions:</span> <strong>' + used + '/' + max + '</strong> used</div>';
+  html += '<div class="flex-1-progress"><div class="progress-track progress-track-sm">';
+  html += '<div class="progress-fill" style="background:' + rlColor + ';width:' + rlPct + '%"></div></div></div>';
+  html += '<div class="font-13"><span class="text-muted">Last cycle:</span> ' + (s.last_cycle ? formatDate(s.last_cycle) : 'never') + '</div>';
+  html += '<div class="font-13"><span class="text-muted">Issues:</span> ' + (s.total_issues || 0) + '</div>';
   html += '</div>';
   el.innerHTML = html;
 }
@@ -1068,15 +1067,15 @@ function renderOrchestratorPriorityTable() {
     var barW = Math.min(Math.round((d.priority_score || 0)), 100);
     var barColor = barW > 70 ? 'var(--accent-red)' : barW > 40 ? 'var(--accent-orange)' : 'var(--accent-blue)';
     rows += '<tr>'
-      + '<td style="font-weight:600;color:var(--text-muted)">' + (i + 1) + '</td>'
+      + '<td class="priority-rank-cell">' + (i + 1) + '</td>'
       + '<td><span class="issue-id">' + escapeHtml(fp) + '</span></td>'
       + '<td>' + escapeHtml(repo) + '</td>'
       + '<td>' + escapeHtml(rule) + '</td>'
       + '<td><span class="badge ' + badgeClass(sev) + '">' + escapeHtml(sev) + '</span></td>'
-      + '<td style="min-width:120px"><div style="display:flex;align-items:center;gap:6px">'
-      + '<div style="flex:1;background:var(--bg-tertiary);border-radius:3px;height:12px;overflow:hidden">'
-      + '<div style="background:' + barColor + ';height:100%;width:' + barW + '%"></div></div>'
-      + '<span style="font-size:12px;font-weight:600;min-width:32px;text-align:right">' + score + '</span></div></td>'
+      + '<td class="priority-bar-wrap"><div class="priority-bar-inner">'
+      + '<div class="flex-1 progress-track progress-track-xs">'
+      + '<div class="progress-fill" style="background:' + barColor + ';width:' + barW + '%"></div></div>'
+      + '<span class="priority-score">' + score + '</span></div></td>'
       + '</tr>';
   });
   el.innerHTML = '<table><thead><tr><th>#</th><th>Fingerprint</th><th>Repo</th><th>Rule</th><th>Severity</th><th>Priority Score</th></tr></thead><tbody>' + rows + '</tbody></table>';
@@ -1086,7 +1085,7 @@ function renderFixRatesPanel() {
   var el = document.getElementById('orchestrator-fix-rates-container');
   if (!fixRatesData) { el.innerHTML = '<div class="empty-state">Fix rate data unavailable</div>'; return; }
   var overall = fixRatesData.overall || {};
-  var html = '<div class="metrics-grid" style="margin-bottom:16px">';
+  var html = '<div class="metrics-grid mb-16">';
   html += '<div class="metric-card ' + fixRateColorClass(overall.fix_rate || 0) + '"><div class="label">Overall Fix Rate</div><div class="value">' + (overall.fix_rate || 0) + '%</div><div class="sub">' + (overall.fixed || 0) + ' of ' + (overall.total || 0) + ' issues</div></div>';
   html += '</div>';
   var sections = [
@@ -1097,15 +1096,15 @@ function renderFixRatesPanel() {
   sections.forEach(function(sec) {
     var items = fixRatesData[sec.key] || [];
     if (!items.length) return;
-    html += '<div style="margin-bottom:16px"><div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">' + sec.title + '</div>';
-    html += '<table style="font-size:12px"><thead><tr><th>' + (sec.key === 'by_repo' ? 'Repository' : 'Category') + '</th><th>Total</th><th>Fixed</th><th>Fix Rate</th><th style="min-width:100px"></th></tr></thead><tbody>';
+    html += '<div class="mb-16"><div class="section-label">' + sec.title + '</div>';
+    html += '<table class="font-12"><thead><tr><th>' + (sec.key === 'by_repo' ? 'Repository' : 'Category') + '</th><th>Total</th><th>Fixed</th><th>Fix Rate</th><th class="min-w-100"></th></tr></thead><tbody>';
     items.forEach(function(item) {
       var name = item.name || '';
       if (sec.key === 'by_repo') name = name.replace('https://github.com/', '');
       var pct = item.fix_rate || 0;
       var barColor = pct >= 60 ? 'var(--accent-green)' : pct >= 30 ? 'var(--accent-orange)' : 'var(--accent-red)';
-      html += '<tr><td>' + escapeHtml(name) + '</td><td>' + item.total + '</td><td>' + item.fixed + '</td><td style="font-weight:600">' + pct + '%</td>';
-      html += '<td><div style="background:var(--bg-tertiary);border-radius:3px;height:10px;overflow:hidden"><div style="background:' + barColor + ';height:100%;width:' + pct + '%"></div></div></td></tr>';
+      html += '<tr><td>' + escapeHtml(name) + '</td><td>' + item.total + '</td><td>' + item.fixed + '</td><td class="fw-600">' + pct + '%</td>';
+      html += '<td><div class="progress-track progress-track-bar"><div class="progress-fill" style="background:' + barColor + ';width:' + pct + '%"></div></div></td></tr>';
     });
     html += '</tbody></table></div>';
   });
@@ -1130,37 +1129,37 @@ function renderRegistryDefaultsPanel() {
   var d = registryData.defaults || {};
   var c = registryData.concurrency || {};
   var html = '<div id="reg-defaults-display">';
-  html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:13px">';
-  html += '<div><span style="color:var(--text-muted)">Batch size:</span> ' + (d.batch_size || 5) + '</div>';
-  html += '<div><span style="color:var(--text-muted)">Max sessions:</span> ' + (d.max_sessions || 5) + '</div>';
-  html += '<div><span style="color:var(--text-muted)">Severity threshold:</span> ' + escapeHtml(d.severity_threshold || 'low') + '</div>';
-  html += '<div><span style="color:var(--text-muted)">Default branch:</span> ' + escapeHtml(d.default_branch || 'main') + '</div>';
-  html += '<div><span style="color:var(--text-muted)">Queries:</span> ' + escapeHtml(d.queries || 'security-extended') + '</div>';
-  html += '<div><span style="color:var(--text-muted)">Persist logs:</span> ' + (d.persist_logs !== false ? 'yes' : 'no') + '</div>';
-  html += '<div><span style="color:var(--text-muted)">Dry run:</span> ' + (d.dry_run ? 'yes' : 'no') + '</div>';
-  html += '<div><span style="color:var(--text-muted)">Max parallel:</span> ' + (c.max_parallel || 3) + '</div>';
-  html += '<div><span style="color:var(--text-muted)">Delay (sec):</span> ' + (c.delay_seconds || 30) + '</div>';
+  html += '<div class="config-grid">';
+  html += '<div><span class="text-muted">Batch size:</span> ' + (d.batch_size || 5) + '</div>';
+  html += '<div><span class="text-muted">Max sessions:</span> ' + (d.max_sessions || 5) + '</div>';
+  html += '<div><span class="text-muted">Severity threshold:</span> ' + escapeHtml(d.severity_threshold || 'low') + '</div>';
+  html += '<div><span class="text-muted">Default branch:</span> ' + escapeHtml(d.default_branch || 'main') + '</div>';
+  html += '<div><span class="text-muted">Queries:</span> ' + escapeHtml(d.queries || 'security-extended') + '</div>';
+  html += '<div><span class="text-muted">Persist logs:</span> ' + (d.persist_logs !== false ? 'yes' : 'no') + '</div>';
+  html += '<div><span class="text-muted">Dry run:</span> ' + (d.dry_run ? 'yes' : 'no') + '</div>';
+  html += '<div><span class="text-muted">Max parallel:</span> ' + (c.max_parallel || 3) + '</div>';
+  html += '<div><span class="text-muted">Delay (sec):</span> ' + (c.delay_seconds || 30) + '</div>';
   html += '</div>';
-  html += '<button class="btn btn-sm" onclick="_toggleDefaultsEdit()" id="btn-defaults-edit" style="margin-top:8px">Edit</button>';
+  html += '<button class="btn btn-sm mt-8" onclick="_toggleDefaultsEdit()" id="btn-defaults-edit">Edit</button>';
   html += '</div>';
   html += '<div id="reg-defaults-form" style="display:none">';
-  html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">';
-  html += '<div class="form-group" style="margin:0"><label style="font-size:11px;color:var(--text-muted)">Batch Size</label><input class="form-input" id="def-batch-size" type="number" value="' + (d.batch_size || 5) + '" style="padding:4px 8px"></div>';
-  html += '<div class="form-group" style="margin:0"><label style="font-size:11px;color:var(--text-muted)">Max Sessions</label><input class="form-input" id="def-max-sessions" type="number" value="' + (d.max_sessions || 5) + '" style="padding:4px 8px"></div>';
-  html += '<div class="form-group" style="margin:0"><label style="font-size:11px;color:var(--text-muted)">Severity Threshold</label>';
-  html += '<select class="form-input" id="def-severity" style="padding:4px 8px">';
+  html += '<div class="config-grid mb-8">';
+  html += '<div class="form-group form-group-compact"><label class="form-label-sm">Batch Size</label><input class="form-input form-input-sm" id="def-batch-size" type="number" value="' + (d.batch_size || 5) + '"></div>';
+  html += '<div class="form-group form-group-compact"><label class="form-label-sm">Max Sessions</label><input class="form-input form-input-sm" id="def-max-sessions" type="number" value="' + (d.max_sessions || 5) + '"></div>';
+  html += '<div class="form-group form-group-compact"><label class="form-label-sm">Severity Threshold</label>';
+  html += '<select class="form-input form-input-sm" id="def-severity">';
   ['low','medium','high','critical'].forEach(function(s) {
     html += '<option value="' + s + '"' + ((d.severity_threshold || 'low') === s ? ' selected' : '') + '>' + s + '</option>';
   });
   html += '</select></div>';
-  html += '<div class="form-group" style="margin:0"><label style="font-size:11px;color:var(--text-muted)">Default Branch</label><input class="form-input" id="def-branch" type="text" value="' + escapeHtml(d.default_branch || 'main') + '" style="padding:4px 8px"></div>';
-  html += '<div class="form-group" style="margin:0"><label style="font-size:11px;color:var(--text-muted)">Queries</label><input class="form-input" id="def-queries" type="text" value="' + escapeHtml(d.queries || 'security-extended') + '" style="padding:4px 8px"></div>';
-  html += '<div class="form-group" style="margin:0"><label class="form-check"><input type="checkbox" id="def-persist"' + (d.persist_logs !== false ? ' checked' : '') + '><span style="font-size:11px">Persist logs</span></label></div>';
-  html += '<div class="form-group" style="margin:0"><label class="form-check"><input type="checkbox" id="def-dryrun"' + (d.dry_run ? ' checked' : '') + '><span style="font-size:11px">Dry run</span></label></div>';
-  html += '<div class="form-group" style="margin:0"><label style="font-size:11px;color:var(--text-muted)">Max Parallel</label><input class="form-input" id="def-parallel" type="number" value="' + (c.max_parallel || 3) + '" style="padding:4px 8px"></div>';
-  html += '<div class="form-group" style="margin:0"><label style="font-size:11px;color:var(--text-muted)">Delay (sec)</label><input class="form-input" id="def-delay" type="number" value="' + (c.delay_seconds || 30) + '" style="padding:4px 8px"></div>';
+  html += '<div class="form-group form-group-compact"><label class="form-label-sm">Default Branch</label><input class="form-input form-input-sm" id="def-branch" type="text" value="' + escapeHtml(d.default_branch || 'main') + '"></div>';
+  html += '<div class="form-group form-group-compact"><label class="form-label-sm">Queries</label><input class="form-input form-input-sm" id="def-queries" type="text" value="' + escapeHtml(d.queries || 'security-extended') + '"></div>';
+  html += '<div class="form-group form-group-compact"><label class="form-check"><input type="checkbox" id="def-persist"' + (d.persist_logs !== false ? ' checked' : '') + '><span class="font-11">Persist logs</span></label></div>';
+  html += '<div class="form-group form-group-compact"><label class="form-check"><input type="checkbox" id="def-dryrun"' + (d.dry_run ? ' checked' : '') + '><span class="font-11">Dry run</span></label></div>';
+  html += '<div class="form-group form-group-compact"><label class="form-label-sm">Max Parallel</label><input class="form-input form-input-sm" id="def-parallel" type="number" value="' + (c.max_parallel || 3) + '"></div>';
+  html += '<div class="form-group form-group-compact"><label class="form-label-sm">Delay (sec)</label><input class="form-input form-input-sm" id="def-delay" type="number" value="' + (c.delay_seconds || 30) + '"></div>';
   html += '</div>';
-  html += '<div style="display:flex;gap:4px">';
+  html += '<div class="flex-row-tight">';
   html += '<button class="btn btn-sm btn-primary" onclick="_saveDefaultsConfig()">Save</button>';
   html += '<button class="btn btn-sm" onclick="_toggleDefaultsEdit()">Cancel</button>';
   html += '</div></div>';
@@ -1402,13 +1401,13 @@ function renderAuditLogPanel() {
         detailsStr = Object.keys(d).map(function(k) { return k + '=' + JSON.stringify(d[k]); }).join(', ');
       } catch (_) { detailsStr = escapeHtml(String(e.details)); }
     }
-    var resourceStr = e.resource ? '<span style="color:var(--text-secondary)">' + escapeHtml(e.resource) + '</span>' : '';
+    var resourceStr = e.resource ? '<span class="text-secondary">' + escapeHtml(e.resource) + '</span>' : '';
     return '<tr>'
-      + '<td style="white-space:nowrap">' + formatDate(e.timestamp) + '</td>'
+      + '<td class="text-nowrap">' + formatDate(e.timestamp) + '</td>'
       + '<td>' + escapeHtml(e.user || '-') + '</td>'
-      + '<td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + color + ';margin-right:4px"></span>' + escapeHtml(e.action) + '</td>'
+      + '<td><span class="audit-dot" style="background:' + color + '"></span>' + escapeHtml(e.action) + '</td>'
       + '<td>' + resourceStr + '</td>'
-      + '<td style="font-size:11px;color:var(--text-muted);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtml(detailsStr) + '">' + escapeHtml(detailsStr) + '</td>'
+      + '<td class="audit-details-cell" title="' + escapeHtml(detailsStr) + '">' + escapeHtml(detailsStr) + '</td>'
       + '</tr>';
   }).join('');
   el.innerHTML = '<table><thead><tr>'
