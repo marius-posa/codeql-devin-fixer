@@ -1078,6 +1078,189 @@ def query_issues(conn: sqlite3.Connection, target_repo: str = "") -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Read helpers — issue detail enrichment
+# ---------------------------------------------------------------------------
+
+
+def query_issue_detail(conn: sqlite3.Connection, fingerprint: str) -> dict | None:
+    row = conn.execute(
+        "SELECT * FROM fingerprint_issues WHERE fingerprint = ?",
+        (fingerprint,),
+    ).fetchone()
+    if not row:
+        return None
+
+    from issue_tracking import compute_sla_status, _parse_ts
+
+    status = row["status"]
+    run_number_rows = conn.execute(
+        """SELECT DISTINCT r.run_number, r.timestamp, r.run_url
+           FROM issues i JOIN runs r ON i.run_id = r.id
+           WHERE i.fingerprint = ?
+           ORDER BY r.run_number""",
+        (fingerprint,),
+    ).fetchall()
+    run_numbers = [r["run_number"] for r in run_number_rows]
+    run_timeline = [
+        {"run_number": r["run_number"], "timestamp": r["timestamp"], "run_url": r["run_url"]}
+        for r in run_number_rows
+    ]
+
+    session_rows = conn.execute(
+        """SELECT DISTINCT s.session_id, s.session_url, s.status, s.pr_url,
+                  r.run_number, r.timestamp
+           FROM sessions s
+           JOIN runs r ON s.run_id = r.id
+           JOIN session_issue_ids si ON si.session_id = s.id
+           JOIN issues i ON i.run_id = r.id AND si.issue_id = i.issue_ext_id
+           WHERE i.fingerprint = ?
+           ORDER BY r.timestamp DESC""",
+        (fingerprint,),
+    ).fetchall()
+    related_sessions = [
+        {
+            "session_id": s["session_id"],
+            "session_url": s["session_url"],
+            "status": s["status"],
+            "pr_url": s["pr_url"],
+            "run_number": s["run_number"],
+            "timestamp": s["timestamp"],
+        }
+        for s in session_rows
+    ]
+
+    pr_rows = conn.execute(
+        """SELECT DISTINCT p.pr_number, p.title, p.html_url, p.state, p.merged, p.created_at
+           FROM prs p
+           JOIN pr_issue_ids pi ON pi.pr_id = p.id
+           JOIN issues i ON pi.issue_id = i.issue_ext_id
+           WHERE i.fingerprint = ?
+           ORDER BY p.created_at DESC""",
+        (fingerprint,),
+    ).fetchall()
+    related_prs = [
+        {
+            "pr_number": p["pr_number"],
+            "title": p["title"],
+            "html_url": p["html_url"],
+            "state": p["state"],
+            "merged": bool(p["merged"]),
+            "created_at": p["created_at"],
+        }
+        for p in pr_rows
+    ]
+
+    found_at_ts = _parse_ts(row["first_seen_date"])
+    fixed_at_ts = _parse_ts(row["last_seen_date"]) if status == "fixed" else None
+    sla = compute_sla_status(row["severity_tier"], found_at_ts, fixed_at_ts)
+
+    target_repo = row["target_repo"]
+    source_url = ""
+    if target_repo and row["file"]:
+        repo_path = target_repo.replace("https://github.com/", "")
+        source_url = f"https://github.com/{repo_path}/blob/main/{row['file']}#L{row['start_line']}"
+
+    return {
+        "fingerprint": fingerprint,
+        "rule_id": row["rule_id"],
+        "severity_tier": row["severity_tier"],
+        "cwe_family": row["cwe_family"],
+        "file": row["file"],
+        "start_line": row["start_line"],
+        "description": row["description"],
+        "resolution": row["resolution"],
+        "code_churn": row["code_churn"],
+        "status": status,
+        "first_seen_run": row["first_seen_run"],
+        "first_seen_date": row["first_seen_date"],
+        "last_seen_run": row["last_seen_run"],
+        "last_seen_date": row["last_seen_date"],
+        "target_repo": target_repo,
+        "appearances": row["appearances"],
+        "latest_issue_id": row["latest_issue_id"],
+        "fix_duration_hours": row["fix_duration_hours"],
+        "run_numbers": run_numbers,
+        "run_timeline": run_timeline,
+        "related_sessions": related_sessions,
+        "related_prs": related_prs,
+        "source_url": source_url,
+        "sla_status": sla["sla_status"],
+        "sla_limit_hours": sla["sla_limit_hours"],
+        "sla_hours_elapsed": sla["sla_hours_elapsed"],
+        "sla_hours_remaining": sla["sla_hours_remaining"],
+    }
+
+
+_VALID_ISSUE_STATUSES = {"false_positive", "wont_fix", "new", "recurring"}
+
+
+def update_issue_status(conn: sqlite3.Connection, fingerprint: str, new_status: str) -> bool:
+    if new_status not in _VALID_ISSUE_STATUSES:
+        return False
+    row = conn.execute(
+        "SELECT 1 FROM fingerprint_issues WHERE fingerprint = ?", (fingerprint,)
+    ).fetchone()
+    if not row:
+        return False
+    conn.execute(
+        "UPDATE fingerprint_issues SET status = ? WHERE fingerprint = ?",
+        (new_status, fingerprint),
+    )
+    return True
+
+
+def query_dispatch_impact(conn: sqlite3.Connection, target_repo: str) -> dict:
+    runs = conn.execute(
+        """SELECT r.run_number, r.issues_found, r.batches_created, r.timestamp
+           FROM runs r
+           WHERE r.target_repo = ?
+           ORDER BY r.timestamp DESC
+           LIMIT 5""",
+        (target_repo,),
+    ).fetchall()
+
+    sessions = conn.execute(
+        """SELECT s.session_id, s.status, r.run_number
+           FROM sessions s
+           JOIN runs r ON s.run_id = r.id
+           WHERE r.target_repo = ? AND s.session_id != ''
+           ORDER BY r.timestamp DESC""",
+        (target_repo,),
+    ).fetchall()
+
+    last_scan_issues = 0
+    last_scan_batches = 0
+    if runs:
+        last_scan_issues = runs[0]["issues_found"] or 0
+        last_scan_batches = runs[0]["batches_created"] or 0
+
+    total_sessions = len(sessions)
+    finished_sessions = sum(1 for s in sessions if s["status"] in ("finished", "stopped"))
+
+    avg_issues_per_run = 0
+    if runs:
+        avg_issues_per_run = round(sum(r["issues_found"] or 0 for r in runs) / len(runs), 1)
+
+    return {
+        "target_repo": target_repo,
+        "last_scan_issues": last_scan_issues,
+        "last_scan_batches": last_scan_batches,
+        "avg_issues_per_run": avg_issues_per_run,
+        "total_sessions_created": total_sessions,
+        "sessions_finished": finished_sessions,
+        "recent_runs": [
+            {
+                "run_number": r["run_number"],
+                "issues_found": r["issues_found"],
+                "batches_created": r["batches_created"],
+                "timestamp": r["timestamp"],
+            }
+            for r in runs
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
 # Read helpers — FTS search
 # ---------------------------------------------------------------------------
 

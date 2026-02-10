@@ -1,0 +1,47 @@
+name: Sync telemetry templates to docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'telemetry/templates/dashboard.html'
+      - 'telemetry/static/shared.css'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync dashboard HTML
+        run: |
+          if [ -f telemetry/templates/dashboard.html ]; then
+            cp telemetry/templates/dashboard.html docs/index.html
+            sed -i 's|/static/shared.css|static/shared.css|g' docs/index.html
+            sed -i 's|/static/shared.js|static/shared.js|g' docs/index.html
+            sed -i 's|/static/api.js|static/api.js|g' docs/index.html
+          fi
+
+      - name: Sync CSS only
+        run: |
+          if [ -f telemetry/static/shared.css ]; then
+            cp telemetry/static/shared.css docs/static/shared.css
+          fi
+
+      - name: Check for changes
+        id: changes
+        run: |
+          if git diff --quiet docs/; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and push
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/
+          git commit -m "chore: sync telemetry templates to docs"
+          git push

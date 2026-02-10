@@ -28,6 +28,9 @@ from database import (
     query_stats,
     query_repos,
     query_issues,
+    query_issue_detail,
+    update_issue_status,
+    query_dispatch_impact,
     search_issues,
     refresh_fingerprint_issues,
     backfill_pr_urls,
@@ -381,6 +384,40 @@ def api_issues():
 
         page, per_page = _get_pagination()
         return jsonify(_paginate(issues, page, per_page))
+
+
+@api_bp.route("/api/issues/<fingerprint>/detail")
+def api_issue_detail(fingerprint):
+    with db_connection() as conn:
+        detail = query_issue_detail(conn, fingerprint)
+        if detail is None:
+            return jsonify({"error": "Issue not found"}), 404
+        return jsonify(detail)
+
+
+@api_bp.route("/api/issues/<fingerprint>/status", methods=["PATCH"])
+@require_api_key
+def api_issue_status(fingerprint):
+    body = flask_request.get_json(silent=True) or {}
+    new_status = body.get("status", "")
+    if not new_status:
+        return jsonify({"error": "status is required"}), 400
+    with db_connection() as conn:
+        ok = update_issue_status(conn, fingerprint, new_status)
+        if not ok:
+            return jsonify({"error": "Invalid status or issue not found"}), 400
+        conn.commit()
+        _audit("update_issue_status", resource=fingerprint, details=json.dumps({"status": new_status}))
+        return jsonify({"success": True, "fingerprint": fingerprint, "status": new_status})
+
+
+@api_bp.route("/api/dispatch/impact")
+def api_dispatch_impact():
+    target_repo = flask_request.args.get("target_repo", "")
+    if not target_repo:
+        return jsonify({"error": "target_repo is required"}), 400
+    with db_connection() as conn:
+        return jsonify(query_dispatch_impact(conn, target_repo))
 
 
 @api_bp.route("/api/issues/search")
