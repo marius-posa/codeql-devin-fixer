@@ -47,7 +47,7 @@ Key components (where to look)
   - playbook_manager.py — CWE playbooks + Devin Playbooks API sync
   - repo_context.py — Gathers repo signals (pkg managers, tests, style) to enrich prompts
 - playbooks/ — CWE‑specific playbooks that guide Devin with structured, auditable instructions
-- telemetry/ — Flask dashboard (4 Blueprints) + SQLite to track runs, sessions, PRs, fix rates
+- telemetry/ — Flask dashboard (5 Blueprints) + SQLite to track runs, sessions, PRs, fix rates
 - docs/ — Architecture docs, config reference, and GitHub Pages static site
 
 How Devin is used here

@@ -150,7 +150,7 @@ codeql-devin-fixer/
 |   +-- architecture.md           # Architecture diagrams and data flow
 |   +-- CONFIG_REFERENCE.md       # Complete configuration reference
 |   +-- SOLUTION_REVIEW_V*.md     # Solution reviews V1-V5
-+-- tests/                        # Test suite (33 files, ~11,500 lines)
++-- tests/                        # Test suite (32 files, ~11,400 lines)
 +-- repo_registry.json            # Multi-repo scan configuration
 +-- CONTRIBUTING.md               # Contribution guide
 +-- CHANGELOG.md                  # Version history

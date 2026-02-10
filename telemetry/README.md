@@ -66,7 +66,7 @@ docker compose up --build
 
 ## Architecture
 
-The app is organized into 4 route Blueprints:
+The app is organized into 5 Blueprints:
 
 | Blueprint | Module | Scope |
 |---|---|---|
@@ -74,6 +74,7 @@ The app is organized into 4 route Blueprints:
 | `orchestrator_bp` | `routes/orchestrator.py` | Orchestrator: plan, scan, dispatch, cycle, config, fix rates |
 | `registry_bp` | `routes/registry.py` | Repo registry: CRUD for scheduled repositories |
 | `demo_bp` | `routes/demo.py` | Demo data: load, clear, regenerate, edit sample data |
+| `oauth_bp` | `oauth.py` | GitHub OAuth: login, callback, token management |
 
 Supporting modules: `database.py` (SQLite), `helpers.py` (auth, pagination, audit), `oauth.py` (GitHub OAuth), `github_service.py` (PR fetching), `devin_service.py` (session polling), `aggregation.py` (metrics), `verification.py` (fix tracking), `issue_tracking.py` (SLA), `pdf_report.py` (reports).
 
@@ -99,6 +100,7 @@ Supporting modules: `database.py` (SQLite), `helpers.py` (auth, pagination, audi
 | `/api/orchestrator/cycle` | POST | Full cycle: scan + dispatch |
 | `/api/orchestrator/config` | GET/PUT | Manage global orchestrator settings |
 | `/api/orchestrator/fix-rates` | GET | Fix rates by CWE family |
+| `/api/backfill` | POST | Patch old telemetry records with corrected issue IDs and PR URLs |
 
 ### Pages
 

@@ -79,7 +79,7 @@ github_app/                      # GitHub App for webhook automation
 playbooks/                       # CWE-specific fix instructions (YAML)
 charts/telemetry/                # Helm chart for Kubernetes deployment
 docs/                            # GitHub Pages static site + documentation
-tests/                           # Test suite (33 files, ~11,500 lines)
+tests/                           # Test suite (32 files, ~11,400 lines)
 ```
 
 See [docs/architecture.md](docs/architecture.md) for detailed flow diagrams and [docs/CONFIG_REFERENCE.md](docs/CONFIG_REFERENCE.md) for the complete configuration reference.

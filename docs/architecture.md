@@ -15,7 +15,7 @@ GitHub Actions Runner
          |                         |
          v                         v
   Devin API                Telemetry Dashboard (Flask)
-  /v1/sessions             4 Blueprints, 30+ endpoints
+  /v1/sessions             5 Blueprints, 30+ endpoints
   /v1/knowledge            rate limiting, audit log
   /v1/messages             server-side sessions
   Playbooks API            SQLite DB
@@ -111,9 +111,10 @@ GitHub Actions Runner
 +--------+----------+     +---------------------------+
 | Telemetry Server  |     | GitHub API                |
 | (Flask app.py)    +---->| - Fetch PRs               |
-| 4 Blueprints:     |     | - Match to sessions       |
+| 5 Blueprints:     |     | - Match to sessions       |
 |   api, orchestrator,    +---------------------------+
-|   registry, demo  |
+|   registry, demo, |
+|   oauth           |
 |                   |     +---------------------------+
 | 30+ endpoints     +---->| Devin API                 |
 | Rate limiting     |     | - Poll session status     |
@@ -203,7 +204,7 @@ SQLite database (telemetry.db)
     |
     +-- devin_service.py: Poll Devin API for session status updates
     |
-    +-- routes/: 4 Blueprints serve aggregated data to dashboard UI
+    +-- routes/: 5 Blueprints serve aggregated data to dashboard UI
 ```
 
 ### Webhook Notifications (Optional)
@@ -231,7 +232,7 @@ Payloads are JSON-encoded and optionally signed with HMAC-SHA256 (`X-Hub-Signatu
 | Wave-based dispatch | Dispatches high-severity batches first; halts if fix rate drops below threshold to save ACUs |
 | Per-repo config file | Allows customization without modifying the workflow, reducing friction for multi-repo deployments |
 | SQLite telemetry database | Lightweight, zero-dependency storage with FTS5 full-text search; migrated from JSON for query performance |
-| Blueprint-based Flask app | Modular route organization (api, orchestrator, registry, demo) for maintainability |
+| Blueprint-based Flask app | Modular route organization (api, orchestrator, registry, demo, oauth) for maintainability |
 | Knowledge API integration | Organizational memory -- successful fix patterns are stored and reused in future prompts |
 | Webhook integration | Enables organizations to plug into existing monitoring without code changes |
 
