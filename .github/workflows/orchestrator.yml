@@ -17,7 +17,7 @@ on:
           - status
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   orchestrate:
@@ -44,15 +44,3 @@ jobs:
           GH_PAT: ${{ secrets.GH_PAT }}
           ACTION_REPO: ${{ github.repository }}
         run: python -m scripts.orchestrator ${{ inputs.command || 'cycle' }} --json
-
-      - name: Commit state changes
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add telemetry/orchestrator_state.json
-          if git diff --cached --quiet; then
-            echo "No state changes to commit"
-          else
-            git commit -m "chore: update orchestrator state after ${{ inputs.command || 'cycle' }}"
-            git push
-          fi
