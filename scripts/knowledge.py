@@ -91,7 +91,7 @@ def store_fix_knowledge(
     repo_url: str = "",
     parent_folder_id: str | None = None,
     github_token: str = "",
-) -> dict:
+) -> dict[str, Any]:
     fix_pattern = _classify_fix_pattern(cwe_family)
     name = _make_knowledge_name(cwe_family, batch_id)
 

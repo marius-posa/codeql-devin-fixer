@@ -8,7 +8,7 @@ import subprocess
 from flask import Blueprint, jsonify, request as flask_request
 
 from config import RUNS_DIR
-from database import db_connection, get_connection, query_issues, save_orchestrator_state
+from database import db_connection, get_connection, is_orchestrator_state_empty, query_issues, save_orchestrator_state
 from devin_api import clean_session_id  # noqa: E402
 from verification import load_verification_records, build_fingerprint_fix_map
 from helpers import require_api_key, _audit, _paginate, _get_pagination
@@ -40,7 +40,7 @@ def _load_orchestrator_state() -> dict:
         return _orch_load_state()
     with db_connection() as conn:
         try:
-            if _ORCHESTRATOR_STATE_PATH.exists():
+            if is_orchestrator_state_empty(conn) and _ORCHESTRATOR_STATE_PATH.exists():
                 try:
                     with open(_ORCHESTRATOR_STATE_PATH) as f:
                         data = json.load(f)

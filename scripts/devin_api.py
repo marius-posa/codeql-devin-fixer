@@ -18,7 +18,7 @@ logger = setup_logging(__name__)
 DEVIN_API_BASE = "https://api.devin.ai/v1"
 
 TERMINAL_STATUSES = frozenset(
-    {"finished", "blocked", "expired", "failed", "cancelled",
+    {"finished", "blocked", "expired", "failed", "canceled", "cancelled",
      "stopped", "error"}
 )
 

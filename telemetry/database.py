@@ -21,7 +21,7 @@ from devin_api import clean_session_id as _clean_session_id  # noqa: E402
 
 _INITIALIZED_DBS: set[str] = set()
 
-DB_PATH= pathlib.Path(
+DB_PATH = pathlib.Path(
     os.environ.get(
         "TELEMETRY_DB_PATH",
         str(pathlib.Path(__file__).parent / "telemetry.db"),
