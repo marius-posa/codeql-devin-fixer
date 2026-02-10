@@ -572,7 +572,7 @@ function renderMetrics(s) {
   const issuesSub = s.total_runs > 1 && s.latest_issues != null
     ? latestIssues + ' current, ' + (s.total_issues || 0) + ' across all runs'
     : '';
-  const periodLabel = currentPeriod !== 'all' ? ' (' + currentPeriod + ')' : '';
+  const periodLabel = currentPeriod !== 'all' ? ' (' + escapeHtml(String(currentPeriod)) + ')' : '';
   const fixRate = s.fix_rate || 0;
   const cards = [
     { label: 'Repos Scanned', value: s.repos_scanned || 0, cls: 'blue' },
@@ -588,9 +588,9 @@ function renderMetrics(s) {
   ];
   grid.innerHTML = cards.map(function(c) {
     return '<div class="metric-card ' + c.cls + '">'
-      + '<div class="label">' + c.label + '</div>'
-      + '<div class="value">' + c.value + '</div>'
-      + (c.sub ? '<div class="sub">' + c.sub + '</div>' : '')
+      + '<div class="label">' + escapeHtml(String(c.label)) + '</div>'
+      + '<div class="value">' + escapeHtml(String(c.value)) + '</div>'
+      + (c.sub ? '<div class="sub">' + escapeHtml(String(c.sub)) + '</div>' : '')
       + '</div>';
   }).join('');
 }
@@ -607,13 +607,13 @@ function renderReposTable(repos) {
     const short = escapeHtml(repoShort(r.repo));
     rows += '<tr>'
       + '<td><a href="repo.html?repo=' + encodeURIComponent(short) + '">' + short + '</a></td>'
-      + '<td>' + r.runs + '</td>'
-      + '<td>' + r.issues_found + '</td>'
-      + '<td>' + r.sessions_created + (r.sessions_finished ? ' <span style="color:var(--accent-green);font-size:11px">(' + r.sessions_finished + ' done)</span>' : '') + '</td>'
-      + '<td>' + r.prs_total + '</td>'
-      + '<td>' + r.prs_merged + '</td>'
-      + '<td>' + r.prs_open + '</td>'
-      + '<td>' + formatDate(r.last_run) + '</td>'
+      + '<td>' + escapeHtml(String(r.runs)) + '</td>'
+      + '<td>' + escapeHtml(String(r.issues_found)) + '</td>'
+      + '<td>' + escapeHtml(String(r.sessions_created)) + (r.sessions_finished ? ' <span style="color:var(--accent-green);font-size:11px">(' + escapeHtml(String(r.sessions_finished)) + ' done)</span>' : '') + '</td>'
+      + '<td>' + escapeHtml(String(r.prs_total)) + '</td>'
+      + '<td>' + escapeHtml(String(r.prs_merged)) + '</td>'
+      + '<td>' + escapeHtml(String(r.prs_open)) + '</td>'
+      + '<td>' + escapeHtml(formatDate(r.last_run)) + '</td>'
       + '<td style="white-space:nowrap"><a class="btn" style="padding:2px 10px;font-size:11px" href="repo.html?repo=' + encodeURIComponent(short) + '">View</a> '
       + '<button class="btn" style="padding:2px 10px;font-size:11px;background:#1f6feb;border-color:#388bfd;color:#fff" onclick="openDispatchModal(this.dataset.repo)" data-repo="' + escapeHtml(r.repo) + '">Run</button></td>'
       + '</tr>';
