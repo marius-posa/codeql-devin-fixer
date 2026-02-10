@@ -17,7 +17,7 @@ _VALID_SCHEDULE = ("hourly", "daily", "weekly", "monthly")
 
 def _load_registry() -> dict:
     if not REGISTRY_PATH.exists():
-        return {"version": "1.0", "defaults": {}, "concurrency": {"max_parallel": 3, "delay_seconds": 30}, "repos": []}
+        return {"version": "2.0", "defaults": {}, "orchestrator": {}, "concurrency": {"max_parallel": 3, "delay_seconds": 30}, "repos": []}
     with open(REGISTRY_PATH) as f:
         return json.load(f)
 

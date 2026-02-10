@@ -8,11 +8,26 @@ import subprocess
 from flask import Blueprint, jsonify, request as flask_request
 
 from config import RUNS_DIR
-from database import db_connection, get_connection, init_db, query_issues, load_orchestrator_state, is_orchestrator_state_empty, save_orchestrator_state
+from database import db_connection, get_connection, query_issues, save_orchestrator_state
+from devin_api import clean_session_id  # noqa: E402
 from verification import load_verification_records, build_fingerprint_fix_map
 from helpers import require_api_key, _audit, _paginate, _get_pagination
 from extensions import limiter
 from routes.registry import _load_registry as _load_orchestrator_registry, _save_registry as _save_orchestrator_registry, REGISTRY_PATH as _ORCHESTRATOR_REGISTRY_PATH  # noqa: F401
+
+try:
+    from scripts.orchestrator.state import load_state as _orch_load_state
+except ImportError:
+    _orch_load_state = None  # type: ignore[assignment]
+
+try:
+    from scripts.orchestrator.agent import build_effectiveness_report, merge_agent_scores
+except ImportError:
+    try:
+        from orchestrator.agent import build_effectiveness_report, merge_agent_scores
+    except ImportError:
+        build_effectiveness_report = None  # type: ignore[assignment]
+        merge_agent_scores = None  # type: ignore[assignment]
 
 orchestrator_bp = Blueprint("orchestrator", __name__)
 
@@ -21,17 +36,18 @@ _ORCHESTRATOR_STATE_PATH = pathlib.Path(__file__).resolve().parent.parent / "orc
 
 
 def _load_orchestrator_state() -> dict:
+    if _orch_load_state is not None:
+        return _orch_load_state()
     with db_connection() as conn:
         try:
-            init_db(conn)
-            if is_orchestrator_state_empty(conn):
-                if _ORCHESTRATOR_STATE_PATH.exists():
-                    try:
-                        with open(_ORCHESTRATOR_STATE_PATH) as f:
-                            data = json.load(f)
-                        save_orchestrator_state(conn, data)
-                    except (json.JSONDecodeError, OSError):
-                        pass
+            if _ORCHESTRATOR_STATE_PATH.exists():
+                try:
+                    with open(_ORCHESTRATOR_STATE_PATH) as f:
+                        data = json.load(f)
+                    save_orchestrator_state(conn, data)
+                except (json.JSONDecodeError, OSError):
+                    pass
+            from database import load_orchestrator_state
             return load_orchestrator_state(conn)
         except Exception:
             return {
@@ -63,10 +79,7 @@ def _normalize_dispatch_entry(entry: dict) -> dict:
     if not out.get("session_id") and out.get("last_session_id"):
         out["session_id"] = out["last_session_id"]
     if not out.get("session_url") and out.get("session_id"):
-        sid = out["session_id"]
-        if sid.startswith("devin-"):
-            sid = sid[6:]
-        out["session_url"] = f"https://app.devin.ai/sessions/{sid}"
+        out["session_url"] = f"https://app.devin.ai/sessions/{clean_session_id(out['session_id'])}"
     return out
 
 
@@ -172,7 +185,6 @@ def api_orchestrator_dispatch():
     result = subprocess.run(
         cmd, capture_output=True, text=True, timeout=120,
         cwd=str(_ORCHESTRATOR_DIR.parent),
-        env={**os.environ},
     )
     _audit("orchestrator_dispatch", resource=repo_filter, details=json.dumps({"dry_run": dry_run}))
     try:
@@ -204,7 +216,6 @@ def api_orchestrator_scan():
     result = subprocess.run(
         cmd, capture_output=True, text=True, timeout=120,
         cwd=str(_ORCHESTRATOR_DIR.parent),
-        env={**os.environ},
     )
     _audit("orchestrator_scan", resource=repo_filter, details=json.dumps({"dry_run": dry_run}))
     try:
@@ -265,7 +276,6 @@ def api_orchestrator_cycle():
     result = subprocess.run(
         cmd, capture_output=True, text=True, timeout=300,
         cwd=str(_ORCHESTRATOR_DIR.parent),
-        env={**os.environ},
     )
     _audit("orchestrator_cycle", resource=repo_filter, details=json.dumps({"dry_run": dry_run}))
     try:
@@ -333,7 +343,6 @@ def api_orchestrator_agent_triage():
     result = subprocess.run(
         cmd, capture_output=True, text=True, timeout=360,
         cwd=str(_ORCHESTRATOR_DIR.parent),
-        env={**os.environ},
     )
     _audit("orchestrator_agent_triage", resource=repo_filter, details=json.dumps({"dry_run": dry_run}))
     try:
@@ -364,22 +373,25 @@ def api_orchestrator_agent_plan():
 
     det_dispatches = det_plan.get("planned_dispatches", [])
     agent_decisions = agent_triage.get("decisions", [])
-    agent_map = {d["fingerprint"]: d for d in agent_decisions if d.get("fingerprint")}
 
-    merged = []
-    for dispatch in det_dispatches:
-        entry = dict(dispatch)
-        fp = entry.get("fingerprint", "")
-        agent = agent_map.get(fp)
-        if agent:
-            entry["agent_priority_score"] = agent.get("agent_priority_score", None)
-            entry["agent_reasoning"] = agent.get("reasoning", "")
-            entry["agent_dispatch"] = agent.get("dispatch", True)
-        else:
-            entry["agent_priority_score"] = None
-            entry["agent_reasoning"] = ""
-            entry["agent_dispatch"] = None
-        merged.append(entry)
+    if merge_agent_scores is not None:
+        merged = merge_agent_scores(det_dispatches, agent_decisions)
+    else:
+        agent_map = {d["fingerprint"]: d for d in agent_decisions if d.get("fingerprint")}
+        merged = []
+        for dispatch in det_dispatches:
+            entry = dict(dispatch)
+            fp = entry.get("fingerprint", "")
+            agent = agent_map.get(fp)
+            if agent:
+                entry["agent_priority_score"] = agent.get("agent_priority_score", None)
+                entry["agent_reasoning"] = agent.get("reasoning", "")
+                entry["agent_dispatch"] = agent.get("dispatch", True)
+            else:
+                entry["agent_priority_score"] = None
+                entry["agent_reasoning"] = ""
+                entry["agent_dispatch"] = None
+            merged.append(entry)
 
     return jsonify({
         "timestamp": agent_triage.get("timestamp", ""),
@@ -399,6 +411,11 @@ def api_orchestrator_effectiveness():
 
     verification_records = load_verification_records(RUNS_DIR)
     fp_fix_map = build_fingerprint_fix_map(verification_records)
+
+    if build_effectiveness_report is not None:
+        report = build_effectiveness_report(dispatch_history, agent_triage, fp_fix_map)
+        report["has_agent_data"] = bool(agent_triage.get("decisions"))
+        return jsonify(report)
 
     agent_decisions = agent_triage.get("decisions", [])
     agent_fps = {d["fingerprint"] for d in agent_decisions if d.get("dispatch")}

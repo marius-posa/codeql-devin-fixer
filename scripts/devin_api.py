@@ -1,20 +1,24 @@
 #!/usr/bin/env python3
 """Shared Devin API utilities used by knowledge.py, retry_feedback.py, and dispatch_devin.py."""
 
-import logging
-import time
-
 import requests
 
-logger = logging.getLogger(__name__)
+try:
+    from logging_config import setup_logging
+except ImportError:
+    from scripts.logging_config import setup_logging
+
+try:
+    from retry_utils import request_with_retry as _retry_request
+except ImportError:
+    from scripts.retry_utils import request_with_retry as _retry_request
+
+logger = setup_logging(__name__)
 
 DEVIN_API_BASE = "https://api.devin.ai/v1"
 
-MAX_RETRIES = 3
-RETRY_DELAY = 5
-
 TERMINAL_STATUSES = frozenset(
-    {"finished", "blocked", "expired", "failed", "canceled", "cancelled",
+    {"finished", "blocked", "expired", "failed", "cancelled",
      "stopped", "error"}
 )
 
@@ -39,26 +43,22 @@ def request_with_retry(
     api_key: str,
     json_data: dict | None = None,
 ) -> dict:
-    last_err: requests.exceptions.RequestException | None = None
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            resp = requests.request(
-                method,
-                url,
-                headers=headers(api_key),
-                json=json_data,
-                timeout=30,
-            )
-            resp.raise_for_status()
-            if resp.status_code == 204:
-                return {}
-            return resp.json()
-        except requests.exceptions.RequestException as e:
-            last_err = e
-            if attempt < MAX_RETRIES:
-                logger.warning("Retry %d/%d after error: %s", attempt, MAX_RETRIES, e)
-                time.sleep(RETRY_DELAY * attempt)
-    raise last_err  # type: ignore[misc]
+    """Devin-API-specific retry wrapper.
+
+    Delegates to :func:`retry_utils.request_with_retry` (exponential
+    backoff with jitter) and returns parsed JSON.
+    """
+    resp = _retry_request(
+        method,
+        url,
+        headers=headers(api_key),
+        json=json_data,
+        timeout=30,
+    )
+    resp.raise_for_status()
+    if resp.status_code == 204:
+        return {}
+    return resp.json()
 
 
 def upload_attachment(api_key: str, file_path: str) -> str:
@@ -104,7 +104,7 @@ def fetch_pr_diff(pr_url: str, github_token: str = "") -> str:
         req_headers["Authorization"] = f"Bearer {github_token}"
 
     try:
-        resp = requests.get(api_url, headers=req_headers, timeout=30)
+        resp = _retry_request("GET", api_url, headers=req_headers, timeout=30)
         resp.raise_for_status()
         diff_text = resp.text
         if len(diff_text) > 8000:

@@ -3,16 +3,22 @@
 
 import json
 import os
-import sys
+from typing import Any
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    from devin_api import DEVIN_API_BASE, fetch_pr_diff, request_with_retry
+except ImportError:
+    from scripts.devin_api import DEVIN_API_BASE, fetch_pr_diff, request_with_retry
 
-from devin_api import DEVIN_API_BASE, fetch_pr_diff, request_with_retry
+try:
+    from fix_learning import CWE_FIX_HINTS
+except ImportError:
+    from scripts.fix_learning import CWE_FIX_HINTS
 
 KNOWLEDGE_NAME_PREFIX = "codeql-fix"
 
 
-def list_knowledge(api_key: str) -> list[dict]:
+def list_knowledge(api_key: str) -> list[dict[str, Any]]:
     data = request_with_retry("GET", f"{DEVIN_API_BASE}/knowledge", api_key)
     if isinstance(data, list):
         return data
@@ -26,8 +32,8 @@ def create_knowledge(
     trigger_description: str,
     pinned_repo: str | None = None,
     parent_folder_id: str | None = None,
-) -> dict:
-    payload: dict = {
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
         "name": name,
         "body": body,
         "trigger_description": trigger_description,
@@ -47,8 +53,8 @@ def update_knowledge(
     name: str | None = None,
     body: str | None = None,
     trigger_description: str | None = None,
-) -> dict:
-    payload: dict = {}
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
     if name is not None:
         payload["name"] = name
     if body is not None:
@@ -60,7 +66,7 @@ def update_knowledge(
     )
 
 
-def delete_knowledge(api_key: str, note_id: str) -> dict:
+def delete_knowledge(api_key: str, note_id: str) -> dict[str, Any]:
     return request_with_retry(
         "DELETE", f"{DEVIN_API_BASE}/knowledge/{note_id}", api_key
     )
@@ -71,24 +77,7 @@ def _make_knowledge_name(cwe_family: str, batch_id: int | str) -> str:
 
 
 def _classify_fix_pattern(cwe_family: str) -> str:
-    patterns: dict[str, str] = {
-        "injection": "parameterized queries / input sanitization",
-        "xss": "output encoding / content security policy",
-        "path-traversal": "path canonicalization / allowlist validation",
-        "ssrf": "URL allowlist / network segmentation",
-        "deserialization": "safe deserialization / type validation",
-        "auth": "authentication / authorization checks",
-        "crypto": "strong cryptographic algorithms / secure random",
-        "info-disclosure": "error handling / sensitive data redaction",
-        "redirect": "URL validation / redirect allowlist",
-        "xxe": "XML parser hardening / external entity disable",
-        "csrf": "CSRF token validation",
-        "prototype-pollution": "object freeze / property validation",
-        "regex-dos": "regex complexity limits / RE2 usage",
-        "type-confusion": "strict type checking",
-        "template-injection": "template sandboxing / input validation",
-    }
-    return patterns.get(cwe_family, "security fix pattern")
+    return CWE_FIX_HINTS.get(cwe_family, "security fix pattern")
 
 
 def store_fix_knowledge(
@@ -153,7 +142,7 @@ def store_fix_knowledge(
     )
 
 
-def find_knowledge_for_cwe(api_key: str, cwe_family: str) -> list[dict]:
+def find_knowledge_for_cwe(api_key: str, cwe_family: str) -> list[dict[str, Any]]:
     all_entries = list_knowledge(api_key)
     prefix = f"{KNOWLEDGE_NAME_PREFIX}/{cwe_family}/"
     return [e for e in all_entries if e.get("name", "").startswith(prefix)]

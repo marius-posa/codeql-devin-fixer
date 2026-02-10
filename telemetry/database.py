@@ -9,6 +9,7 @@ import os
 import pathlib
 import sqlite3
 import sys
+from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
@@ -18,7 +19,9 @@ if _SCRIPTS_DIR not in sys.path:
 
 from devin_api import clean_session_id as _clean_session_id  # noqa: E402
 
-DB_PATH = pathlib.Path(
+_INITIALIZED_DBS: set[str] = set()
+
+DB_PATH= pathlib.Path(
     os.environ.get(
         "TELEMETRY_DB_PATH",
         str(pathlib.Path(__file__).parent / "telemetry.db"),
@@ -236,6 +239,10 @@ def get_connection(db_path: pathlib.Path | None = None) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    str_path = str(path)
+    if str_path not in _INITIALIZED_DBS:
+        init_db(conn)
+        _INITIALIZED_DBS.add(str_path)
     return conn
 
 
@@ -627,21 +634,43 @@ def _build_pr_item(conn: sqlite3.Connection, row: sqlite3.Row) -> dict:
     }
 
 
+def paginated_query(
+    conn: sqlite3.Connection,
+    count_sql: str,
+    data_sql: str,
+    params: list[str | int],
+    page: int,
+    per_page: int,
+    row_builder: "Callable[[sqlite3.Connection, sqlite3.Row], dict]",
+) -> dict[str, object]:
+    """Generic paginated query helper.
+
+    Executes *count_sql* to get the total, then *data_sql* (which must
+    end with ``LIMIT ? OFFSET ?``) and maps each row through
+    *row_builder*.
+    """
+    total = conn.execute(count_sql, params).fetchone()[0]
+    offset = (page - 1) * per_page
+    rows = conn.execute(data_sql, [*params, per_page, offset]).fetchall()
+    items = [row_builder(conn, row) for row in rows]
+    pages = max(1, (total + per_page - 1) // per_page)
+    return {"items": items, "page": page, "per_page": per_page, "total": total, "pages": pages}
+
+
 def query_prs(
     conn: sqlite3.Connection,
     page: int = 1,
     per_page: int = 50,
 ) -> dict:
-    total_row = conn.execute("SELECT COUNT(*) FROM prs").fetchone()
-    total = total_row[0]
-    offset = (page - 1) * per_page
-    rows = conn.execute(
+    return paginated_query(
+        conn,
+        "SELECT COUNT(*) FROM prs",
         "SELECT * FROM prs ORDER BY created_at DESC LIMIT ? OFFSET ?",
-        (per_page, offset),
-    ).fetchall()
-    items = [_build_pr_item(conn, row) for row in rows]
-    pages = max(1, (total + per_page - 1) // per_page)
-    return {"items": items, "page": page, "per_page": per_page, "total": total, "pages": pages}
+        [],
+        page,
+        per_page,
+        _build_pr_item,
+    )
 
 
 def query_all_prs(conn: sqlite3.Connection) -> list[dict]:
