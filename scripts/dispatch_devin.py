@@ -62,12 +62,13 @@ except ImportError:
 try:
     from devin_api import (
         DEVIN_API_BASE, MAX_RETRIES, TERMINAL_STATUSES, clean_session_id,
-        headers as devin_headers, request_with_retry,
+        headers as devin_headers, request_with_retry, upload_attachment,
     )
     from fix_learning import CWE_FIX_HINTS, FixLearning
     from github_utils import validate_repo_url
     from knowledge import build_knowledge_context, store_fix_knowledge
     from logging_config import setup_logging
+    from machine_config import resolve_machine_acu
     from parse_sarif import BATCHES_SCHEMA_VERSION
     from pipeline_config import (
         Batch, DispatchSession, PipelineConfig, STRUCTURED_OUTPUT_SCHEMA,
@@ -79,12 +80,13 @@ try:
 except ImportError:
     from scripts.devin_api import (
         DEVIN_API_BASE, MAX_RETRIES, TERMINAL_STATUSES, clean_session_id,
-        headers as devin_headers, request_with_retry,
+        headers as devin_headers, request_with_retry, upload_attachment,
     )
     from scripts.fix_learning import CWE_FIX_HINTS, FixLearning
     from scripts.github_utils import validate_repo_url
     from scripts.knowledge import build_knowledge_context, store_fix_knowledge
     from scripts.logging_config import setup_logging
+    from scripts.machine_config import resolve_machine_acu
     from scripts.parse_sarif import BATCHES_SCHEMA_VERSION
     from scripts.pipeline_config import (
         Batch, DispatchSession, PipelineConfig, STRUCTURED_OUTPUT_SCHEMA,
@@ -248,6 +250,60 @@ def _find_related_test_files(target_dir: str, source_file: str) -> list[str]:
     return candidates
 
 
+def _upload_batch_attachments(
+    api_key: str,
+    batch: Batch,
+    target_dir: str,
+    output_dir: str,
+) -> list[str]:
+    """Upload batch data and source files as Devin attachments.
+
+    Writes a JSON file with the batch issue details and uploads it via
+    the ``/v1/attachments`` API.  When *target_dir* is provided, source
+    files referenced by the batch are also uploaded.
+
+    Returns a list of ``ATTACHMENT:"<url>"`` lines to include in the prompt.
+    Falls back gracefully (returns an empty list) on any upload failure.
+    """
+    attachment_lines: list[str] = []
+
+    batch_data = {
+        "batch_id": batch["batch_id"],
+        "cwe_family": batch["cwe_family"],
+        "severity_tier": batch["severity_tier"],
+        "max_severity_score": batch["max_severity_score"],
+        "issue_count": batch["issue_count"],
+        "issues": batch["issues"],
+    }
+    batch_file = os.path.join(output_dir, f"batch_{batch['batch_id']}_data.json")
+    try:
+        with open(batch_file, "w") as fh:
+            json.dump(batch_data, fh, indent=2)
+        url = upload_attachment(api_key, batch_file)
+        if url:
+            attachment_lines.append(f'ATTACHMENT:"{url}"')
+            logger.info("  Uploaded batch data as attachment")
+    except OSError as exc:
+        logger.warning("Failed to write batch data file: %s", exc)
+
+    if target_dir:
+        uploaded_files: set[str] = set()
+        for issue in batch.get("issues", []):
+            for loc in issue.get("locations", []):
+                file_path = loc.get("file", "")
+                if not file_path or file_path in uploaded_files:
+                    continue
+                full_path = os.path.join(target_dir, file_path)
+                if not os.path.isfile(full_path):
+                    continue
+                url = upload_attachment(api_key, full_path)
+                if url:
+                    attachment_lines.append(f'ATTACHMENT:"{url}"')
+                    uploaded_files.add(file_path)
+
+    return attachment_lines
+
+
 def build_batch_prompt(
     batch: Batch,
     repo_url: str,
@@ -258,6 +314,7 @@ def build_batch_prompt(
     playbook_mgr: PlaybookManager | None = None,
     repo_context: RepoContext | None = None,
     knowledge_context: str = "",
+    attachment_lines: list[str] | None = None,
 ) -> str:
     """Construct a detailed, Markdown-formatted prompt for a Devin session.
 
@@ -460,6 +517,17 @@ def build_batch_prompt(
         "```",
     ])
 
+    if attachment_lines:
+        prompt_parts.extend([
+            "",
+            "## Attached Files",
+            "",
+            "The following files have been uploaded as attachments for this session.",
+            "Browse them for detailed issue data and source context.",
+            "",
+        ])
+        prompt_parts.extend(attachment_lines)
+
     return "\n".join(prompt_parts)
 
 
@@ -614,16 +682,33 @@ def dispatch_wave(
     max_acu: int | None,
     dry_run: bool,
     enable_knowledge: bool = False,
+    enable_attachments: bool = False,
+    machine_type: str = "",
 ) -> list[DispatchSession]:
     """Dispatch all batches in a single wave, returning session records."""
     sessions: list[DispatchSession] = []
     for batch in wave_batches:
         family = batch["cwe_family"]
-        batch_acu = max_acu
-        if fix_learn and max_acu:
-            batch_acu = fix_learn.compute_acu_budget(family, max_acu)
-        elif fix_learn and not max_acu:
+
+        batch_acu = resolve_machine_acu(
+            explicit_max_acu=max_acu,
+            machine_type_name=machine_type,
+            target_dir=target_dir,
+            issue_count=batch.get("issue_count", 1),
+            file_count=batch.get("file_count", 0),
+            severity_tier=batch.get("severity_tier", "medium"),
+            cross_family=batch.get("cross_family", False),
+        )
+        if fix_learn and batch_acu:
+            batch_acu = fix_learn.compute_acu_budget(family, batch_acu)
+        elif fix_learn and not batch_acu:
             batch_acu = fix_learn.compute_acu_budget(family)
+
+        att_lines: list[str] = []
+        if enable_attachments and api_key and not dry_run:
+            att_lines = _upload_batch_attachments(
+                api_key, batch, target_dir, output_dir,
+            )
 
         if prompt_template:
             prompt = _render_template_prompt(
@@ -643,6 +728,7 @@ def dispatch_wave(
                 playbook_mgr=playbook_mgr,
                 repo_context=repo_ctx,
                 knowledge_context=kctx,
+                attachment_lines=att_lines if att_lines else None,
             )
         batch_id = batch["batch_id"]
 
@@ -833,6 +919,8 @@ def main() -> None:
         "max_acu": max_acu,
         "dry_run": dry_run,
         "enable_knowledge": enable_knowledge,
+        "enable_attachments": cfg.enable_attachments,
+        "machine_type": cfg.machine_type,
     }
 
     if cfg.wave_dispatch:

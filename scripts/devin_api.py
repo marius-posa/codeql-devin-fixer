@@ -61,6 +61,30 @@ def request_with_retry(
     raise last_err  # type: ignore[misc]
 
 
+def upload_attachment(api_key: str, file_path: str) -> str:
+    """Upload a file to the Devin Attachments API and return the file URL.
+
+    Uses ``POST /v1/attachments`` with multipart form data.  The returned
+    URL can be referenced in session prompts via ``ATTACHMENT:"<url>"``.
+
+    Returns an empty string if the upload fails so callers can fall back
+    to inline embedding.
+    """
+    try:
+        with open(file_path, "rb") as fh:
+            resp = requests.post(
+                f"{DEVIN_API_BASE}/attachments",
+                headers={"Authorization": f"Bearer {api_key}"},
+                files={"file": fh},
+                timeout=60,
+            )
+            resp.raise_for_status()
+            return resp.text.strip().strip('"')
+    except (OSError, requests.exceptions.RequestException) as exc:
+        logger.warning("Attachment upload failed for %s: %s", file_path, exc)
+        return ""
+
+
 def fetch_pr_diff(pr_url: str, github_token: str = "") -> str:
     if not pr_url or "github.com" not in pr_url:
         return ""

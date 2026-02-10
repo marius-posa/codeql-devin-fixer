@@ -250,6 +250,12 @@ class PipelineConfig:
     telemetry_dir: str = ""
     playbooks_dir: str = ""
 
+    # -- machine type selection ------------------------------------------------
+    machine_type: str = ""
+
+    # -- attachments API -------------------------------------------------------
+    enable_attachments: bool = False
+
     @classmethod
     def from_env(cls) -> PipelineConfig:
         """Build a config from the current environment variables."""
@@ -284,6 +290,8 @@ class PipelineConfig:
             target_dir=os.environ.get("TARGET_DIR", ""),
             telemetry_dir=os.environ.get("TELEMETRY_DIR", ""),
             playbooks_dir=os.environ.get("PLAYBOOKS_DIR", ""),
+            machine_type=os.environ.get("MACHINE_TYPE", ""),
+            enable_attachments=os.environ.get("ENABLE_ATTACHMENTS", "false").lower() == "true",
         )
 
     def validate(self, required: list[str]) -> None:

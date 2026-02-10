@@ -25,6 +25,7 @@ from scripts.dispatch_devin import (
     _find_related_test_files,
     _load_prompt_template,
     _render_template_prompt,
+    _upload_batch_attachments,
 )
 from scripts.fix_learning import FixLearning
 from scripts.pipeline_config import STRUCTURED_OUTPUT_SCHEMA
@@ -1200,3 +1201,248 @@ class TestDispatchWaveKnowledge:
             )
         assert len(sessions) == 1
         assert sessions[0]["session_id"] == "s1"
+
+
+class TestUploadBatchAttachments:
+    def _batch(self):
+        return {
+            "batch_id": 1,
+            "cwe_family": "injection",
+            "severity_tier": "critical",
+            "max_severity_score": 9.8,
+            "issue_count": 1,
+            "file_count": 1,
+            "issues": [{
+                "id": "CQLF-R1-0001",
+                "rule_id": "js/sql-injection",
+                "rule_name": "SqlInjection",
+                "message": "User input flows to SQL query.",
+                "severity_score": 9.8,
+                "severity_tier": "critical",
+                "cwes": ["cwe-89"],
+                "cwe_family": "injection",
+                "locations": [{"file": "src/db.js", "start_line": 42}],
+            }],
+        }
+
+    @patch("scripts.dispatch_devin.upload_attachment")
+    def test_uploads_batch_data_json(self, mock_upload):
+        mock_upload.return_value = "https://attachments.devin.ai/batch.json"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            lines = _upload_batch_attachments("key", self._batch(), "", tmpdir)
+        assert len(lines) == 1
+        assert 'ATTACHMENT:"https://attachments.devin.ai/batch.json"' in lines[0]
+
+    @patch("scripts.dispatch_devin.upload_attachment")
+    def test_uploads_source_files_when_target_dir(self, mock_upload):
+        mock_upload.return_value = "https://attachments.devin.ai/file.js"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            src = os.path.join(tmpdir, "src")
+            os.makedirs(src)
+            with open(os.path.join(src, "db.js"), "w") as f:
+                f.write("const x = 1;\n")
+            lines = _upload_batch_attachments("key", self._batch(), tmpdir, tmpdir)
+        assert len(lines) == 2
+
+    @patch("scripts.dispatch_devin.upload_attachment")
+    def test_fallback_on_upload_failure(self, mock_upload):
+        mock_upload.return_value = ""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            lines = _upload_batch_attachments("key", self._batch(), "", tmpdir)
+        assert lines == []
+
+    @patch("scripts.dispatch_devin.upload_attachment")
+    def test_deduplicates_source_files(self, mock_upload):
+        call_count = 0
+
+        def side_effect(api_key, path):
+            nonlocal call_count
+            call_count += 1
+            if path.endswith(".json"):
+                return "https://attachments.devin.ai/batch_data.json"
+            return "https://attachments.devin.ai/src_db.js"
+
+        mock_upload.side_effect = side_effect
+        batch = self._batch()
+        batch["issues"].append({
+            "id": "CQLF-R1-0002",
+            "rule_id": "js/sql-injection",
+            "rule_name": "SqlInjection",
+            "message": "Another issue same file.",
+            "severity_score": 9.0,
+            "severity_tier": "critical",
+            "cwes": ["cwe-89"],
+            "cwe_family": "injection",
+            "locations": [{"file": "src/db.js", "start_line": 50}],
+        })
+        batch["issue_count"] = 2
+        with tempfile.TemporaryDirectory() as tmpdir:
+            src = os.path.join(tmpdir, "src")
+            os.makedirs(src)
+            with open(os.path.join(src, "db.js"), "w") as f:
+                f.write("const x = 1;\n")
+            lines = _upload_batch_attachments("key", batch, tmpdir, tmpdir)
+        source_lines = [line for line in lines if "src_db" in line]
+        assert len(source_lines) == 1
+        assert call_count == 2
+
+
+class TestAttachmentLinesInPrompt:
+    def _batch(self):
+        return {
+            "batch_id": 1,
+            "cwe_family": "injection",
+            "severity_tier": "critical",
+            "max_severity_score": 9.8,
+            "issue_count": 1,
+            "file_count": 1,
+            "issues": [{
+                "id": "CQLF-R1-0001",
+                "rule_id": "js/sql-injection",
+                "rule_name": "SqlInjection",
+                "rule_description": "SQL injection vulnerability",
+                "rule_help": "Use parameterized queries.",
+                "message": "User input flows to SQL query.",
+                "severity_score": 9.8,
+                "severity_tier": "critical",
+                "cwes": ["cwe-89"],
+                "cwe_family": "injection",
+                "locations": [{"file": "src/db.js", "start_line": 42}],
+            }],
+        }
+
+    def test_attachment_lines_appended_to_prompt(self):
+        att = ['ATTACHMENT:"https://example.com/batch.json"']
+        prompt = build_batch_prompt(
+            self._batch(), "https://github.com/o/r", "main",
+            attachment_lines=att,
+        )
+        assert "## Attached Files" in prompt
+        assert 'ATTACHMENT:"https://example.com/batch.json"' in prompt
+
+    def test_no_attachment_section_when_none(self):
+        prompt = build_batch_prompt(
+            self._batch(), "https://github.com/o/r", "main",
+        )
+        assert "## Attached Files" not in prompt
+
+    def test_no_attachment_section_when_empty(self):
+        prompt = build_batch_prompt(
+            self._batch(), "https://github.com/o/r", "main",
+            attachment_lines=[],
+        )
+        assert "## Attached Files" not in prompt
+
+
+class TestDispatchWaveMachineConfig:
+    def _batch(self):
+        return {
+            "batch_id": 1,
+            "cwe_family": "injection",
+            "cwe_families": ["injection"],
+            "cross_family": False,
+            "severity_tier": "critical",
+            "max_severity_score": 9.8,
+            "issue_count": 1,
+            "file_count": 1,
+            "issues": [{
+                "id": "CQLF-R1-0001",
+                "rule_id": "js/sql-injection",
+                "rule_name": "SqlInjection",
+                "rule_description": "",
+                "rule_help": "",
+                "message": "msg",
+                "severity_score": 9.8,
+                "severity_tier": "critical",
+                "cwes": ["cwe-89"],
+                "cwe_family": "injection",
+                "locations": [{"file": "src/db.js", "start_line": 42}],
+            }],
+        }
+
+    @patch("scripts.dispatch_devin.create_devin_session")
+    @patch("scripts.dispatch_devin._send_session_webhook")
+    @patch("scripts.dispatch_devin.time.sleep")
+    def test_machine_type_override(self, mock_sleep, mock_webhook, mock_create):
+        mock_create.return_value = {"session_id": "s1", "url": "u1"}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sessions = dispatch_wave(
+                [self._batch()],
+                api_key="key",
+                repo_url="https://github.com/o/r",
+                default_branch="main",
+                is_own_repo=True,
+                target_dir="",
+                fix_learn=None,
+                playbook_mgr=None,
+                repo_ctx=None,
+                prompt_template="",
+                output_dir=tmpdir,
+                run_id="run-1",
+                max_acu=None,
+                dry_run=False,
+                machine_type="heavy",
+            )
+        assert len(sessions) == 1
+        call_args = mock_create.call_args
+        acu_arg = call_args[0][3] if len(call_args[0]) > 3 else call_args[1].get("max_acu")
+        assert acu_arg == 20
+
+    @patch("scripts.dispatch_devin._upload_batch_attachments")
+    @patch("scripts.dispatch_devin.create_devin_session")
+    @patch("scripts.dispatch_devin._send_session_webhook")
+    @patch("scripts.dispatch_devin.time.sleep")
+    def test_attachments_uploaded_when_enabled(
+        self, mock_sleep, mock_webhook, mock_create, mock_upload,
+    ):
+        mock_create.return_value = {"session_id": "s1", "url": "u1"}
+        mock_upload.return_value = ['ATTACHMENT:"https://example.com/data.json"']
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sessions = dispatch_wave(
+                [self._batch()],
+                api_key="key",
+                repo_url="https://github.com/o/r",
+                default_branch="main",
+                is_own_repo=True,
+                target_dir="",
+                fix_learn=None,
+                playbook_mgr=None,
+                repo_ctx=None,
+                prompt_template="",
+                output_dir=tmpdir,
+                run_id="run-1",
+                max_acu=None,
+                dry_run=False,
+                enable_attachments=True,
+            )
+        assert len(sessions) == 1
+        mock_upload.assert_called_once()
+
+    @patch("scripts.dispatch_devin._upload_batch_attachments")
+    @patch("scripts.dispatch_devin.create_devin_session")
+    @patch("scripts.dispatch_devin._send_session_webhook")
+    @patch("scripts.dispatch_devin.time.sleep")
+    def test_attachments_not_uploaded_when_disabled(
+        self, mock_sleep, mock_webhook, mock_create, mock_upload,
+    ):
+        mock_create.return_value = {"session_id": "s1", "url": "u1"}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sessions = dispatch_wave(
+                [self._batch()],
+                api_key="key",
+                repo_url="https://github.com/o/r",
+                default_branch="main",
+                is_own_repo=True,
+                target_dir="",
+                fix_learn=None,
+                playbook_mgr=None,
+                repo_ctx=None,
+                prompt_template="",
+                output_dir=tmpdir,
+                run_id="run-1",
+                max_acu=None,
+                dry_run=False,
+                enable_attachments=False,
+            )
+        assert len(sessions) == 1
+        mock_upload.assert_not_called()
