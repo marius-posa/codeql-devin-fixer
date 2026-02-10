@@ -674,7 +674,8 @@ class TestRenderTemplatePrompt:
 
     def test_renders_template_with_context(self):
         import jinja2
-        template = jinja2.Template("Fix {{ family }} ({{ issue_count }} issues) in {{ repo_url }}")
+        env = jinja2.Environment(autoescape=True)
+        template = env.from_string("Fix {{ family }} ({{ issue_count }} issues) in {{ repo_url }}")
         result = _render_template_prompt(template, self._batch(), "https://github.com/o/r", "main")
         assert "Fix injection" in result
         assert "1 issues" in result
@@ -682,20 +683,23 @@ class TestRenderTemplatePrompt:
 
     def test_includes_issue_ids(self):
         import jinja2
-        template = jinja2.Template("Issues: {{ issue_ids | join(', ') }}")
+        env = jinja2.Environment(autoescape=True)
+        template = env.from_string("Issues: {{ issue_ids | join(', ') }}")
         result = _render_template_prompt(template, self._batch(), "https://github.com/o/r", "main")
         assert "CQLF-R1-0001" in result
 
     def test_includes_fix_hint(self):
         import jinja2
-        template = jinja2.Template("Hint: {{ fix_hint }}")
+        env = jinja2.Environment(autoescape=True)
+        template = env.from_string("Hint: {{ fix_hint }}")
         result = _render_template_prompt(template, self._batch(), "https://github.com/o/r", "main")
         assert result.startswith("Hint: ")
         assert len(result) > len("Hint: ")
 
     def test_includes_batch_metadata(self):
         import jinja2
-        template = jinja2.Template("Tier: {{ tier }}, Score: {{ max_severity_score }}")
+        env = jinja2.Environment(autoescape=True)
+        template = env.from_string("Tier: {{ tier }}, Score: {{ max_severity_score }}")
         result = _render_template_prompt(template, self._batch(), "https://github.com/o/r", "main")
         assert "Tier: critical" in result
         assert "Score: 9.8" in result
