@@ -247,7 +247,7 @@ class TestRegistryEndpoints:
         with patch("routes.registry.REGISTRY_PATH", Path("/nonexistent/file.json")):
             data = _load_registry()
             assert data["repos"] == []
-            assert data["version"] == "1.0"
+            assert data["version"] == "2.0"
 
     def test_load_registry_reads_file(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
