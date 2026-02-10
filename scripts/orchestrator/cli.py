@@ -20,6 +20,7 @@ from . import state as _state
 from . import alerts as _alerts
 from .scanner import cmd_scan
 from .dispatcher import cmd_dispatch, cmd_ingest, _collect_fix_examples
+from .agent import cmd_agent_triage
 
 try:
     from logging_config import setup_logging
@@ -523,6 +524,16 @@ def main() -> int:
         help="Show what would be scanned without triggering workflows",
     )
 
+    agent_triage_parser = subparsers.add_parser(
+        "agent-triage", help="Run LLM-based agent triage for issue prioritisation",
+    )
+    agent_triage_parser.add_argument("--repo", default="", help="Filter by repository URL")
+    agent_triage_parser.add_argument("--json", action="store_true", help="Output as JSON")
+    agent_triage_parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Preview triage input without creating a Devin session",
+    )
+
     cycle_parser = subparsers.add_parser(
         "cycle", help="Full orchestrator cycle: scan due repos, then dispatch",
     )
@@ -547,6 +558,7 @@ def main() -> int:
         "dispatch": cmd_dispatch,
         "scan": cmd_scan,
         "cycle": cmd_cycle,
+        "agent-triage": cmd_agent_triage,
     }
 
     return commands[args.command](args)

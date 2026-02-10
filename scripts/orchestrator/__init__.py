@@ -57,6 +57,19 @@ from scripts.orchestrator.dispatcher import (  # noqa: F401
     cmd_ingest,
 )
 
+from scripts.orchestrator.agent import (  # noqa: F401
+    AGENT_TRIAGE_OUTPUT_SCHEMA,
+    build_agent_triage_input,
+    build_effectiveness_report,
+    cmd_agent_triage,
+    create_agent_triage_session,
+    load_agent_triage_results,
+    merge_agent_scores,
+    parse_agent_decisions,
+    poll_agent_session,
+    save_agent_triage_results,
+)
+
 from scripts.orchestrator.cli import (  # noqa: F401
     _print_dispatch_summary,
     _print_plan,

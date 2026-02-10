@@ -144,14 +144,30 @@
         <button class="btn btn-sm" onclick="triggerOrchestratorScan()" style="margin-left:auto" id="btn-orch-scan">Scan Due Repos</button>
         <button class="btn btn-sm" onclick="triggerOrchestratorDispatch()" id="btn-orch-dispatch" style="background:#1f6feb;border-color:#388bfd;color:#fff;margin-left:4px">Dispatch</button>
         <button class="btn btn-sm" onclick="triggerOrchestratorCycle()" id="btn-orch-cycle" style="background:#238636;border-color:#2ea043;color:#fff;margin-left:4px">Run Cycle</button>
+        <button class="btn btn-sm" onclick="triggerAgentTriage()" id="btn-orch-agent" style="background:#8957e5;border-color:#a371f7;color:#fff;margin-left:4px">Agent Triage</button>
       </div>
       <div class="panel-body" id="orchestrator-panel-container"><div class="skeleton skeleton-chart" style="height:120px"></div></div>
       <div class="panel-body" id="orchestrator-config-container"></div>
       <div class="panel-body table-scroll-wrapper" id="orchestrator-history-container"></div>
     </div>
     <div class="panel">
-      <div class="panel-header">Issue Prioritization<span id="priority-count" style="color:var(--text-muted);font-weight:400;font-size:12px;margin-left:8px"></span></div>
+      <div class="panel-header">
+        Issue Prioritization<span id="priority-count" style="color:var(--text-muted);font-weight:400;font-size:12px;margin-left:8px"></span>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+          <label style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:4px">
+            <span>Sort by:</span>
+            <select id="priority-sort-select" onchange="renderOrchestratorPriorityTable()" style="font-size:11px;padding:2px 6px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px">
+              <option value="deterministic">Deterministic</option>
+              <option value="agent">Agent (LLM)</option>
+            </select>
+          </label>
+        </div>
+      </div>
       <div class="panel-body table-scroll-wrapper" id="orchestrator-priority-container"><div class="skeleton skeleton-chart" style="height:120px"></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">Effectiveness Comparison<span id="effectiveness-label" style="color:var(--text-muted);font-weight:400;font-size:12px;margin-left:8px"></span></div>
+      <div class="panel-body" id="orchestrator-effectiveness-container"><div class="skeleton skeleton-chart" style="height:80px"></div></div>
     </div>
     <div class="panel">
       <div class="panel-header">Fix Rates</div>
@@ -352,6 +368,8 @@ let orchestratorHistory = null;
 let orchestratorPlan = null;
 let orchestratorConfig = null;
 let fixRatesData = null;
+let agentPlanData = null;
+let effectivenessData = null;
 let _chartInstances = {};
 let _livePoller = null;
 let auditLogData = null;
@@ -614,6 +632,8 @@ async function fetchAll() {
     { key: 'orchestratorPlan', endpoint: '/api/orchestrator/plan', single: true },
     { key: 'orchestratorConfig', endpoint: '/api/orchestrator/config', single: true },
     { key: 'fixRates', endpoint: '/api/orchestrator/fix-rates', single: true },
+    { key: 'agentPlan', endpoint: '/api/orchestrator/agent-plan', single: true },
+    { key: 'effectiveness', endpoint: '/api/orchestrator/effectiveness', single: true },
   ];
   const results = {};
   const settled = await Promise.allSettled(
@@ -648,6 +668,8 @@ async function fetchAll() {
   if (results.orchestratorPlan !== undefined) orchestratorPlan = results.orchestratorPlan;
   if (results.orchestratorConfig !== undefined) orchestratorConfig = results.orchestratorConfig;
   if (results.fixRates !== undefined) fixRatesData = results.fixRates;
+  if (results.agentPlan !== undefined) agentPlanData = results.agentPlan;
+  if (results.effectiveness !== undefined) effectivenessData = results.effectiveness;
   renderAll();
   fetchAuditLog();
   setStatus(hasError ? 'Loaded with some errors (check console)' : 'Ready');
@@ -714,6 +736,7 @@ function renderAll() {
   renderOrchestratorConfigPanel();
   renderOrchestratorQuickView();
   renderOrchestratorPriorityTable();
+  renderEffectivenessPanel();
   renderFixRatesPanel();
   renderRegistryPanel();
   renderAuditLogPanel();
@@ -1056,17 +1079,54 @@ function renderOrchestratorPriorityTable() {
     if (countEl) countEl.textContent = '';
     return;
   }
-  if (countEl) countEl.textContent = dispatches.length + ' eligible';
-  var sorted = dispatches.slice().sort(function(a, b) { return (b.priority_score || 0) - (a.priority_score || 0); });
+
+  var agentDecisions = (agentPlanData || {}).planned_dispatches || [];
+  var agentMap = {};
+  agentDecisions.forEach(function(d) {
+    if (d.fingerprint) agentMap[d.fingerprint] = d;
+  });
+
+  var hasAgentData = agentDecisions.length > 0;
+  var sortSelect = document.getElementById('priority-sort-select');
+  var sortBy = sortSelect ? sortSelect.value : 'deterministic';
+
+  if (countEl) countEl.textContent = dispatches.length + ' eligible' + (hasAgentData ? ' (agent data available)' : '');
+
+  var merged = dispatches.map(function(d) {
+    var entry = Object.assign({}, d);
+    var agent = agentMap[d.fingerprint];
+    if (agent) {
+      entry.agent_priority_score = agent.agent_priority_score;
+      entry.agent_reasoning = agent.agent_reasoning || '';
+      entry.agent_dispatch = agent.agent_dispatch;
+    }
+    return entry;
+  });
+
+  if (sortBy === 'agent' && hasAgentData) {
+    merged.sort(function(a, b) { return (b.agent_priority_score || 0) - (a.agent_priority_score || 0); });
+  } else {
+    merged.sort(function(a, b) { return (b.priority_score || 0) - (a.priority_score || 0); });
+  }
+
   var rows = '';
-  sorted.forEach(function(d, i) {
-    var score = (d.priority_score || 0).toFixed(1);
+  merged.forEach(function(d, i) {
+    var detScore = (d.priority_score || 0).toFixed(1);
+    var agentScore = d.agent_priority_score != null ? d.agent_priority_score.toFixed(1) : '-';
     var repo = (d.target_repo || d.repo || '').replace('https://github.com/', '');
     var sev = d.severity_tier || d.severity || '-';
     var fp = (d.fingerprint || '').slice(0, 12);
     var rule = d.rule_id || '-';
-    var barW = Math.min(Math.round((d.priority_score || 0)), 100);
+
+    var primaryScore = sortBy === 'agent' && d.agent_priority_score != null ? d.agent_priority_score : (d.priority_score || 0);
+    var barW = Math.min(Math.round(primaryScore), 100);
     var barColor = barW > 70 ? 'var(--accent-red)' : barW > 40 ? 'var(--accent-orange)' : 'var(--accent-blue)';
+
+    var reasoningTip = d.agent_reasoning ? ' title="' + escapeHtml(d.agent_reasoning) + '"' : '';
+    var agentDispatchIcon = '';
+    if (d.agent_dispatch === true) agentDispatchIcon = '<span style="color:var(--accent-green);font-size:10px" title="Agent recommends dispatch">&#9650;</span> ';
+    else if (d.agent_dispatch === false) agentDispatchIcon = '<span style="color:var(--accent-red);font-size:10px" title="Agent does not recommend dispatch">&#9660;</span> ';
+
     rows += '<tr>'
       + '<td style="font-weight:600;color:var(--text-muted)">' + (i + 1) + '</td>'
       + '<td><span class="issue-id">' + escapeHtml(fp) + '</span></td>'
@@ -1076,10 +1136,71 @@ function renderOrchestratorPriorityTable() {
       + '<td style="min-width:120px"><div style="display:flex;align-items:center;gap:6px">'
       + '<div style="flex:1;background:var(--bg-tertiary);border-radius:3px;height:12px;overflow:hidden">'
       + '<div style="background:' + barColor + ';height:100%;width:' + barW + '%"></div></div>'
-      + '<span style="font-size:12px;font-weight:600;min-width:32px;text-align:right">' + score + '</span></div></td>'
+      + '<span style="font-size:12px;font-weight:600;min-width:32px;text-align:right">' + detScore + '</span></div></td>'
+      + '<td style="min-width:80px"' + reasoningTip + '>' + agentDispatchIcon + '<span style="font-size:12px;font-weight:600">' + agentScore + '</span></td>'
       + '</tr>';
   });
-  el.innerHTML = '<table><thead><tr><th>#</th><th>Fingerprint</th><th>Repo</th><th>Rule</th><th>Severity</th><th>Priority Score</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  el.innerHTML = '<table><thead><tr><th>#</th><th>Fingerprint</th><th>Repo</th><th>Rule</th><th>Severity</th><th>Det. Score</th><th>Agent Score</th></tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+function renderEffectivenessPanel() {
+  var el = document.getElementById('orchestrator-effectiveness-container');
+  var labelEl = document.getElementById('effectiveness-label');
+  if (!effectivenessData || !effectivenessData.has_agent_data) {
+    el.innerHTML = '<div class="empty-state"><span class="empty-state-icon">&#x2696;</span><div class="empty-state-text">No effectiveness data yet. Run Agent Triage and dispatch issues to compare approaches.</div></div>';
+    if (labelEl) labelEl.textContent = '';
+    return;
+  }
+  if (labelEl) labelEl.textContent = effectivenessData.timestamp ? 'as of ' + formatDate(effectivenessData.timestamp) : '';
+  var agent = effectivenessData.agent || {};
+  var det = effectivenessData.deterministic || {};
+  var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">';
+  html += '<div style="background:var(--bg-tertiary);border-radius:8px;padding:16px">';
+  html += '<div style="font-size:13px;font-weight:600;color:#a371f7;margin-bottom:8px">Agent (LLM)</div>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">';
+  html += '<div><span style="color:var(--text-muted)">Recommended:</span> ' + (agent.recommended || 0) + '</div>';
+  html += '<div><span style="color:var(--text-muted)">Dispatched:</span> ' + (agent.dispatched || 0) + '</div>';
+  html += '<div><span style="color:var(--text-muted)">Fixed:</span> ' + (agent.fixed || 0) + '</div>';
+  html += '<div><span style="color:var(--text-muted)">Fix Rate:</span> <strong>' + (agent.fix_rate || 0) + '%</strong></div>';
+  html += '</div></div>';
+  html += '<div style="background:var(--bg-tertiary);border-radius:8px;padding:16px">';
+  html += '<div style="font-size:13px;font-weight:600;color:#388bfd;margin-bottom:8px">Deterministic</div>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">';
+  html += '<div><span style="color:var(--text-muted)">Dispatched:</span> ' + (det.dispatched || 0) + '</div>';
+  html += '<div><span style="color:var(--text-muted)">Fixed:</span> ' + (det.fixed || 0) + '</div>';
+  html += '<div><span style="color:var(--text-muted)">Fix Rate:</span> <strong>' + (det.fix_rate || 0) + '%</strong></div>';
+  html += '</div></div>';
+  html += '</div>';
+  if (agentPlanData && agentPlanData.strategy_notes) {
+    html += '<div style="margin-top:12px;padding:10px;background:var(--bg-tertiary);border-radius:6px;font-size:12px;color:var(--text-secondary)">';
+    html += '<strong style="color:#a371f7">Agent Strategy:</strong> ' + escapeHtml(agentPlanData.strategy_notes);
+    html += '</div>';
+  }
+  el.innerHTML = html;
+}
+
+async function triggerAgentTriage() {
+  var btn = document.getElementById('btn-orch-agent');
+  if (btn) { btn.disabled = true; btn.textContent = 'Triaging...'; }
+  setStatus('Running agent triage...');
+  try {
+    var res = await _authedFetch(API + '/api/orchestrator/agent-triage', {
+      method: 'POST',
+      headers: Object.assign({}, _authHeaders(), { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ dry_run: false }),
+    });
+    var data = await res.json();
+    if (data.error) {
+      setStatus('Agent triage error: ' + data.error);
+    } else {
+      setStatus('Agent triage complete: ' + (data.decisions_received || data.decisions?.length || 0) + ' decisions');
+      fetchAll();
+    }
+  } catch (e) {
+    setStatus('Agent triage failed: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Agent Triage'; }
+  }
 }
 
 function renderFixRatesPanel() {
