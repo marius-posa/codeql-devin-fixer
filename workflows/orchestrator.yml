@@ -17,8 +17,7 @@ on:
           - status
 
 permissions:
-  contents: write
-  actions: write
+  contents: read
 
 jobs:
   orchestrate:
@@ -45,5 +44,3 @@ jobs:
           GH_PAT: ${{ secrets.GH_PAT }}
           ACTION_REPO: ${{ github.repository }}
         run: python -m scripts.orchestrator ${{ inputs.command || 'cycle' }} --json
-
-      # State is now persisted in SQLite (telemetry.db), no JSON commit needed

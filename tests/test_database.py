@@ -33,6 +33,10 @@ from database import (
     insert_audit_log,
     query_audit_logs,
     export_audit_logs,
+    refresh_fingerprint_issues,
+    query_issue_detail,
+    update_issue_status,
+    query_dispatch_impact,
 )
 
 
@@ -470,3 +474,126 @@ class TestAuditLog:
         entries = export_audit_logs(db)
         assert len(entries) == 2
         assert entries[0]["action"] in ("act1", "act2")
+
+
+def _seed_with_fingerprints(db):
+    """Insert two runs sharing a fingerprint and refresh the tracking table."""
+    r1 = _sample_run(run_number=1, repo="https://github.com/owner/repo", label="r1")
+    r2 = _sample_run(run_number=2, repo="https://github.com/owner/repo", label="r2")
+    r2["issue_fingerprints"][0]["fingerprint"] = "fp-1-a"
+    insert_run(db, r1, "f1.json")
+    insert_run(db, r2, "f2.json")
+    db.commit()
+    refresh_fingerprint_issues(db)
+    db.commit()
+
+
+class TestQueryIssueDetail:
+    def test_returns_none_for_unknown(self, db):
+        _seed_with_fingerprints(db)
+        assert query_issue_detail(db, "nonexistent") is None
+
+    def test_returns_detail_for_known(self, db):
+        _seed_with_fingerprints(db)
+        detail = query_issue_detail(db, "fp-1-a")
+        assert detail is not None
+        assert detail["fingerprint"] == "fp-1-a"
+        assert detail["rule_id"] == "js/sql-injection"
+        assert detail["severity_tier"] == "high"
+        assert detail["cwe_family"] == "injection"
+        assert detail["file"] == "src/db.js"
+        assert detail["start_line"] == 42
+
+    def test_includes_run_timeline(self, db):
+        _seed_with_fingerprints(db)
+        detail = query_issue_detail(db, "fp-1-a")
+        assert len(detail["run_timeline"]) == 2
+        assert detail["run_numbers"] == [1, 2]
+
+    def test_includes_sla_fields(self, db):
+        _seed_with_fingerprints(db)
+        detail = query_issue_detail(db, "fp-1-a")
+        assert "sla_status" in detail
+        assert "sla_limit_hours" in detail
+        assert "sla_hours_elapsed" in detail
+        assert "sla_hours_remaining" in detail
+
+    def test_includes_source_url(self, db):
+        _seed_with_fingerprints(db)
+        detail = query_issue_detail(db, "fp-1-a")
+        assert "source_url" in detail
+        assert "github.com/owner/repo/blob/main/src/db.js#L42" in detail["source_url"]
+
+    def test_includes_related_sessions(self, db):
+        _seed_with_fingerprints(db)
+        detail = query_issue_detail(db, "fp-1-a")
+        assert "related_sessions" in detail
+        assert isinstance(detail["related_sessions"], list)
+
+    def test_includes_related_prs(self, db):
+        _seed_with_fingerprints(db)
+        detail = query_issue_detail(db, "fp-1-a")
+        assert "related_prs" in detail
+        assert isinstance(detail["related_prs"], list)
+
+
+class TestUpdateIssueStatus:
+    def test_update_to_false_positive(self, db):
+        _seed_with_fingerprints(db)
+        ok = update_issue_status(db, "fp-1-a", "false_positive")
+        assert ok is True
+        row = db.execute(
+            "SELECT status FROM fingerprint_issues WHERE fingerprint = 'fp-1-a'"
+        ).fetchone()
+        assert row["status"] == "false_positive"
+
+    def test_update_to_wont_fix(self, db):
+        _seed_with_fingerprints(db)
+        ok = update_issue_status(db, "fp-1-a", "wont_fix")
+        assert ok is True
+
+    def test_rejects_invalid_status(self, db):
+        _seed_with_fingerprints(db)
+        ok = update_issue_status(db, "fp-1-a", "invalid_status")
+        assert ok is False
+
+    def test_rejects_unknown_fingerprint(self, db):
+        _seed_with_fingerprints(db)
+        ok = update_issue_status(db, "nonexistent", "false_positive")
+        assert ok is False
+
+
+class TestQueryDispatchImpact:
+    def test_empty_repo(self, db):
+        result = query_dispatch_impact(db, "https://github.com/unknown/repo")
+        assert result["last_scan_issues"] == 0
+        assert result["last_scan_batches"] == 0
+        assert result["total_sessions_created"] == 0
+        assert result["recent_runs"] == []
+
+    def test_with_runs(self, db):
+        insert_run(db, _sample_run(run_number=1, repo="https://github.com/owner/repo", label="r1"), "f1.json")
+        insert_run(db, _sample_run(run_number=2, repo="https://github.com/owner/repo", label="r2"), "f2.json")
+        db.commit()
+        result = query_dispatch_impact(db, "https://github.com/owner/repo")
+        assert result["target_repo"] == "https://github.com/owner/repo"
+        assert result["last_scan_issues"] == 3
+        assert result["last_scan_batches"] == 1
+        assert result["avg_issues_per_run"] == 3.0
+        assert result["total_sessions_created"] == 2
+        assert len(result["recent_runs"]) == 2
+
+    def test_limits_to_five_runs(self, db):
+        for i in range(1, 8):
+            insert_run(db, _sample_run(run_number=i, repo="https://github.com/owner/repo", label=f"r{i}"), f"f{i}.json")
+        db.commit()
+        result = query_dispatch_impact(db, "https://github.com/owner/repo")
+        assert len(result["recent_runs"]) == 5
+
+    def test_counts_finished_sessions(self, db):
+        run_data = _sample_run(run_number=1, repo="https://github.com/owner/repo", label="r1")
+        run_data["sessions"][0]["status"] = "finished"
+        insert_run(db, run_data, "f1.json")
+        db.commit()
+        result = query_dispatch_impact(db, "https://github.com/owner/repo")
+        assert result["sessions_finished"] == 1

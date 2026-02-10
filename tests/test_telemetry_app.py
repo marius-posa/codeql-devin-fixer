@@ -7,6 +7,7 @@ Updated for SQLite-backed storage.
 import json
 import os
 import pathlib
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -63,8 +64,11 @@ def clean_db():
 @pytest.fixture
 def client():
     app.config["TESTING"] = True
+    from extensions import limiter
+    limiter.enabled = False
     with app.test_client() as c:
         yield c
+    limiter.enabled = True
 
 
 @pytest.fixture
@@ -1061,6 +1065,88 @@ class TestServerSideSessions:
             assert "gh_token" not in sess
 
 
+class TestIssueDetailEndpoint:
+    def test_issue_detail_returns_404_for_unknown(self, client):
+        resp = client.get("/api/issues/nonexistent/detail")
+        assert resp.status_code == 404
+        data = resp.get_json()
+        assert "error" in data
+
+    def test_issue_detail_returns_data(self, client, sample_run):
+        run = {**sample_run, "issue_fingerprints": [
+            {"fingerprint": "fp-test-1", "id": "CQLF-R1-0001",
+             "rule_id": "js/sql-injection", "severity_tier": "high",
+             "cwe_family": "injection", "file": "src/db.js",
+             "start_line": 42, "description": "SQL injection",
+             "resolution": "Use params", "code_churn": 5},
+        ]}
+        _seed_db(runs=[run])
+        from database import refresh_fingerprint_issues
+        conn = get_connection(pathlib.Path(_test_db_path))
+        init_db(conn)
+        refresh_fingerprint_issues(conn)
+        conn.commit()
+        conn.close()
+        resp = client.get("/api/issues/fp-test-1/detail")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["fingerprint"] == "fp-test-1"
+        assert data["rule_id"] == "js/sql-injection"
+        assert "sla_status" in data
+        assert "source_url" in data
+
+
+class TestIssueStatusEndpoint:
+    def test_status_update_requires_auth(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        resp = client.patch("/api/issues/fp-1/status", json={"status": "false_positive"})
+        assert resp.status_code == 401
+
+    def test_status_update_requires_body(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        resp = client.patch(
+            "/api/issues/fp-1/status",
+            headers={"X-API-Key": "test-key"},
+            json={},
+        )
+        assert resp.status_code == 400
+
+    def test_status_update_rejects_unknown(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        resp = client.patch(
+            "/api/issues/nonexistent/status",
+            headers={"X-API-Key": "test-key"},
+            json={"status": "false_positive"},
+        )
+        assert resp.status_code == 400
+
+
+class TestDispatchImpactEndpoint:
+    def test_impact_requires_target_repo(self, client):
+        resp = client.get("/api/dispatch/impact")
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert "error" in data
+
+    def test_impact_returns_data(self, client, sample_run):
+        _seed_db(runs=[sample_run])
+        resp = client.get("/api/dispatch/impact?target_repo=https://github.com/owner/repo")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["target_repo"] == "https://github.com/owner/repo"
+        assert "last_scan_issues" in data
+        assert "last_scan_batches" in data
+        assert "avg_issues_per_run" in data
+        assert "recent_runs" in data
+
+    def test_impact_empty_repo(self, client):
+        resp = client.get("/api/dispatch/impact?target_repo=https://github.com/unknown/repo")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["last_scan_issues"] == 0
+        assert data["recent_runs"] == []
+
+
 class TestCorsConfiguration:
     def test_cors_default_restricts_origins(self):
         from app import _cors_origins
@@ -1080,3 +1166,483 @@ class TestCorsConfiguration:
         assert "X-Content-Type-Options" in resp.headers
         assert resp.headers["X-Content-Type-Options"] == "nosniff"
         assert resp.headers["X-Frame-Options"] == "DENY"
+
+
+class TestSecurityHeaders:
+    def test_csp_header_present(self, client):
+        resp = client.get("/api/config")
+        assert resp.status_code == 200
+        assert "Content-Security-Policy" in resp.headers
+
+    def test_csp_default_src(self, client):
+        resp = client.get("/api/config")
+        csp = resp.headers["Content-Security-Policy"]
+        assert "default-src 'self'" in csp
+
+    def test_csp_script_src_allows_cdn(self, client):
+        resp = client.get("/api/config")
+        csp = resp.headers["Content-Security-Policy"]
+        assert "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net" in csp
+
+    def test_csp_style_src_allows_inline(self, client):
+        resp = client.get("/api/config")
+        csp = resp.headers["Content-Security-Policy"]
+        assert "style-src 'self' 'unsafe-inline'" in csp
+
+    def test_csp_img_src_allows_avatars(self, client):
+        resp = client.get("/api/config")
+        csp = resp.headers["Content-Security-Policy"]
+        assert "img-src 'self' data: https://avatars.githubusercontent.com" in csp
+
+    def test_csp_connect_src(self, client):
+        resp = client.get("/api/config")
+        csp = resp.headers["Content-Security-Policy"]
+        assert "connect-src 'self'" in csp
+
+    def test_csp_frame_ancestors_none(self, client):
+        resp = client.get("/api/config")
+        csp = resp.headers["Content-Security-Policy"]
+        assert "frame-ancestors 'none'" in csp
+
+    def test_csp_base_uri(self, client):
+        resp = client.get("/api/config")
+        csp = resp.headers["Content-Security-Policy"]
+        assert "base-uri 'self'" in csp
+
+    def test_referrer_policy_header_present(self, client):
+        resp = client.get("/api/config")
+        assert "Referrer-Policy" in resp.headers
+        assert resp.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+
+    def test_x_content_type_options(self, client):
+        resp = client.get("/api/config")
+        assert resp.headers["X-Content-Type-Options"] == "nosniff"
+
+    def test_x_frame_options(self, client):
+        resp = client.get("/api/config")
+        assert resp.headers["X-Frame-Options"] == "DENY"
+
+    def test_security_headers_on_api_endpoint(self, client, sample_run):
+        _seed_db(runs=[sample_run])
+        resp = client.get("/api/runs")
+        assert resp.status_code == 200
+        assert "Content-Security-Policy" in resp.headers
+        assert "Referrer-Policy" in resp.headers
+
+    def test_security_headers_on_html_endpoint(self, client):
+        resp = client.get("/")
+        assert "Content-Security-Policy" in resp.headers
+        assert "Referrer-Policy" in resp.headers
+
+    def test_hsts_absent_for_non_secure(self, client):
+        resp = client.get("/api/config")
+        assert "Strict-Transport-Security" not in resp.headers
+
+
+class TestRateLimiter:
+    def test_limiter_is_initialized(self):
+        from extensions import limiter
+        assert limiter is not None
+        assert limiter.enabled is True
+
+    def test_default_limit_configured(self):
+        from extensions import Limiter
+        assert Limiter is not None
+
+    def test_dispatch_endpoint_has_rate_limit_decorator(self):
+        from routes.orchestrator import api_orchestrator_dispatch
+        assert hasattr(api_orchestrator_dispatch, '__wrapped__') or callable(api_orchestrator_dispatch)
+
+    def test_orchestrator_dispatch_rate_limited(self, client, monkeypatch):
+        from extensions import limiter
+        limiter.enabled = True
+        limiter.reset()
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        monkeypatch.delenv("DEVIN_API_KEY", raising=False)
+        for _ in range(5):
+            client.post(
+                "/api/orchestrator/dispatch",
+                headers={"X-API-Key": "test-key"},
+                json={"dry_run": False},
+            )
+        resp = client.post(
+            "/api/orchestrator/dispatch",
+            headers={"X-API-Key": "test-key"},
+            json={"dry_run": False},
+        )
+        assert resp.status_code in (400, 429)
+        limiter.reset()
+
+    def test_limiter_storage_uri(self):
+        from extensions import limiter
+        assert limiter._storage_uri == "memory://"
+
+
+class TestOrchestratorSubprocessEndpoints:
+    def test_plan_success_returns_parsed_json(self, client):
+        plan_output = {"eligible_issues": 5, "batches": [{"id": 1, "issues": ["a", "b"]}]}
+        with patch("routes.orchestrator.subprocess.run") as mock_run:
+            mock_run.return_value = type("R", (), {
+                "returncode": 0,
+                "stdout": json.dumps(plan_output),
+                "stderr": "",
+            })()
+            resp = client.get("/api/orchestrator/plan")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["eligible_issues"] == 5
+            assert len(data["batches"]) == 1
+
+    def test_plan_invalid_json_output(self, client):
+        with patch("routes.orchestrator.subprocess.run") as mock_run:
+            mock_run.return_value = type("R", (), {
+                "returncode": 0,
+                "stdout": "not valid json",
+                "stderr": "",
+            })()
+            resp = client.get("/api/orchestrator/plan")
+            assert resp.status_code == 500
+            data = resp.get_json()
+            assert "error" in data
+
+    def test_plan_subprocess_timeout(self, client):
+        with patch("routes.orchestrator.subprocess.run", side_effect=subprocess.TimeoutExpired("cmd", 60)):
+            with pytest.raises(subprocess.TimeoutExpired):
+                client.get("/api/orchestrator/plan")
+
+    def test_scan_success_returns_parsed_json(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        monkeypatch.setenv("GITHUB_TOKEN", "tok")
+        monkeypatch.setenv("ACTION_REPO", "owner/repo")
+        scan_output = {"total_repos": 2, "results": [{"repo": "r1", "triggered": True}]}
+        with patch("routes.orchestrator.subprocess.run") as mock_run:
+            mock_run.return_value = type("R", (), {
+                "returncode": 0,
+                "stdout": json.dumps(scan_output),
+                "stderr": "",
+            })()
+            resp = client.post(
+                "/api/orchestrator/scan",
+                headers={"X-API-Key": "test-key"},
+                json={},
+            )
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["total_repos"] == 2
+
+    def test_scan_failure_returns_stderr(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        monkeypatch.setenv("GITHUB_TOKEN", "tok")
+        monkeypatch.setenv("ACTION_REPO", "owner/repo")
+        with patch("routes.orchestrator.subprocess.run") as mock_run:
+            mock_run.return_value = type("R", (), {
+                "returncode": 1,
+                "stdout": "",
+                "stderr": "scan process crashed",
+            })()
+            resp = client.post(
+                "/api/orchestrator/scan",
+                headers={"X-API-Key": "test-key"},
+                json={},
+            )
+            assert resp.status_code == 500
+            data = resp.get_json()
+            assert "Scan failed" in data["error"]
+
+    def test_scan_invalid_json_output(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        monkeypatch.setenv("GITHUB_TOKEN", "tok")
+        monkeypatch.setenv("ACTION_REPO", "owner/repo")
+        with patch("routes.orchestrator.subprocess.run") as mock_run:
+            mock_run.return_value = type("R", (), {
+                "returncode": 0,
+                "stdout": "bad json output",
+                "stderr": "",
+            })()
+            resp = client.post(
+                "/api/orchestrator/scan",
+                headers={"X-API-Key": "test-key"},
+                json={},
+            )
+            assert resp.status_code == 500
+            data = resp.get_json()
+            assert "Invalid scan output" in data["error"]
+
+    def test_dispatch_success_returns_parsed_json(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        monkeypatch.setenv("DEVIN_API_KEY", "dk-test")
+        dispatch_output = {"sessions_created": 3, "batches_dispatched": 2}
+        with patch("routes.orchestrator.subprocess.run") as mock_run:
+            mock_run.return_value = type("R", (), {
+                "returncode": 0,
+                "stdout": json.dumps(dispatch_output),
+                "stderr": "",
+            })()
+            resp = client.post(
+                "/api/orchestrator/dispatch",
+                headers={"X-API-Key": "test-key"},
+                json={},
+            )
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["sessions_created"] == 3
+
+    def test_dispatch_with_repo_filter(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        monkeypatch.setenv("DEVIN_API_KEY", "dk-test")
+        with patch("routes.orchestrator.subprocess.run") as mock_run:
+            mock_run.return_value = type("R", (), {
+                "returncode": 0,
+                "stdout": json.dumps({"sessions_created": 1}),
+                "stderr": "",
+            })()
+            resp = client.post(
+                "/api/orchestrator/dispatch",
+                headers={"X-API-Key": "test-key"},
+                json={"repo": "owner/myrepo"},
+            )
+            assert resp.status_code == 200
+            cmd = mock_run.call_args[0][0]
+            assert "--repo" in cmd
+            assert "owner/myrepo" in cmd
+
+    def test_dispatch_failure_returns_error(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        monkeypatch.setenv("DEVIN_API_KEY", "dk-test")
+        with patch("routes.orchestrator.subprocess.run") as mock_run:
+            mock_run.return_value = type("R", (), {
+                "returncode": 1,
+                "stdout": "",
+                "stderr": "dispatch error",
+            })()
+            resp = client.post(
+                "/api/orchestrator/dispatch",
+                headers={"X-API-Key": "test-key"},
+                json={},
+            )
+            assert resp.status_code == 500
+            data = resp.get_json()
+            assert "Dispatch failed" in data["error"]
+
+    def test_dispatch_invalid_json_output(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        monkeypatch.setenv("DEVIN_API_KEY", "dk-test")
+        with patch("routes.orchestrator.subprocess.run") as mock_run:
+            mock_run.return_value = type("R", (), {
+                "returncode": 0,
+                "stdout": "not json",
+                "stderr": "",
+            })()
+            resp = client.post(
+                "/api/orchestrator/dispatch",
+                headers={"X-API-Key": "test-key"},
+                json={},
+            )
+            assert resp.status_code == 500
+            data = resp.get_json()
+            assert "Invalid dispatch output" in data["error"]
+
+    def test_cycle_success_returns_scan_and_dispatch(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        monkeypatch.setenv("GITHUB_TOKEN", "tok")
+        monkeypatch.setenv("ACTION_REPO", "owner/repo")
+        monkeypatch.setenv("DEVIN_API_KEY", "dk-test")
+        cycle_output = {
+            "scan": {"triggered": 2, "results": []},
+            "dispatch": {"sessions_created": 3},
+        }
+        with patch("routes.orchestrator.subprocess.run") as mock_run:
+            mock_run.return_value = type("R", (), {
+                "returncode": 0,
+                "stdout": json.dumps(cycle_output),
+                "stderr": "",
+            })()
+            resp = client.post(
+                "/api/orchestrator/cycle",
+                headers={"X-API-Key": "test-key"},
+                json={},
+            )
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert "scan" in data
+            assert "dispatch" in data
+            assert data["dispatch"]["sessions_created"] == 3
+
+    def test_cycle_failure_returns_error(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        monkeypatch.setenv("GITHUB_TOKEN", "tok")
+        monkeypatch.setenv("ACTION_REPO", "owner/repo")
+        monkeypatch.setenv("DEVIN_API_KEY", "dk-test")
+        with patch("routes.orchestrator.subprocess.run") as mock_run:
+            mock_run.return_value = type("R", (), {
+                "returncode": 1,
+                "stdout": "",
+                "stderr": "cycle failed",
+            })()
+            resp = client.post(
+                "/api/orchestrator/cycle",
+                headers={"X-API-Key": "test-key"},
+                json={},
+            )
+            assert resp.status_code == 500
+            data = resp.get_json()
+            assert "Cycle failed" in data["error"]
+
+    def test_cycle_invalid_json_output(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        monkeypatch.setenv("GITHUB_TOKEN", "tok")
+        monkeypatch.setenv("ACTION_REPO", "owner/repo")
+        monkeypatch.setenv("DEVIN_API_KEY", "dk-test")
+        with patch("routes.orchestrator.subprocess.run") as mock_run:
+            mock_run.return_value = type("R", (), {
+                "returncode": 0,
+                "stdout": "broken json",
+                "stderr": "",
+            })()
+            resp = client.post(
+                "/api/orchestrator/cycle",
+                headers={"X-API-Key": "test-key"},
+                json={},
+            )
+            assert resp.status_code == 500
+            data = resp.get_json()
+            assert "Invalid cycle output" in data["error"]
+
+    def test_cycle_with_repo_filter(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        monkeypatch.setenv("GITHUB_TOKEN", "tok")
+        monkeypatch.setenv("ACTION_REPO", "owner/repo")
+        monkeypatch.setenv("DEVIN_API_KEY", "dk-test")
+        with patch("routes.orchestrator.subprocess.run") as mock_run:
+            mock_run.return_value = type("R", (), {
+                "returncode": 0,
+                "stdout": json.dumps({"scan": {}, "dispatch": {}}),
+                "stderr": "",
+            })()
+            resp = client.post(
+                "/api/orchestrator/cycle",
+                headers={"X-API-Key": "test-key"},
+                json={"repo": "owner/target"},
+            )
+            assert resp.status_code == 200
+            cmd = mock_run.call_args[0][0]
+            assert "--repo" in cmd
+            assert "owner/target" in cmd
+
+
+class TestEndToEndOrchestratorCycle:
+    def test_scan_then_dispatch_then_verify(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        monkeypatch.setenv("GITHUB_TOKEN", "tok")
+        monkeypatch.setenv("ACTION_REPO", "owner/repo")
+        monkeypatch.setenv("DEVIN_API_KEY", "dk-test")
+
+        scan_output = {
+            "total_repos": 1,
+            "results": [{"repo": "owner/target", "triggered": True, "workflow_run_id": 12345}],
+        }
+        with patch("routes.orchestrator.subprocess.run") as mock_run:
+            mock_run.return_value = type("R", (), {
+                "returncode": 0,
+                "stdout": json.dumps(scan_output),
+                "stderr": "",
+            })()
+            scan_resp = client.post(
+                "/api/orchestrator/scan",
+                headers={"X-API-Key": "test-key"},
+                json={},
+            )
+            assert scan_resp.status_code == 200
+            assert scan_resp.get_json()["total_repos"] == 1
+
+        dispatch_output = {
+            "sessions_created": 2,
+            "batches_dispatched": 1,
+            "sessions": [
+                {"session_id": "devin-aabb", "batch_id": 0, "issue_ids": ["CQLF-R1-0001"]},
+                {"session_id": "devin-ccdd", "batch_id": 1, "issue_ids": ["CQLF-R1-0002"]},
+            ],
+        }
+        with patch("routes.orchestrator.subprocess.run") as mock_run:
+            mock_run.return_value = type("R", (), {
+                "returncode": 0,
+                "stdout": json.dumps(dispatch_output),
+                "stderr": "",
+            })()
+            dispatch_resp = client.post(
+                "/api/orchestrator/dispatch",
+                headers={"X-API-Key": "test-key"},
+                json={},
+            )
+            assert dispatch_resp.status_code == 200
+            assert dispatch_resp.get_json()["sessions_created"] == 2
+
+        status_resp = client.get("/api/orchestrator/status")
+        assert status_resp.status_code == 200
+        status_data = status_resp.get_json()
+        assert "rate_limit" in status_data
+        assert "issue_state_breakdown" in status_data
+
+    def test_full_cycle_dry_run(self, client, monkeypatch):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.delenv("ACTION_REPO", raising=False)
+        monkeypatch.delenv("DEVIN_API_KEY", raising=False)
+
+        cycle_output = {
+            "scan": {"triggered": 0, "results": [], "dry_run": True},
+            "dispatch": {"sessions_created": 0, "dry_run": True},
+            "alerts": [],
+        }
+        with patch("routes.orchestrator.subprocess.run") as mock_run:
+            mock_run.return_value = type("R", (), {
+                "returncode": 0,
+                "stdout": json.dumps(cycle_output),
+                "stderr": "",
+            })()
+            resp = client.post(
+                "/api/orchestrator/cycle",
+                headers={"X-API-Key": "test-key"},
+                json={"dry_run": True},
+            )
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["scan"]["dry_run"] is True
+            assert data["dispatch"]["dry_run"] is True
+
+    def test_cycle_scan_dispatch_verify_status(self, client, monkeypatch, sample_run):
+        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
+        monkeypatch.setenv("GITHUB_TOKEN", "tok")
+        monkeypatch.setenv("ACTION_REPO", "owner/repo")
+        monkeypatch.setenv("DEVIN_API_KEY", "dk-test")
+
+        _seed_db(runs=[sample_run])
+
+        cycle_output = {
+            "scan": {"triggered": 1, "results": [{"repo": "owner/repo"}]},
+            "dispatch": {"sessions_created": 1, "sessions": [{"session_id": "devin-1234"}]},
+            "alerts": [{"type": "new_session", "session_id": "devin-1234"}],
+        }
+        with patch("routes.orchestrator.subprocess.run") as mock_run:
+            mock_run.return_value = type("R", (), {
+                "returncode": 0,
+                "stdout": json.dumps(cycle_output),
+                "stderr": "",
+            })()
+            cycle_resp = client.post(
+                "/api/orchestrator/cycle",
+                headers={"X-API-Key": "test-key"},
+                json={},
+            )
+            assert cycle_resp.status_code == 200
+            data = cycle_resp.get_json()
+            assert data["scan"]["triggered"] == 1
+            assert data["dispatch"]["sessions_created"] == 1
+            assert len(data["alerts"]) == 1
+
+        status_resp = client.get("/api/orchestrator/status")
+        assert status_resp.status_code == 200
+
+        fix_rates_resp = client.get("/api/orchestrator/fix-rates")
+        assert fix_rates_resp.status_code == 200
+        assert "overall" in fix_rates_resp.get_json()

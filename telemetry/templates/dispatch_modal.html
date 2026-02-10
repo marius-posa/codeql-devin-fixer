@@ -6,9 +6,10 @@
     </div>
     <div class="modal-body">
       <div class="warning-banner" id="dispatch-warning"></div>
+      <div class="dispatch-preview" id="dispatch-impact" style="display:none"></div>
       <div class="form-group">
         <label for="d-target-repo">Target Repository URL *</label>
-        <input class="form-input" id="d-target-repo" type="text" value="" onchange="checkPreflight()">
+        <input class="form-input" id="d-target-repo" type="text" value="" onchange="checkPreflight();fetchImpactPreview()">
         <div class="hint">GitHub repository URL to analyze</div>
       </div>
       <div class="form-group">

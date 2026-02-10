@@ -354,8 +354,42 @@ function openDispatchModal(targetRepo) {
     document.getElementById('d-target-repo').value = targetRepo;
   }
   checkPreflight();
+  fetchImpactPreview();
   const firstInput = modal.querySelector('input, select, textarea');
   if (firstInput) firstInput.focus();
+}
+
+var _impactTimer = null;
+async function fetchImpactPreview() {
+  var container = document.getElementById('dispatch-impact');
+  if (!container) return;
+  var targetRepo = document.getElementById('d-target-repo').value.trim();
+  if (!targetRepo) { container.innerHTML = ''; container.style.display = 'none'; return; }
+  clearTimeout(_impactTimer);
+  _impactTimer = setTimeout(async function() {
+    try {
+      var res = await _authedFetch(API + '/api/dispatch/impact?target_repo=' + encodeURIComponent(targetRepo));
+      if (!res.ok) { container.innerHTML = ''; container.style.display = 'none'; return; }
+      var data = await res.json();
+      var batchSize = parseInt(document.getElementById('d-batch-size').value) || 5;
+      var maxSessions = parseInt(document.getElementById('d-max-sessions').value) || 5;
+      var estBatches = data.last_scan_issues > 0 ? Math.ceil(data.last_scan_issues / batchSize) : 0;
+      var estSessions = Math.min(estBatches, maxSessions);
+      var avgAcu = data.total_sessions_created > 0 ? Math.round(data.total_sessions_created * 10 / Math.max(data.sessions_finished, 1)) / 10 : 0;
+      var projectedAcu = estSessions > 0 ? (estSessions * avgAcu).toFixed(1) : '-';
+      var html = '<div class="drawer-section-title">Estimated Impact</div>';
+      html += '<div class="dispatch-preview-row"><span class="dispatch-preview-label">Issues from last scan</span><span class="dispatch-preview-value">' + data.last_scan_issues + '</span></div>';
+      html += '<div class="dispatch-preview-row"><span class="dispatch-preview-label">Estimated batches</span><span class="dispatch-preview-value">' + estBatches + '</span></div>';
+      html += '<div class="dispatch-preview-row"><span class="dispatch-preview-label">Sessions to create</span><span class="dispatch-preview-value">' + estSessions + '</span></div>';
+      html += '<div class="dispatch-preview-row"><span class="dispatch-preview-label">Projected ACU usage</span><span class="dispatch-preview-value">' + projectedAcu + '</span></div>';
+      html += '<div class="dispatch-preview-row"><span class="dispatch-preview-label">Wave config</span><span class="dispatch-preview-value">' + batchSize + ' issues/batch, ' + maxSessions + ' max sessions</span></div>';
+      if (data.recent_runs && data.recent_runs.length > 0) {
+        html += '<div class="dispatch-preview-row"><span class="dispatch-preview-label">Historical avg issues/run</span><span class="dispatch-preview-value">' + data.avg_issues_per_run + '</span></div>';
+      }
+      container.innerHTML = html;
+      container.style.display = 'block';
+    } catch (e) { container.innerHTML = ''; container.style.display = 'none'; }
+  }, 400);
 }
 
 function closeDispatchModal() {
@@ -540,28 +574,33 @@ function _openDrawerByFp(fingerprint) {
   var issue = _issuesAllData.find(function(i) { return i.fingerprint === fingerprint; });
   if (issue) openIssueDrawer(issue);
 }
-function openIssueDrawer(issue) {
-  _drawerIssue = issue;
-  var overlay = document.getElementById('drawer-overlay');
-  var drawer = document.getElementById('issue-drawer');
-  if (!overlay || !drawer) return;
-  overlay.classList.add('active');
-  drawer.classList.add('active');
-  var body = drawer.querySelector('.drawer-body');
-  if (!body) return;
+
+function _renderDrawerBase(issue) {
   var html = '<div class="drawer-section">';
   html += '<div class="drawer-section-title">Details</div>';
   html += _drawerField('Rule', issue.rule_id || '-');
   html += _drawerField('Severity', '<span class="badge ' + badgeClass(issue.severity_tier) + '">' + escapeHtml(issue.severity_tier || '-') + '</span>');
-  html += _drawerField('Status', '<span class="badge ' + badgeClass(issue.status) + '">' + escapeHtml(issue.status) + '</span>');
+  html += _drawerField('Status', '<span id="drawer-status-badge" class="badge ' + badgeClass(issue.status) + '">' + escapeHtml(issue.status) + '</span>');
   html += _drawerField('Category', escapeHtml(issue.cwe_family || '-'));
-  html += _drawerField('File', '<span style="font-family:monospace;font-size:11px">' + escapeHtml(issue.file || '-') + '</span>');
-  html += _drawerField('Line', issue.start_line || '-');
+  var fileVal = '<span style="font-family:monospace;font-size:11px">' + escapeHtml(issue.file || '-') + '</span>';
+  if (issue.source_url) {
+    fileVal = '<a href="' + escapeHtml(issue.source_url) + '" target="_blank" style="font-family:monospace;font-size:11px">' + escapeHtml(issue.file || '-') + ':' + (issue.start_line || '') + '</a>';
+  }
+  html += _drawerField('File', fileVal);
+  if (!issue.source_url) html += _drawerField('Line', issue.start_line || '-');
   html += _drawerField('Fingerprint', '<span style="font-family:monospace;font-size:10px">' + escapeHtml(issue.fingerprint || '-') + '</span>');
   if (issue.description) html += _drawerField('Description', escapeHtml(issue.description));
   if (issue.resolution) html += _drawerField('Resolution', escapeHtml(issue.resolution));
+  if (issue.cwe_family && issue.cwe_family !== 'other') {
+    var cweLink = 'https://cwe.mitre.org/cgi-bin/jumpmenu.cgi?id=' + encodeURIComponent(issue.cwe_family);
+    html += _drawerField('CWE Reference', '<a href="' + cweLink + '" target="_blank">View ' + escapeHtml(issue.cwe_family) + ' on MITRE</a>');
+  }
   html += '</div>';
-  html += '<div class="drawer-section">';
+  return html;
+}
+
+function _renderDrawerHistory(issue) {
+  var html = '<div class="drawer-section">';
   html += '<div class="drawer-section-title">History (' + (issue.appearances || 0) + ' appearances)</div>';
   html += _drawerField('First Seen', issue.first_seen_date ? formatDate(issue.first_seen_date) : 'Run #' + issue.first_seen_run);
   html += _drawerField('Last Seen', issue.last_seen_date ? formatDate(issue.last_seen_date) : 'Run #' + issue.last_seen_run);
@@ -571,19 +610,129 @@ function openIssueDrawer(issue) {
   }
   if (issue.fix_duration_hours != null) html += _drawerField('Fix Duration', issue.fix_duration_hours + 'h');
   html += '</div>';
-  if (issue.sla_status && issue.sla_status !== 'unknown') {
-    html += '<div class="drawer-section">';
-    html += '<div class="drawer-section-title">SLA</div>';
-    html += _drawerField('Status', '<span class="badge ' + badgeClass(issue.sla_status) + '">' + escapeHtml(issue.sla_status) + '</span>');
-    if (issue.sla_limit_hours) html += _drawerField('SLA Limit', issue.sla_limit_hours + 'h');
-    if (issue.sla_hours_elapsed != null) html += _drawerField('Time Elapsed', issue.sla_hours_elapsed + 'h');
-    if (issue.sla_hours_remaining != null) {
-      var remainColor = issue.sla_hours_remaining < 0 ? 'var(--accent-red)' : (issue.sla_status === 'at-risk' ? 'var(--accent-orange)' : 'var(--accent-green)');
-      html += _drawerField('Time Remaining', '<span style="color:' + remainColor + '">' + issue.sla_hours_remaining + 'h</span>');
-    }
-    html += '</div>';
+  return html;
+}
+
+function _renderDrawerSla(issue) {
+  if (!issue.sla_status || issue.sla_status === 'unknown') return '';
+  var html = '<div class="drawer-section">';
+  html += '<div class="drawer-section-title">SLA</div>';
+  html += _drawerField('Status', '<span class="badge ' + badgeClass(issue.sla_status) + '">' + escapeHtml(issue.sla_status) + '</span>');
+  if (issue.sla_limit_hours) html += _drawerField('SLA Limit', issue.sla_limit_hours + 'h');
+  if (issue.sla_hours_elapsed != null) html += _drawerField('Time Elapsed', issue.sla_hours_elapsed + 'h');
+  if (issue.sla_hours_remaining != null) {
+    var remainColor = issue.sla_hours_remaining < 0 ? 'var(--accent-red)' : (issue.sla_status === 'at-risk' ? 'var(--accent-orange)' : 'var(--accent-green)');
+    html += _drawerField('Time Remaining', '<span style="color:' + remainColor + '">' + issue.sla_hours_remaining + 'h</span>');
   }
+  html += '</div>';
+  return html;
+}
+
+function _renderDrawerTimeline(detail) {
+  var events = [];
+  if (detail.run_timeline) {
+    detail.run_timeline.forEach(function(r) {
+      events.push({ date: r.timestamp, type: 'run', label: 'Detected in Run #' + r.run_number, url: r.run_url });
+    });
+  }
+  if (detail.related_sessions) {
+    detail.related_sessions.forEach(function(s) {
+      var label = 'Session ' + (s.session_id || '').substring(0, 8) + ' (' + s.status + ')';
+      events.push({ date: s.timestamp, type: 'session', label: label, url: s.session_url });
+    });
+  }
+  if (detail.related_prs) {
+    detail.related_prs.forEach(function(p) {
+      var label = 'PR #' + p.pr_number + (p.merged ? ' (merged)' : ' (' + p.state + ')');
+      events.push({ date: p.created_at, type: 'pr', label: label, url: p.html_url });
+    });
+  }
+  events.sort(function(a, b) { return (a.date || '').localeCompare(b.date || ''); });
+  if (events.length === 0) return '';
+  var html = '<div class="drawer-section">';
+  html += '<div class="drawer-section-title">Timeline</div>';
+  html += '<ul class="drawer-timeline">';
+  events.forEach(function(ev) {
+    var cls = ev.type === 'pr' ? 'timeline-pr' : (ev.type === 'session' ? 'timeline-new' : '');
+    if (ev.label.indexOf('merged') !== -1 || ev.label.indexOf('fixed') !== -1) cls = 'timeline-fixed';
+    html += '<li class="drawer-timeline-item ' + cls + '">';
+    html += '<div class="drawer-timeline-date">' + (ev.date ? formatDate(ev.date) : '-') + '</div>';
+    if (ev.url) {
+      html += '<a href="' + escapeHtml(ev.url) + '" target="_blank">' + escapeHtml(ev.label) + '</a>';
+    } else {
+      html += escapeHtml(ev.label);
+    }
+    html += '</li>';
+  });
+  html += '</ul></div>';
+  return html;
+}
+
+function _renderDrawerActions(issue) {
+  var fp = issue.fingerprint;
+  var html = '<div class="drawer-actions">';
+  html += '<button class="btn btn-primary" onclick="_drawerRedispatch(\'' + escapeHtml(fp) + '\')">Re-dispatch</button>';
+  html += '<button class="btn" onclick="_drawerSetStatus(\'' + escapeHtml(fp) + '\',\'false_positive\')">False Positive</button>';
+  html += '<button class="btn" onclick="_drawerSetStatus(\'' + escapeHtml(fp) + '\',\'wont_fix\')">Won\'t Fix</button>';
+  html += '</div>';
+  return html;
+}
+
+function _drawerRedispatch(fingerprint) {
+  var issue = _drawerIssue;
+  if (issue && issue.target_repo) {
+    closeIssueDrawer();
+    openDispatchModal(issue.target_repo);
+  }
+}
+
+async function _drawerSetStatus(fingerprint, newStatus) {
+  try {
+    var res = await _authedFetch(API + '/api/issues/' + encodeURIComponent(fingerprint) + '/status', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newStatus }),
+    });
+    var data = await res.json();
+    if (data.success) {
+      if (_drawerIssue) _drawerIssue.status = newStatus;
+      var statusEl = document.getElementById('drawer-status-badge');
+      if (statusEl) {
+        statusEl.className = 'badge ' + badgeClass(newStatus);
+        statusEl.textContent = newStatus;
+      }
+    }
+  } catch (e) {}
+}
+
+async function openIssueDrawer(issue) {
+  _drawerIssue = issue;
+  var overlay = document.getElementById('drawer-overlay');
+  var drawer = document.getElementById('issue-drawer');
+  if (!overlay || !drawer) return;
+  overlay.classList.add('active');
+  drawer.classList.add('active');
+  var body = drawer.querySelector('.drawer-body');
+  if (!body) return;
+  var html = _renderDrawerBase(issue);
+  html += _renderDrawerHistory(issue);
+  html += _renderDrawerSla(issue);
+  html += _renderDrawerActions(issue);
   body.innerHTML = html;
+
+  try {
+    var res = await _authedFetch(API + '/api/issues/' + encodeURIComponent(issue.fingerprint) + '/detail');
+    if (res.ok) {
+      var detail = await res.json();
+      _drawerIssue = Object.assign({}, issue, detail);
+      var enriched = _renderDrawerBase(detail);
+      enriched += _renderDrawerHistory(detail);
+      enriched += _renderDrawerTimeline(detail);
+      enriched += _renderDrawerSla(detail);
+      enriched += _renderDrawerActions(detail);
+      if (drawer.classList.contains('active')) body.innerHTML = enriched;
+    }
+  } catch (e) {}
 }
 function _drawerField(label, value) {
   return '<div class="drawer-field"><div class="drawer-field-label">' + label + '</div><div class="drawer-field-value">' + value + '</div></div>';
