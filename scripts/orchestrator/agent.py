@@ -83,6 +83,10 @@ AGENT_TRIAGE_OUTPUT_SCHEMA: dict[str, Any] = {
 }
 
 
+MAX_TRIAGE_ISSUES = 50
+MAX_PROMPT_CHARS = 28000
+
+
 def build_agent_triage_input(
     eligible_issues: list[dict[str, Any]],
     fl: FixLearning,
@@ -90,21 +94,25 @@ def build_agent_triage_input(
     rate_limiter_info: dict[str, Any],
 ) -> dict[str, Any]:
     """Build the structured input payload for the agent triage session."""
+    total_eligible = len(eligible_issues)
+
+    sorted_issues = sorted(
+        eligible_issues,
+        key=lambda i: i.get("priority_score", 0),
+        reverse=True,
+    )
+    top_issues = sorted_issues[:MAX_TRIAGE_ISSUES]
+
     issue_inventory = []
-    for issue in eligible_issues:
+    for issue in top_issues:
         entry: dict[str, Any] = {
-            "fingerprint": issue.get("fingerprint", ""),
-            "rule_id": issue.get("rule_id", ""),
-            "severity_tier": issue.get("severity_tier", ""),
-            "cwe_family": issue.get("cwe_family", ""),
-            "target_repo": issue.get("target_repo", ""),
-            "file": _state._issue_file(issue),
-            "start_line": _state._issue_start_line(issue),
-            "message": issue.get("message", ""),
-            "appearances": issue.get("appearances", 1),
-            "derived_state": issue.get("derived_state", issue.get("status", "new")),
-            "sla_status": issue.get("sla_status", ""),
-            "deterministic_score": issue.get("priority_score", 0),
+            "fp": issue.get("fingerprint", ""),
+            "rule": issue.get("rule_id", ""),
+            "sev": issue.get("severity_tier", ""),
+            "cwe": issue.get("cwe_family", ""),
+            "repo": issue.get("target_repo", ""),
+            "sla": issue.get("sla_status", ""),
+            "score": issue.get("priority_score", 0),
         }
         issue_inventory.append(entry)
 
@@ -135,50 +143,54 @@ def build_agent_triage_input(
         "sla_deadlines": sla_deadlines,
         "acu_budget": acu_budget,
         "objectives": objectives,
-        "total_issues": len(issue_inventory),
+        "total_issues": total_eligible,
+        "issues_included": len(issue_inventory),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
 def _build_agent_triage_prompt(triage_input: dict[str, Any]) -> str:
-    """Build the prompt for the orchestrator agent triage session."""
+    """Build the prompt for the orchestrator agent triage session.
+
+    The Devin API enforces a 30 000-character prompt limit.  To stay
+    within budget the input JSON uses compact formatting and issues are
+    pre-sorted/capped by ``build_agent_triage_input``.
+    """
+    input_json = json.dumps(triage_input, separators=(",", ":"))
+
     parts: list[str] = [
         "You are the Orchestrator Triage Agent for a CodeQL security vulnerability fixer.",
         "",
-        "Your task is to analyze the following issue inventory and produce prioritised",
-        "dispatch decisions. Consider:",
-        "- Actual impact and exploitability of each vulnerability",
-        "- Cross-repository patterns (shared dependencies, similar vulnerabilities)",
-        "- Historical fix rates per CWE family (focus resources on fixable issues)",
-        "- SLA deadlines and urgency (breached/at-risk issues need immediate attention)",
-        "- ACU budget constraints (limited sessions available)",
-        "- Objective alignment (organizational goals)",
+        "Analyze the issue inventory below and produce prioritised dispatch decisions.",
+        "Consider: impact/exploitability, cross-repo patterns, historical fix rates,",
+        "SLA deadlines, ACU budget, and organizational objectives.",
         "",
-        "## Structured Input",
+        "Issue fields: fp=fingerprint, rule=rule_id, sev=severity_tier, cwe=cwe_family,",
+        "repo=target_repo, sla=sla_status, score=deterministic_priority (0-1).",
         "",
-        "```json",
-        json.dumps(triage_input, indent=2),
-        "```",
+        "## Input",
+        "",
+        input_json,
         "",
         "## Instructions",
         "",
-        "1. Analyze each issue in the inventory",
-        "2. Assign a priority_score from 0-100 (higher = more urgent)",
-        "3. Decide whether each issue should be dispatched (true/false)",
-        "4. Provide brief reasoning for each decision",
-        "5. Consider cross-repo correlations -- if multiple repos share the same vulnerability pattern, prioritise fixing at the source",
-        "6. Factor in fix rates -- if a CWE family has low historical fix rate, consider whether it's worth the ACU budget",
-        "7. Respect SLA deadlines -- breached issues should get higher scores",
+        "1. Assign priority_score 0-100 per issue (higher=more urgent)",
+        "2. Set dispatch=true/false for each",
+        "3. Provide brief reasoning",
+        "4. Prioritise cross-repo patterns at the source",
+        "5. Factor in fix rates and SLA deadlines",
         "",
-        "Update your structured output with your decisions.",
-        "",
-        "## Output Schema",
-        "",
-        "```json",
-        json.dumps(AGENT_TRIAGE_OUTPUT_SCHEMA, indent=2),
-        "```",
+        "Update your structured output with decisions.",
     ]
-    return "\n".join(parts)
+    prompt = "\n".join(parts)
+
+    if len(prompt) > MAX_PROMPT_CHARS:
+        over = len(prompt) - MAX_PROMPT_CHARS + 500
+        input_json = input_json[:-over]
+        parts[10] = input_json + '..."]}'
+        prompt = "\n".join(parts)
+
+    return prompt
 
 
 def create_agent_triage_session(
