@@ -504,6 +504,14 @@ async function fetchRepoData() {
     const repoIssues = trackIssuesAcrossRuns(repoRuns);
 
     var registryData = await fetchRegistry();
+    var orchState = await fetchOrchestratorState();
+    var verificationRecords = await loadVerificationRecords();
+    var plan = buildOrchestratorPlan(repoIssues, orchState, verificationRecords);
+    if (plan && plan.planned_dispatches) {
+      var prioMap = {};
+      plan.planned_dispatches.forEach(function(d) { if (d.fingerprint) prioMap[d.fingerprint] = d.priority_score; });
+      repoIssues.forEach(function(issue) { if (issue.fingerprint && prioMap[issue.fingerprint] != null) issue.priority_score = prioMap[issue.fingerprint]; });
+    }
 
     renderMetrics(repoStats);
     renderTrendChart(document.getElementById('trend-chart'), repoRuns);

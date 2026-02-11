@@ -3,25 +3,25 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Repo Detail - Telemetry</title>
-<link rel="stylesheet" href="static/shared.css">
+<title>{{ repo_short }} - Telemetry</title>
+<link rel="stylesheet" href="/static/shared.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 </head>
 <body>
 <div class="container">
   <div class="breadcrumb">
-    <a href="index.html">Dashboard</a> / <span id="breadcrumb-repo"></span>
+    <a href="/">Dashboard</a> / {{ repo_short }}
   </div>
 
   <header>
-    <h1><span id="header-repo"></span></h1>
+    <h1><span>{{ repo_short }}</span></h1>
     <div class="header-actions">
-      <button class="btn btn-action" onclick="openDispatchModalRepo()">Run Action</button>
-      <a id="gh-link" href="#" target="_blank" class="btn">View on GitHub</a>
-      <a href="index.html" class="btn">Back to Dashboard</a>
+      <button class="btn btn-action" onclick="openDispatchModal()">Run Action</button>
+      <a href="{{ repo_url }}" target="_blank" class="btn">View on GitHub</a>
+      <a class="btn" href="/api/report/pdf?repo={{ repo_url }}" id="btn-pdf">PDF Report</a>
+      <a href="/" class="btn">Back to Dashboard</a>
       <button class="density-toggle" id="density-toggle" title="Toggle compact mode">Compact</button>
       <button class="theme-toggle" id="theme-toggle"></button>
-      <button class="btn btn-settings-icon" onclick="openSettingsModal()" title="Settings">&#9881;</button>
     </div>
   </header>
 
@@ -96,143 +96,12 @@
   <div class="drawer-body"></div>
 </div>
 
-<div class="modal-overlay" id="dispatch-modal">
-  <div class="modal">
-    <div class="modal-header">
-      <h2>Trigger CodeQL Fixer Action</h2>
-      <button class="modal-close" onclick="closeDispatchModal()">&times;</button>
-    </div>
-    <div class="modal-body">
-      <div class="warning-banner" id="dispatch-warning"></div>
-      <div class="form-group">
-        <label for="d-target-repo">Target Repository URL *</label>
-        <input class="form-input" id="d-target-repo" type="text" value="" onchange="checkPreflightStatic()">
-        <div class="hint">GitHub repository URL to analyze</div>
-      </div>
-      <div class="form-group">
-        <label for="d-languages">Languages</label>
-        <input class="form-input" id="d-languages" type="text" value="" placeholder="e.g. javascript,python">
-        <div class="hint">Comma-separated CodeQL languages (leave empty for auto-detect)</div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label for="d-queries">Query Suite</label>
-          <select class="form-input" id="d-queries">
-            <option value="security-extended" selected>security-extended</option>
-            <option value="security-and-quality">security-and-quality</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label for="d-severity">Severity Threshold</label>
-          <select class="form-input" id="d-severity">
-            <option value="critical">critical</option>
-            <option value="high">high</option>
-            <option value="medium">medium</option>
-            <option value="low" selected>low</option>
-          </select>
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label for="d-batch-size">Batch Size</label>
-          <input class="form-input" id="d-batch-size" type="number" value="5" min="1">
-          <div class="hint">Max issues per Devin session</div>
-        </div>
-        <div class="form-group">
-          <label for="d-max-sessions">Max Sessions</label>
-          <input class="form-input" id="d-max-sessions" type="number" value="5" min="1">
-          <div class="hint">Max Devin sessions to create</div>
-        </div>
-      </div>
-      <div class="form-group">
-        <label for="d-default-branch">Default Branch</label>
-        <input class="form-input" id="d-default-branch" type="text" value="main">
-        <div class="hint">Default branch of the target repo</div>
-      </div>
-      <div class="form-group">
-        <label for="d-include-paths">Include Paths</label>
-        <input class="form-input" id="d-include-paths" type="text" value="" placeholder="e.g. src/**,lib/**">
-        <div class="hint">Optional comma-separated globs to include</div>
-      </div>
-      <div class="form-group">
-        <label for="d-exclude-paths">Exclude Paths</label>
-        <input class="form-input" id="d-exclude-paths" type="text" value="" placeholder="e.g. test/**,vendor/**">
-        <div class="hint">Optional comma-separated globs to exclude</div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-check">
-            <input type="checkbox" id="d-persist-logs" checked>
-            <span>Persist Logs</span>
-          </label>
-          <div class="hint">Keep logs in GitHub</div>
-        </div>
-        <div class="form-group">
-          <label class="form-check">
-            <input type="checkbox" id="d-dry-run">
-            <span>Dry Run</span>
-          </label>
-          <div class="hint">Generate prompts only (no Devin sessions)</div>
-        </div>
-      </div>
-      <div class="dispatch-result" id="dispatch-result"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn" onclick="closeDispatchModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="submitDispatchStatic()" id="btn-submit-dispatch">Dispatch Workflow</button>
-    </div>
-  </div>
-</div>
+{% include 'dispatch_modal.html' %}
 
-<div class="modal-overlay" id="settings-modal">
-  <div class="modal">
-    <div class="modal-header">
-      <h2>Settings</h2>
-      <button class="modal-close" onclick="closeSettingsModal()">&times;</button>
-    </div>
-    <div class="modal-body">
-      <div class="form-group">
-        <label for="s-gh-token">GitHub Token</label>
-        <input class="form-input" id="s-gh-token" type="password" placeholder="ghp_...">
-        <div class="hint">PAT with <code>repo</code> scope. Needed for PR discovery, refresh, and workflow dispatch. Stored in your browser only.</div>
-      </div>
-      <div class="form-group">
-        <label for="s-devin-key">Devin API Key</label>
-        <input class="form-input" id="s-devin-key" type="password" placeholder="Bearer token">
-        <div class="hint">Devin API bearer token for polling session statuses. Stored in your browser only.</div>
-      </div>
-      <div class="form-group">
-        <label for="s-action-repo">Action Repository</label>
-        <input class="form-input" id="s-action-repo" type="text" placeholder="owner/repo">
-        <div class="hint">The repo containing the telemetry data, e.g. <code>marius-posa/codeql-devin-fixer</code></div>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn" onclick="closeSettingsModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="saveSettings()">Save</button>
-    </div>
-  </div>
-</div>
-
-<script src="static/api.js"></script>
-<script src="static/shared.js"></script>
+<script src="/static/shared.js"></script>
 <script>
-const params = new URLSearchParams(window.location.search);
-const REPO_SHORT = params.get('repo') || '';
-const REPO_URL = 'https://github.com/' + REPO_SHORT;
-
-window._cachedRuns = [];
-window._cachedPrs = [];
-window._cachedSessions = [];
-
-document.getElementById('breadcrumb-repo').textContent = REPO_SHORT;
-document.getElementById('header-repo').textContent = REPO_SHORT;
-document.getElementById('gh-link').href = REPO_URL;
-document.title = REPO_SHORT + ' - Telemetry';
-
-function openDispatchModalRepo() {
-  openDispatchModal(REPO_URL);
-}
+const REPO_SHORT = {{ repo_short|tojson }};
+const REPO_URL = {{ repo_url|tojson }};
 
 function renderMetrics(s) {
   const grid = document.getElementById('metrics-grid');
@@ -281,7 +150,7 @@ function renderRunsTable(runs) {
   sorted.forEach(function(r) {
     var trigger = _detectTriggerType(r);
     var triggerBadge = trigger === 'orchestrator'
-      ? '<span class="badge badge-running">orchestrator</span>'
+      ? '<span class="badge badge-merged">orchestrator</span>'
       : '<span class="badge badge-unknown">manual</span>';
     rows += '<tr>'
       + '<td><strong>#' + (r.run_number || '-') + '</strong></td>'
@@ -301,6 +170,7 @@ var _repoTrendMode = 'total';
 var _repoTrendExcluded = {};
 var _repoTrendRuns = [];
 var _repoTrendChart = null;
+
 var SEV_COLORS = { critical: '#f85149', high: '#d29922', medium: '#bc8cff', low: '#58a6ff' };
 var SEV_ORDER = ['critical', 'high', 'medium', 'low'];
 
@@ -415,15 +285,19 @@ function renderTrendChart(container, runs) {
   _drawRepoTrendChartJs(container, runs, 'total', {});
 }
 
+function openDispatchModalRepo() {
+  openDispatchModal(REPO_URL);
+}
+
 function renderRepoConfig(registryData, repoUrl) {
   var panel = document.getElementById('repo-config-panel');
   var el = document.getElementById('repo-config-container');
   if (!panel || !el || !registryData || !registryData.repos) return;
-  var repoShortName = repoShort(repoUrl);
+  var repoShortName = REPO_SHORT;
   var config = null;
   for (var i = 0; i < registryData.repos.length; i++) {
     var r = registryData.repos[i];
-    if (r.repo === repoUrl || repoShort(r.repo) === repoShortName) { config = r; break; }
+    if (r.repo === repoUrl || (r.repo && r.repo.indexOf(repoShortName) !== -1)) { config = r; break; }
   }
   if (!config) return;
   panel.style.display = '';
@@ -448,88 +322,30 @@ async function fetchRepoData() {
   ['runs-table-container','sessions-table-container','prs-table-container','issues-table-container'].forEach(function(id) { showSkeletonTable(id); });
   setStatus('Loading data...');
   try {
-    const fullUrl = REPO_URL;
-    const runs = await loadRuns(false);
-    window._cachedRuns = runs;
-
-    const sessions = aggregateSessions(runs);
-    window._cachedSessions = sessions;
-
-    const prs = await fetchPrsFromGitHub(runs);
-    window._cachedPrs = prs;
-    linkPrsToSessions(sessions, prs);
-
-    const repoRuns = runs.filter(function(r) { return (r.target_repo || '') === fullUrl; });
-    const repoSessions = sessions.filter(function(s) { return (s.target_repo || '') === fullUrl; });
-
-    const allRepos = buildReposDict(runs, sessions, prs);
-    let repoInfo = null;
-    for (const r of allRepos) {
-      if (r.repo === fullUrl) { repoInfo = r; break; }
-    }
-    const forkUrl = repoInfo ? repoInfo.fork_url : '';
-    const repoPrs = prs.filter(function(p) { return forkUrl && p.repo && forkUrl.indexOf(p.repo) !== -1; });
-
-    const prMerged = repoPrs.filter(function(p) { return p.merged; }).length;
-    const prOpen = repoPrs.filter(function(p) { return p.state === 'open'; }).length;
-
-    const severityAgg = {};
-    const categoryAgg = {};
-    for (const run of repoRuns) {
-      for (const [tier, count] of Object.entries(run.severity_breakdown || {})) {
-        severityAgg[tier] = (severityAgg[tier] || 0) + count;
-      }
-      for (const [cat, count] of Object.entries(run.category_breakdown || {})) {
-        categoryAgg[cat] = (categoryAgg[cat] || 0) + count;
-      }
-    }
-
-    const sessionsCreated = repoSessions.filter(function(s) { return s.session_id; }).length;
-    const sessionsFinished = repoSessions.filter(function(s) { return s.status === 'finished' || s.status === 'stopped'; }).length;
-
-    const repoStats = {
-      total_runs: repoRuns.length,
-      total_issues: repoRuns.reduce(function(sum, r) { return sum + (r.issues_found || 0); }, 0),
-      sessions_created: sessionsCreated,
-      sessions_finished: sessionsFinished,
-      prs_total: repoPrs.length,
-      prs_merged: prMerged,
-      prs_open: prOpen,
-      prs_closed: repoPrs.filter(function(p) { return p.state === 'closed' && !p.merged; }).length,
-      fix_rate: Math.round(prMerged / Math.max(repoPrs.length, 1) * 1000) / 10,
-      severity_breakdown: severityAgg,
-      category_breakdown: categoryAgg,
-    };
-
-    const repoIssues = trackIssuesAcrossRuns(repoRuns);
-
-    var registryData = await fetchRegistry();
-
-    renderMetrics(repoStats);
-    renderTrendChart(document.getElementById('trend-chart'), repoRuns);
-    renderBarChart(document.getElementById('severity-chart'), repoStats.severity_breakdown);
-    renderBarChart(document.getElementById('category-chart'), repoStats.category_breakdown);
-    renderRunsTable(repoRuns);
-    renderSessionsTable(repoSessions, 'sessions-table-container', 'sessions-count');
-    renderPrsTable(repoPrs, 'prs-table-container', 'prs-count');
-    renderIssuesTable(repoIssues, 'issues-table-container', 'issues-count');
-    renderRepoConfig(registryData, fullUrl);
+    const res = await fetch(API + '/api/repo/' + REPO_SHORT + '?per_page=200');
+    const data = await res.json();
+    renderMetrics(data.stats);
+    renderTrendChart(document.getElementById('trend-chart'), data.runs.items || []);
+    renderBarChart(document.getElementById('severity-chart'), data.stats.severity_breakdown);
+    renderBarChart(document.getElementById('category-chart'), data.stats.category_breakdown);
+    renderRunsTable(data.runs.items || []);
+    renderSessionsTable(data.sessions.items || [], 'sessions-table-container', 'sessions-count');
+    renderPrsTable(data.prs.items || [], 'prs-table-container', 'prs-count');
+    renderIssuesTable(data.issues.items || [], 'issues-table-container', 'issues-count');
+    var registry = await fetchRegistry();
+    if (registry) renderRepoConfig(registry, REPO_URL);
     setStatus('Ready');
     setUpdated();
   } catch (e) {
     setStatus('Error loading data: ' + e.message);
-    console.error(e);
   }
 }
+fetchRepoData();
 
-async function init() {
-  if (!REPO_SHORT) {
-    setStatus('No repo specified. Go back to the dashboard.');
-    return;
-  }
-  await fetchRepoData();
-}
-init();
+(function() {
+  var btn = document.querySelector('[onclick="openDispatchModal()"]');
+  if (btn) btn.setAttribute('onclick', 'openDispatchModalRepo()');
+})();
 </script>
 </body>
 </html>

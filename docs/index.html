@@ -1274,7 +1274,7 @@ async function triggerAgentTriage() {
   btn.innerHTML = '<span class="spinner"></span> Triaging...';
   setStatus('Dispatching agent triage workflow...');
   _logAuditEntry('agent_triage', 'orchestrator', 'Triggered agent triage from dashboard');
-  var result = await triggerOrchestratorWorkflow('triage');
+  var result = await triggerOrchestratorWorkflow();
   if (result.error) {
     setStatus('Triage error: ' + result.error);
   } else {

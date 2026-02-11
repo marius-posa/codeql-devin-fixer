@@ -252,9 +252,12 @@ function _renderIssuesContent(filtered, allIssues, containerId, countId) {
   var showRepo = repos.length > 1;
   html += '<table><thead><tr>';
   html += '<th><input type="checkbox" class="bulk-checkbox" onchange="_toggleBulkAll(this.checked)"></th>';
+  var hasPriority = filtered.some(function(i) { return i.priority_score != null; });
   html += '<th>Status</th><th>Rule</th><th>Severity</th><th>Category</th>';
   if (showRepo) html += '<th>Repo</th>';
-  html += '<th>File</th><th>Line</th><th>SLA</th><th>First Seen</th><th>Last Seen</th><th>Runs</th>';
+  html += '<th>File</th><th>Line</th>';
+  if (hasPriority) html += '<th>Priority</th>';
+  html += '<th>SLA</th><th>First Seen</th><th>Last Seen</th><th>Runs</th>';
   html += '</tr></thead><tbody>';
   filtered.forEach(function(i, idx) {
     var firstDate = i.first_seen_date ? formatDate(i.first_seen_date) : 'Run #' + i.first_seen_run;
@@ -269,6 +272,10 @@ function _renderIssuesContent(filtered, allIssues, containerId, countId) {
     if (showRepo) html += '<td>' + escapeHtml(repoShort(i.target_repo)) + '</td>';
     html += '<td style="font-family:monospace;font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtml(i.file) + '">' + (i.file ? escapeHtml(i.file.split('/').pop()) : '-') + '</td>';
     html += '<td>' + (i.start_line || '-') + '</td>';
+    if (hasPriority) {
+      var ps = i.priority_score != null ? i.priority_score : '-';
+      html += '<td>' + ps + '</td>';
+    }
     var slaLabel = i.sla_status || 'unknown';
     html += '<td><span class="badge ' + badgeClass(slaLabel) + '">' + escapeHtml(slaLabel) + '</span></td>';
     html += '<td title="Run #' + i.first_seen_run + '">' + firstDate + '</td>';
