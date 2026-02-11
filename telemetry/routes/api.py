@@ -202,14 +202,27 @@ def api_repos():
 def api_poll():
     with db_connection() as conn:
         sessions = query_all_sessions(conn)
-        updated = poll_devin_sessions_db(conn, sessions)
+        updated, poll_stats = poll_devin_sessions_db(conn, sessions)
         conn.commit()
         prs_count = fetch_prs_from_github_to_db(conn)
         conn.commit()
         link_prs_to_sessions_db(conn)
         conn.commit()
-        _audit("poll_sessions", details=json.dumps({"polled": len(updated), "prs_found": prs_count}))
-        return jsonify({"sessions": updated, "polled": len(updated), "prs_found": prs_count})
+        _audit("poll_sessions", details=json.dumps({
+            "polled": poll_stats["polled"],
+            "skipped_terminal": poll_stats["skipped_terminal"],
+            "errors": len(poll_stats["errors"]),
+            "prs_found": prs_count,
+        }))
+        result: dict = {
+            "sessions": updated,
+            "polled": poll_stats["polled"],
+            "skipped_terminal": poll_stats["skipped_terminal"],
+            "prs_found": prs_count,
+        }
+        if poll_stats["errors"]:
+            result["errors"] = poll_stats["errors"]
+        return jsonify(result)
 
 
 @api_bp.route("/api/poll-prs", methods=["POST"])

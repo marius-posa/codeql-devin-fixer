@@ -428,7 +428,7 @@ class TestAuditLogPipeline:
     def test_poll_creates_audit_entry(self, client, monkeypatch):
         monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
         _seed(runs=[_make_run(1)])
-        with patch("routes.api.poll_devin_sessions_db", return_value=[]):
+        with patch("routes.api.poll_devin_sessions_db", return_value=([], {"polled": 0, "skipped_terminal": 0, "errors": []})):
             with patch("routes.api.fetch_prs_from_github_to_db", return_value=0):
                 with patch("routes.api.link_prs_to_sessions_db"):
                     resp = client.post(

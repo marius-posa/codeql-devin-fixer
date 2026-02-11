@@ -649,8 +649,8 @@ def poll_sessions_until_done(
                         if pr_url:
                             s["pr_url"] = pr_url
                         s["structured_output"] = so
-            except requests.RequestException:
-                pass
+            except requests.RequestException as exc:
+                logger.warning("Failed to poll session %s: %s", s["session_id"], exc)
 
         time.sleep(poll_interval)
 
