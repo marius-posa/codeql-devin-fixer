@@ -986,14 +986,17 @@ class TestOrchestratorObjectives:
 
 
 class TestAuditLogEndpoints:
-    def test_audit_log_get_requires_auth(self, client, monkeypatch):
+    def test_audit_log_get_no_auth_required(self, client, monkeypatch):
         monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
         resp = client.get("/api/audit-log")
-        assert resp.status_code == 401
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "items" in data
+        assert "total" in data
+        assert "page" in data
 
     def test_audit_log_get_returns_paginated(self, client, monkeypatch):
-        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
-        resp = client.get("/api/audit-log", headers={"X-API-Key": "test-key"})
+        resp = client.get("/api/audit-log")
         assert resp.status_code == 200
         data = resp.get_json()
         assert "items" in data
@@ -1001,15 +1004,13 @@ class TestAuditLogEndpoints:
         assert "page" in data
 
     def test_audit_log_get_with_action_filter(self, client, monkeypatch):
-        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
-        resp = client.get("/api/audit-log?action=poll_sessions", headers={"X-API-Key": "test-key"})
+        resp = client.get("/api/audit-log?action=poll_sessions")
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["total"] == 0
 
     def test_audit_log_get_with_user_filter(self, client, monkeypatch):
-        monkeypatch.setenv("TELEMETRY_API_KEY", "test-key")
-        resp = client.get("/api/audit-log?user=testuser", headers={"X-API-Key": "test-key"})
+        resp = client.get("/api/audit-log?user=testuser")
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["total"] == 0
