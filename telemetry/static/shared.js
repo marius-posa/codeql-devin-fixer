@@ -1,3 +1,47 @@
+const API = window.location.origin;
+
+(function() {
+  if (window.location.protocol === 'http:' &&
+      window.location.hostname !== 'localhost' &&
+      window.location.hostname !== '127.0.0.1') {
+    document.addEventListener('DOMContentLoaded', function() {
+      var banner = document.createElement('div');
+      banner.style.cssText = 'background:#b91c1c;color:#fff;text-align:center;padding:8px 16px;font-size:13px;position:sticky;top:0;z-index:9999;';
+      banner.textContent = '\u26a0 This dashboard is served over HTTP. API keys are transmitted in cleartext. Use HTTPS in production.';
+      document.body.insertBefore(banner, document.body.firstChild);
+    });
+  }
+})();
+
+function _getApiKey() {
+  return sessionStorage.getItem('telemetry_api_key') || '';
+}
+
+function _setApiKey(key) {
+  sessionStorage.setItem('telemetry_api_key', key);
+}
+
+function _authHeaders() {
+  const key = _getApiKey();
+  if (!key) return {};
+  return { 'X-API-Key': key };
+}
+
+function _authedFetch(url, opts) {
+  opts = opts || {};
+  opts.headers = Object.assign({}, opts.headers || {}, _authHeaders());
+  return fetch(url, opts);
+}
+
+function _promptApiKey() {
+  var key = prompt('This dashboard requires an API key (TELEMETRY_API_KEY).\nEnter the key:');
+  if (key) {
+    _setApiKey(key.trim());
+    return true;
+  }
+  return false;
+}
+
 function escapeHtml(str) {
   if (!str) return '';
   const div = document.createElement('div');
@@ -303,6 +347,20 @@ function renderIssuesTable(issues, containerId, countId) {
   _renderIssuesContent(issues, issues, containerId, countId);
 }
 
+async function fetchAllPages(endpoint) {
+  let all = [];
+  let page = 1;
+  while (true) {
+    const res = await _authedFetch(API + endpoint + '?page=' + page + '&per_page=200');
+    if (!res.ok) throw new Error('API returned ' + res.status);
+    const data = await res.json();
+    all = all.concat(data.items || []);
+    if (page >= (data.pages || 1)) break;
+    page++;
+  }
+  return all;
+}
+
 let preflightTimer = null;
 function openDispatchModal(targetRepo) {
   const modal = document.getElementById('dispatch-modal');
@@ -314,42 +372,38 @@ function openDispatchModal(targetRepo) {
   if (targetRepo) {
     document.getElementById('d-target-repo').value = targetRepo;
   }
-  checkPreflightStatic();
-  fetchImpactPreviewStatic();
+  checkPreflight();
+  fetchImpactPreview();
   const firstInput = modal.querySelector('input, select, textarea');
   if (firstInput) firstInput.focus();
 }
 
 var _impactTimer = null;
-function fetchImpactPreviewStatic() {
+async function fetchImpactPreview() {
   var container = document.getElementById('dispatch-impact');
   if (!container) return;
   var targetRepo = document.getElementById('d-target-repo').value.trim();
   if (!targetRepo) { container.innerHTML = ''; container.style.display = 'none'; return; }
   clearTimeout(_impactTimer);
-  _impactTimer = setTimeout(function() {
+  _impactTimer = setTimeout(async function() {
     try {
-      if (!window._cachedRuns || !window._cachedSessions) { container.innerHTML = ''; container.style.display = 'none'; return; }
-      var repoRuns = window._cachedRuns.filter(function(r) { return r.target_repo === targetRepo; });
-      repoRuns.sort(function(a, b) { return (b.timestamp || '').localeCompare(a.timestamp || ''); });
-      var lastScanIssues = repoRuns.length > 0 ? (repoRuns[0].issues_found || 0) : 0;
-      var repoSessions = (window._cachedSessions || []).filter(function(s) { return s.target_repo === targetRepo && s.session_id; });
-      var finishedSessions = repoSessions.filter(function(s) { return s.status === 'finished' || s.status === 'stopped'; });
+      var res = await _authedFetch(API + '/api/dispatch/impact?target_repo=' + encodeURIComponent(targetRepo));
+      if (!res.ok) { container.innerHTML = ''; container.style.display = 'none'; return; }
+      var data = await res.json();
       var batchSize = parseInt(document.getElementById('d-batch-size').value) || 5;
       var maxSessions = parseInt(document.getElementById('d-max-sessions').value) || 5;
-      var estBatches = lastScanIssues > 0 ? Math.ceil(lastScanIssues / batchSize) : 0;
+      var estBatches = data.last_scan_issues > 0 ? Math.ceil(data.last_scan_issues / batchSize) : 0;
       var estSessions = Math.min(estBatches, maxSessions);
-      var avgAcu = repoSessions.length > 0 ? Math.round(repoSessions.length * 10 / Math.max(finishedSessions.length, 1)) / 10 : 0;
+      var avgAcu = data.total_sessions_created > 0 ? Math.round(data.total_sessions_created * 10 / Math.max(data.sessions_finished, 1)) / 10 : 0;
       var projectedAcu = estSessions > 0 ? (estSessions * avgAcu).toFixed(1) : '-';
-      var avgIssues = repoRuns.length > 0 ? Math.round(repoRuns.reduce(function(s, r) { return s + (r.issues_found || 0); }, 0) / repoRuns.length * 10) / 10 : 0;
       var html = '<div class="drawer-section-title">Estimated Impact</div>';
-      html += '<div class="dispatch-preview-row"><span class="dispatch-preview-label">Issues from last scan</span><span class="dispatch-preview-value">' + lastScanIssues + '</span></div>';
+      html += '<div class="dispatch-preview-row"><span class="dispatch-preview-label">Issues from last scan</span><span class="dispatch-preview-value">' + data.last_scan_issues + '</span></div>';
       html += '<div class="dispatch-preview-row"><span class="dispatch-preview-label">Estimated batches</span><span class="dispatch-preview-value">' + estBatches + '</span></div>';
       html += '<div class="dispatch-preview-row"><span class="dispatch-preview-label">Sessions to create</span><span class="dispatch-preview-value">' + estSessions + '</span></div>';
       html += '<div class="dispatch-preview-row"><span class="dispatch-preview-label">Projected ACU usage</span><span class="dispatch-preview-value">' + projectedAcu + '</span></div>';
       html += '<div class="dispatch-preview-row"><span class="dispatch-preview-label">Wave config</span><span class="dispatch-preview-value">' + batchSize + ' issues/batch, ' + maxSessions + ' max sessions</span></div>';
-      if (repoRuns.length > 0) {
-        html += '<div class="dispatch-preview-row"><span class="dispatch-preview-label">Historical avg issues/run</span><span class="dispatch-preview-value">' + avgIssues + '</span></div>';
+      if (data.recent_runs && data.recent_runs.length > 0) {
+        html += '<div class="dispatch-preview-row"><span class="dispatch-preview-label">Historical avg issues/run</span><span class="dispatch-preview-value">' + data.avg_issues_per_run + '</span></div>';
       }
       container.innerHTML = html;
       container.style.display = 'block';
@@ -375,19 +429,19 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 });
 
-async function checkPreflightStatic() {
+async function checkPreflight() {
   const targetRepo = document.getElementById('d-target-repo').value.trim();
   const warning = document.getElementById('dispatch-warning');
   warning.className = 'warning-banner';
   warning.innerHTML = '';
   if (!targetRepo) return;
   clearTimeout(preflightTimer);
-  preflightTimer = setTimeout(async function() {
+  preflightTimer = setTimeout(async () => {
     try {
-      if (!window._cachedRuns || !window._cachedPrs || !window._cachedSessions) return;
-      const data = await dispatchPreflight(targetRepo, window._cachedRuns, window._cachedPrs, window._cachedSessions);
+      const res = await _authedFetch(API + '/api/dispatch/preflight?target_repo=' + encodeURIComponent(targetRepo));
+      const data = await res.json();
       if (data.open_prs > 0) {
-        var html = '<strong>' + data.open_prs + ' Devin PR' + (data.open_prs > 1 ? 's are' : ' is') +
+        let html = '\u26a0\ufe0f <strong>' + data.open_prs + ' Devin PR' + (data.open_prs > 1 ? 's are' : ' is') +
           ' still open</strong> for this repo. Consider merging or closing them before triggering a new run.';
         if (data.prs && data.prs.length > 0) {
           html += '<ul style="margin:8px 0 0 16px;padding:0;list-style:disc">';
@@ -403,7 +457,7 @@ async function checkPreflightStatic() {
   }, 500);
 }
 
-async function submitDispatchStatic() {
+async function submitDispatch() {
   const btn = document.getElementById('btn-submit-dispatch');
   const resultEl = document.getElementById('dispatch-result');
   btn.disabled = true;
@@ -433,12 +487,22 @@ async function submitDispatchStatic() {
     return;
   }
 
-  const result = await dispatchWorkflow(payload);
-  if (result.success) {
-    resultEl.textContent = result.message + ' Check GitHub Actions for progress.';
-    resultEl.className = 'dispatch-result success';
-  } else {
-    resultEl.textContent = result.error || 'Failed to dispatch workflow.';
+  try {
+    const res = await _authedFetch(API + '/api/dispatch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (data.success) {
+      resultEl.textContent = 'Workflow dispatched successfully! Check GitHub Actions for progress.';
+      resultEl.className = 'dispatch-result success';
+    } else {
+      resultEl.textContent = data.error || 'Failed to dispatch workflow.';
+      resultEl.className = 'dispatch-result error';
+    }
+  } catch (e) {
+    resultEl.textContent = 'Request failed: ' + e.message;
     resultEl.className = 'dispatch-result error';
   }
   btn.disabled = false;
@@ -535,19 +599,14 @@ function _renderDrawerBase(issue) {
   html += '<div class="drawer-section-title">Details</div>';
   html += _drawerField('Rule', issue.rule_id || '-');
   html += _drawerField('Severity', '<span class="badge ' + badgeClass(issue.severity_tier) + '">' + escapeHtml(issue.severity_tier || '-') + '</span>');
-  html += _drawerField('Status', '<span class="badge ' + badgeClass(issue.status) + '">' + escapeHtml(issue.status) + '</span>');
+  html += _drawerField('Status', '<span id="drawer-status-badge" class="badge ' + badgeClass(issue.status) + '">' + escapeHtml(issue.status) + '</span>');
   html += _drawerField('Category', escapeHtml(issue.cwe_family || '-'));
-  var sourceUrl = '';
-  if (issue.target_repo && issue.file) {
-    var repoPath = issue.target_repo.replace('https://github.com/', '');
-    sourceUrl = 'https://github.com/' + repoPath + '/blob/main/' + issue.file + '#L' + (issue.start_line || 1);
-  }
   var fileVal = '<span style="font-family:monospace;font-size:11px">' + escapeHtml(issue.file || '-') + '</span>';
-  if (sourceUrl) {
-    fileVal = '<a href="' + escapeHtml(sourceUrl) + '" target="_blank" style="font-family:monospace;font-size:11px">' + escapeHtml(issue.file || '-') + ':' + (issue.start_line || '') + '</a>';
+  if (issue.source_url) {
+    fileVal = '<a href="' + escapeHtml(issue.source_url) + '" target="_blank" style="font-family:monospace;font-size:11px">' + escapeHtml(issue.file || '-') + ':' + (issue.start_line || '') + '</a>';
   }
   html += _drawerField('File', fileVal);
-  if (!sourceUrl) html += _drawerField('Line', issue.start_line || '-');
+  if (!issue.source_url) html += _drawerField('Line', issue.start_line || '-');
   html += _drawerField('Fingerprint', '<span style="font-family:monospace;font-size:10px">' + escapeHtml(issue.fingerprint || '-') + '</span>');
   if (issue.description) html += _drawerField('Description', escapeHtml(issue.description));
   if (issue.resolution) html += _drawerField('Resolution', escapeHtml(issue.resolution));
@@ -588,12 +647,52 @@ function _renderDrawerSla(issue) {
   return html;
 }
 
+function _renderDrawerTimeline(detail) {
+  var events = [];
+  if (detail.run_timeline) {
+    detail.run_timeline.forEach(function(r) {
+      events.push({ date: r.timestamp, type: 'run', label: 'Detected in Run #' + r.run_number, url: r.run_url });
+    });
+  }
+  if (detail.related_sessions) {
+    detail.related_sessions.forEach(function(s) {
+      var label = 'Session ' + (s.session_id || '').substring(0, 8) + ' (' + s.status + ')';
+      events.push({ date: s.timestamp, type: 'session', label: label, url: s.session_url });
+    });
+  }
+  if (detail.related_prs) {
+    detail.related_prs.forEach(function(p) {
+      var label = 'PR #' + p.pr_number + (p.merged ? ' (merged)' : ' (' + p.state + ')');
+      events.push({ date: p.created_at, type: 'pr', label: label, url: p.html_url });
+    });
+  }
+  events.sort(function(a, b) { return (a.date || '').localeCompare(b.date || ''); });
+  if (events.length === 0) return '';
+  var html = '<div class="drawer-section">';
+  html += '<div class="drawer-section-title">Timeline</div>';
+  html += '<ul class="drawer-timeline">';
+  events.forEach(function(ev) {
+    var cls = ev.type === 'pr' ? 'timeline-pr' : (ev.type === 'session' ? 'timeline-new' : '');
+    if (ev.label.indexOf('merged') !== -1 || ev.label.indexOf('fixed') !== -1) cls = 'timeline-fixed';
+    html += '<li class="drawer-timeline-item ' + cls + '">';
+    html += '<div class="drawer-timeline-date">' + (ev.date ? formatDate(ev.date) : '-') + '</div>';
+    if (ev.url) {
+      html += '<a href="' + escapeHtml(ev.url) + '" target="_blank">' + escapeHtml(ev.label) + '</a>';
+    } else {
+      html += escapeHtml(ev.label);
+    }
+    html += '</li>';
+  });
+  html += '</ul></div>';
+  return html;
+}
+
 function _renderDrawerActions(issue) {
   var fp = issue.fingerprint;
   var html = '<div class="drawer-actions">';
   html += '<button class="btn btn-primary" onclick="_drawerRedispatch(\'' + escapeHtml(fp) + '\')">Re-dispatch</button>';
-  html += '<button class="btn" onclick="closeIssueDrawer()">False Positive</button>';
-  html += '<button class="btn" onclick="closeIssueDrawer()">Won\'t Fix</button>';
+  html += '<button class="btn" onclick="_drawerSetStatus(\'' + escapeHtml(fp) + '\',\'false_positive\')">False Positive</button>';
+  html += '<button class="btn" onclick="_drawerSetStatus(\'' + escapeHtml(fp) + '\',\'wont_fix\')">Won\'t Fix</button>';
   html += '</div>';
   return html;
 }
@@ -606,7 +705,26 @@ function _drawerRedispatch(fingerprint) {
   }
 }
 
-function openIssueDrawer(issue) {
+async function _drawerSetStatus(fingerprint, newStatus) {
+  try {
+    var res = await _authedFetch(API + '/api/issues/' + encodeURIComponent(fingerprint) + '/status', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newStatus }),
+    });
+    var data = await res.json();
+    if (data.success) {
+      if (_drawerIssue) _drawerIssue.status = newStatus;
+      var statusEl = document.getElementById('drawer-status-badge');
+      if (statusEl) {
+        statusEl.className = 'badge ' + badgeClass(newStatus);
+        statusEl.textContent = newStatus;
+      }
+    }
+  } catch (e) {}
+}
+
+async function openIssueDrawer(issue) {
   _drawerIssue = issue;
   var overlay = document.getElementById('drawer-overlay');
   var drawer = document.getElementById('issue-drawer');
@@ -620,6 +738,20 @@ function openIssueDrawer(issue) {
   html += _renderDrawerSla(issue);
   html += _renderDrawerActions(issue);
   body.innerHTML = html;
+
+  try {
+    var res = await _authedFetch(API + '/api/issues/' + encodeURIComponent(issue.fingerprint) + '/detail');
+    if (res.ok) {
+      var detail = await res.json();
+      _drawerIssue = Object.assign({}, issue, detail);
+      var enriched = _renderDrawerBase(detail);
+      enriched += _renderDrawerHistory(detail);
+      enriched += _renderDrawerTimeline(detail);
+      enriched += _renderDrawerSla(detail);
+      enriched += _renderDrawerActions(detail);
+      if (drawer.classList.contains('active')) body.innerHTML = enriched;
+    }
+  } catch (e) {}
 }
 function _drawerField(label, value) {
   return '<div class="drawer-field"><div class="drawer-field-label">' + label + '</div><div class="drawer-field-value">' + value + '</div></div>';
@@ -694,6 +826,21 @@ function _downloadIssuesCsv(items, filename) {
   a.click();
 }
 
+function renderUserInfo() {
+  var el = document.getElementById('user-info');
+  if (!el) return;
+  fetch(API + '/api/me').then(function(res) { return res.json(); }).then(function(data) {
+    if (data.logged_in && data.user) {
+      el.innerHTML = '<span class="user-badge">' +
+        '<img src="' + escapeHtml(data.user.avatar_url) + '" class="user-avatar" alt="">' +
+        '<span>' + escapeHtml(data.user.login) + '</span>' +
+        '</span> <a href="/logout" class="btn btn-sm">Logout</a>';
+    } else if (data.oauth_configured) {
+      el.innerHTML = '<a href="/login" class="btn btn-sm" style="background:#238636;border-color:#2ea043;color:#fff">Login with GitHub</a>';
+    }
+  }).catch(function() {});
+}
+
 var _registryCallbacks = {};
 
 function renderRegistryTable(registry, containerId, countId, callbacks) {
@@ -703,11 +850,7 @@ function renderRegistryTable(registry, containerId, countId, callbacks) {
   if (countEl) countEl.textContent = repos.length + ' repos';
   _registryCallbacks = callbacks || {};
 
-  var actionRepo = _registryCallbacks.actionRepo || '';
-  if (!actionRepo && typeof getConfig === 'function') {
-    actionRepo = getConfig().actionRepo || 'marius-posa/codeql-devin-fixer';
-  }
-  if (!actionRepo) actionRepo = 'marius-posa/codeql-devin-fixer';
+  var actionRepo = _registryCallbacks.actionRepo || 'marius-posa/codeql-devin-fixer';
   var schedulerUrl = 'https://github.com/' + actionRepo + '/actions/workflows/scheduled-scan.yml';
 
   var toolbar = '<div class="registry-toolbar">';
@@ -852,30 +995,6 @@ function initTableScrollDetection() {
   });
 }
 
-function openSettingsModal() {
-  const modal = document.getElementById('settings-modal');
-  modal.classList.add('active');
-  const cfg = getConfig();
-  document.getElementById('s-gh-token').value = cfg.githubToken;
-  document.getElementById('s-devin-key').value = cfg.devinApiKey;
-  document.getElementById('s-action-repo').value = cfg.actionRepo;
-}
-
-function closeSettingsModal() {
-  document.getElementById('settings-modal').classList.remove('active');
-}
-
-function saveSettings() {
-  saveConfig({
-    githubToken: document.getElementById('s-gh-token').value.trim(),
-    devinApiKey: document.getElementById('s-devin-key').value.trim(),
-    actionRepo: document.getElementById('s-action-repo').value.trim(),
-  });
-  closeSettingsModal();
-  _runsCache = null;
-  if (typeof init === 'function') init();
-}
-
 document.addEventListener('DOMContentLoaded', function() {
   initThemeToggle();
   initDensityToggle();
@@ -883,20 +1002,12 @@ document.addEventListener('DOMContentLoaded', function() {
   if (overlay) {
     overlay.addEventListener('click', function() { closeIssueDrawer(); });
   }
-  var dispatchModal = document.getElementById('dispatch-modal');
-  if (dispatchModal) {
-    dispatchModal.addEventListener('click', function(e) {
-      if (e.target === this) closeDispatchModal();
-    });
-  }
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
       closeIssueDrawer();
       closeDispatchModal();
       _closeAddRepoModal();
       if (typeof _closeRepoEditModal === 'function') _closeRepoEditModal();
-      var settingsModal = document.getElementById('settings-modal');
-      if (settingsModal && settingsModal.classList.contains('active')) closeSettingsModal();
     }
   });
   setTimeout(initTableScrollDetection, 500);
