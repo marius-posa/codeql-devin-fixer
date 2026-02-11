@@ -180,10 +180,6 @@
       <div class="panel-body table-scroll-wrapper" id="orchestrator-priority-container"><div class="skeleton skeleton-chart skeleton-chart-120"></div></div>
     </div>
     <div class="panel">
-      <div class="panel-header">Effectiveness Comparison<span id="effectiveness-label" style="color:var(--text-muted);font-weight:400;font-size:12px;margin-left:8px"></span></div>
-      <div class="panel-body" id="orchestrator-effectiveness-container"><div class="skeleton skeleton-chart" style="height:80px"></div></div>
-    </div>
-    <div class="panel">
       <div class="panel-header">Fix Rates</div>
       <div class="panel-body" id="orchestrator-fix-rates-container"><div class="skeleton skeleton-chart skeleton-chart-120"></div></div>
     </div>
@@ -499,7 +495,6 @@ let orchestratorPlan = null;
 let orchestratorConfig = null;
 let fixRatesData = null;
 let agentPlanData = null;
-let effectivenessData = null;
 let _orchestratorState = null;
 
 function switchTab(tabId) {
@@ -1026,7 +1021,6 @@ function renderAll() {
   renderOrchestratorConfigPanel();
   renderOrchestratorQuickView();
   renderOrchestratorPriorityTable();
-  renderEffectivenessPanel();
   renderFixRatesPanel();
   renderRegistryPanel();
   renderAuditLogPanel();
@@ -1234,44 +1228,7 @@ function renderOrchestratorPriorityTable() {
   el.innerHTML = '<table><thead><tr><th>#</th><th>Fingerprint</th><th>Repo</th><th>Rule</th><th>Severity</th><th>Det. Score</th><th>Agent Score</th></tr></thead><tbody>' + rows + '</tbody></table>';
 }
 
-function renderEffectivenessPanel() {
-  var el = document.getElementById('orchestrator-effectiveness-container');
-  var labelEl = document.getElementById('effectiveness-label');
-  if (!el) return;
-  if (!effectivenessData || !effectivenessData.has_agent_data) {
-    el.innerHTML = '<div class="empty-state"><span class="empty-state-icon">&#x2696;</span><div class="empty-state-text">No effectiveness data yet. Run Agent Triage via the Flask telemetry server to compare approaches.</div></div>';
-    if (labelEl) labelEl.textContent = '';
-    return;
-  }
-  if (labelEl) labelEl.textContent = effectivenessData.timestamp ? 'as of ' + formatDate(effectivenessData.timestamp) : '';
-  var agent = effectivenessData.agent || {};
-  var det = effectivenessData.deterministic || {};
-  var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">';
-  html += '<div style="background:var(--bg-tertiary);border-radius:8px;padding:16px">';
-  html += '<div style="font-size:13px;font-weight:600;color:#a371f7;margin-bottom:8px">Agent (LLM)</div>';
-  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">';
-  html += '<div><span style="color:var(--text-muted)">Recommended:</span> ' + (agent.recommended || 0) + '</div>';
-  html += '<div><span style="color:var(--text-muted)">Dispatched:</span> ' + (agent.dispatched || 0) + '</div>';
-  html += '<div><span style="color:var(--text-muted)">Fixed:</span> ' + (agent.fixed || 0) + '</div>';
-  html += '<div><span style="color:var(--text-muted)">Fix Rate:</span> <strong>' + (agent.fix_rate || 0) + '%</strong></div>';
-  html += '</div></div>';
-  html += '<div style="background:var(--bg-tertiary);border-radius:8px;padding:16px">';
-  html += '<div style="font-size:13px;font-weight:600;color:#388bfd;margin-bottom:8px">Deterministic</div>';
-  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">';
-  html += '<div><span style="color:var(--text-muted)">Dispatched:</span> ' + (det.dispatched || 0) + '</div>';
-  html += '<div><span style="color:var(--text-muted)">Fixed:</span> ' + (det.fixed || 0) + '</div>';
-  html += '<div><span style="color:var(--text-muted)">Fix Rate:</span> <strong>' + (det.fix_rate || 0) + '%</strong></div>';
-  html += '</div></div>';
-  html += '</div>';
-  if (agentPlanData && agentPlanData.strategy_notes) {
-    html += '<div style="margin-top:12px;padding:10px;background:var(--bg-tertiary);border-radius:6px;font-size:12px;color:var(--text-secondary)">';
-    html += '<strong style="color:#a371f7">Agent Strategy:</strong> ' + escapeHtml(agentPlanData.strategy_notes);
-    html += '</div>';
-  }
-  el.innerHTML = html;
-}
-
-async function triggerAgentTriage() {
+async function triggerAgentTriage(){
   var btn = document.getElementById('btn-orch-agent');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Triaging...';
@@ -1492,19 +1449,8 @@ async function _reloadOrchestratorState(runs) {
         timestamp: agentTriage.timestamp || '',
       };
     }
-    effectivenessData = agentTriage.effectiveness || null;
-    if (!effectivenessData && agentTriage.decisions && agentTriage.decisions.length > 0) {
-      var recCount = agentTriage.decisions.filter(function(d) { return d.dispatch; }).length;
-      effectivenessData = {
-        agent: { recommended: recCount, not_recommended: agentTriage.decisions.length - recCount, dispatched: 0, fixed: 0, fix_rate: 0 },
-        deterministic: { dispatched: 0, fixed: 0, fix_rate: 0 },
-        has_agent_data: true,
-        timestamp: agentTriage.timestamp || '',
-      };
-    }
   } else {
     agentPlanData = null;
-    effectivenessData = null;
   }
 }
 

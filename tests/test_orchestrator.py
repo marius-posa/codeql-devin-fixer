@@ -41,7 +41,6 @@ from scripts.orchestrator import (
     build_agent_triage_input,
     parse_agent_decisions,
     merge_agent_scores,
-    build_effectiveness_report,
     save_agent_triage_results,
     load_agent_triage_results,
     cmd_agent_triage,
@@ -1331,38 +1330,6 @@ class TestMergeAgentScores:
         assert merged[0]["rule_id"] == "js/xss"
         assert merged[0]["priority_score"] == 0.7
 
-
-class TestBuildEffectivenessReport:
-    def test_basic_report(self):
-        dispatch_history = {
-            "fp-1": {"dispatch_count": 1, "recommendation_source": "agent"},
-            "fp-2": {"dispatch_count": 1, "recommendation_source": "deterministic"},
-        }
-        agent_triage = {
-            "decisions": [
-                {"fingerprint": "fp-1", "dispatch": True},
-                {"fingerprint": "fp-3", "dispatch": False},
-            ],
-        }
-        fp_fix_map = {"fp-1": {"fixed_by_session": "s1"}}
-
-        report = build_effectiveness_report(dispatch_history, agent_triage, fp_fix_map)
-
-        assert report["agent"]["recommended"] == 1
-        assert report["agent"]["not_recommended"] == 1
-        assert report["agent"]["dispatched"] == 1
-        assert report["agent"]["fixed"] == 1
-        assert report["agent"]["fix_rate"] == 100.0
-        assert report["deterministic"]["dispatched"] == 1
-        assert report["deterministic"]["fixed"] == 0
-        assert report["deterministic"]["fix_rate"] == 0.0
-        assert "timestamp" in report
-
-    def test_empty_history(self):
-        report = build_effectiveness_report({}, {}, {})
-        assert report["agent"]["dispatched"] == 0
-        assert report["deterministic"]["dispatched"] == 0
-        assert report["agent"]["recommended"] == 0
 
 
 class TestSaveAndLoadAgentTriageResults:

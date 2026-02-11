@@ -21,12 +21,11 @@ except ImportError:
     _orch_load_state = None  # type: ignore[assignment]
 
 try:
-    from scripts.orchestrator.agent import build_effectiveness_report, merge_agent_scores
+    from scripts.orchestrator.agent import merge_agent_scores
 except ImportError:
     try:
-        from orchestrator.agent import build_effectiveness_report, merge_agent_scores
+        from orchestrator.agent import merge_agent_scores
     except ImportError:
-        build_effectiveness_report = None  # type: ignore[assignment]
         merge_agent_scores = None  # type: ignore[assignment]
 
 orchestrator_bp = Blueprint("orchestrator", __name__)
@@ -403,66 +402,6 @@ def api_orchestrator_agent_plan():
         "planned_dispatches": merged,
         "total_issues": det_plan.get("total_issues", 0),
         "eligible_issues": det_plan.get("eligible_issues", 0),
-    })
-
-
-@orchestrator_bp.route("/api/orchestrator/effectiveness")
-def api_orchestrator_effectiveness():
-    state = _load_orchestrator_state()
-    dispatch_history = state.get("dispatch_history", {})
-    agent_triage = state.get("agent_triage", {})
-
-    verification_records = load_verification_records(RUNS_DIR)
-    fp_fix_map = build_fingerprint_fix_map(verification_records)
-
-    if build_effectiveness_report is not None:
-        report = build_effectiveness_report(dispatch_history, agent_triage, fp_fix_map)
-        report["has_agent_data"] = bool(agent_triage.get("decisions"))
-        return jsonify(report)
-
-    agent_decisions = agent_triage.get("decisions", [])
-    agent_fps = {d["fingerprint"] for d in agent_decisions if d.get("dispatch")}
-    all_agent_fps = {d["fingerprint"] for d in agent_decisions}
-
-    agent_dispatched = 0
-    agent_fixed = 0
-    det_dispatched = 0
-    det_fixed = 0
-
-    for fp, history in dispatch_history.items():
-        source = "deterministic"
-        if isinstance(history, dict):
-            source = history.get("recommendation_source", "deterministic")
-        elif isinstance(history, list) and history:
-            last = history[-1] if history else {}
-            source = last.get("recommendation_source", "deterministic")
-
-        is_fixed = fp in fp_fix_map
-
-        if source == "agent":
-            agent_dispatched += 1
-            if is_fixed:
-                agent_fixed += 1
-        else:
-            det_dispatched += 1
-            if is_fixed:
-                det_fixed += 1
-
-    return jsonify({
-        "agent": {
-            "recommended": len(agent_fps),
-            "not_recommended": len(all_agent_fps) - len(agent_fps),
-            "dispatched": agent_dispatched,
-            "fixed": agent_fixed,
-            "fix_rate": round(agent_fixed / max(agent_dispatched, 1) * 100, 1),
-        },
-        "deterministic": {
-            "dispatched": det_dispatched,
-            "fixed": det_fixed,
-            "fix_rate": round(det_fixed / max(det_dispatched, 1) * 100, 1),
-        },
-        "has_agent_data": bool(agent_decisions),
-        "timestamp": agent_triage.get("timestamp", ""),
     })
 
 

@@ -314,10 +314,12 @@ function _renderIssuesContent(filtered, allIssues, containerId, countId) {
   html += '<table><thead><tr>';
   html += '<th><input type="checkbox" class="bulk-checkbox" onchange="_toggleBulkAll(this.checked)"></th>';
   var hasPriority = filtered.some(function(i) { return i.priority_score != null; });
+  var hasAgentScore = filtered.some(function(i) { return i.agent_priority_score != null; });
   html += '<th>Status</th><th>Rule</th><th>Severity</th><th>Category</th>';
   if (showRepo) html += '<th>Repo</th>';
   html += '<th>File</th><th>Line</th>';
   if (hasPriority) html += '<th>Priority</th>';
+  if (hasAgentScore) html += '<th>Agent Score</th>';
   html += '<th>SLA</th><th>First Seen</th><th>Last Seen</th><th>Runs</th>';
   html += '</tr></thead><tbody>';
   filtered.forEach(function(i, idx) {
@@ -336,6 +338,10 @@ function _renderIssuesContent(filtered, allIssues, containerId, countId) {
     if (hasPriority) {
       var ps = i.priority_score != null ? i.priority_score : '-';
       html += '<td>' + ps + '</td>';
+    }
+    if (hasAgentScore) {
+      var as = i.agent_priority_score != null ? Math.round(i.agent_priority_score) : '-';
+      html += '<td>' + as + '</td>';
     }
     var slaLabel = i.sla_status || 'unknown';
     html += '<td><span class="badge ' + badgeClass(slaLabel) + '">' + escapeHtml(slaLabel) + '</span></td>';
@@ -625,6 +631,12 @@ function _renderDrawerBase(issue) {
   html += _drawerField('File', fileVal);
   if (!issue.source_url) html += _drawerField('Line', issue.start_line || '-');
   html += _drawerField('Fingerprint', '<span style="font-family:monospace;font-size:10px">' + escapeHtml(issue.fingerprint || '-') + '</span>');
+  if (issue.agent_priority_score != null) {
+    var dispatchLabel = issue.agent_dispatch === true ? '<span style="color:var(--accent-green)">Yes</span>'
+      : issue.agent_dispatch === false ? '<span style="color:var(--accent-red)">No</span>' : '-';
+    html += _drawerField('Agent Score', Math.round(issue.agent_priority_score) + ' / 100');
+    html += _drawerField('Agent Dispatch', dispatchLabel);
+  }
   if (issue.description) html += _drawerField('Description', escapeHtml(issue.description));
   if (issue.resolution) html += _drawerField('Resolution', escapeHtml(issue.resolution));
   if (issue.cwe_family && issue.cwe_family !== 'other') {

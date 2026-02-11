@@ -697,26 +697,6 @@ class TestOrchestratorEndpoints:
         assert data["status"] == "no_results"
         assert data["decisions"] == []
 
-    def test_orchestrator_effectiveness_returns_json(self, client):
-        resp = client.get("/api/orchestrator/effectiveness")
-        assert resp.status_code == 200
-        data = resp.get_json()
-        assert "agent" in data
-        assert "deterministic" in data
-        assert "has_agent_data" in data
-        assert "recommended" in data["agent"]
-        assert "dispatched" in data["agent"]
-        assert "fix_rate" in data["agent"]
-        assert "dispatched" in data["deterministic"]
-        assert "fix_rate" in data["deterministic"]
-
-    def test_orchestrator_effectiveness_empty_state(self, client):
-        resp = client.get("/api/orchestrator/effectiveness")
-        assert resp.status_code == 200
-        data = resp.get_json()
-        assert data["has_agent_data"] is False
-        assert data["agent"]["dispatched"] == 0
-        assert isinstance(data["deterministic"]["dispatched"], int)
 
 
 class TestRegistryRepoEndpoints:
@@ -1095,6 +1075,69 @@ class TestIssueDetailEndpoint:
         assert data["rule_id"] == "js/sql-injection"
         assert "sla_status" in data
         assert "source_url" in data
+
+
+class TestUpdateAgentScores:
+    def test_update_agent_scores_persists(self, client, sample_run):
+        run = {**sample_run, "issue_fingerprints": [
+            {"fingerprint": "fp-agent-1", "id": "CQLF-R1-0001",
+             "rule_id": "js/sql-injection", "severity_tier": "high",
+             "cwe_family": "injection", "file": "src/db.js",
+             "start_line": 42, "description": "SQL injection",
+             "resolution": "Use params", "code_churn": 5},
+        ]}
+        _seed_db(runs=[run])
+        from database import refresh_fingerprint_issues, update_agent_scores
+        conn = get_connection(pathlib.Path(_test_db_path))
+        init_db(conn)
+        refresh_fingerprint_issues(conn)
+        conn.commit()
+        decisions = [
+            {"fingerprint": "fp-agent-1", "agent_priority_score": 85.5, "dispatch": True},
+            {"fingerprint": "fp-missing", "agent_priority_score": 10.0, "dispatch": False},
+        ]
+        updated = update_agent_scores(conn, decisions)
+        assert updated == 2
+        row = conn.execute(
+            "SELECT agent_priority_score, agent_dispatch FROM fingerprint_issues WHERE fingerprint = ?",
+            ("fp-agent-1",),
+        ).fetchone()
+        assert row["agent_priority_score"] == 85.5
+        assert row["agent_dispatch"] == 1
+        conn.close()
+
+    def test_update_agent_scores_skips_no_score(self, client, sample_run):
+        from database import update_agent_scores
+        conn = get_connection(pathlib.Path(_test_db_path))
+        init_db(conn)
+        decisions = [{"fingerprint": "fp-x", "dispatch": True}]
+        updated = update_agent_scores(conn, decisions)
+        assert updated == 0
+        conn.close()
+
+    def test_issue_detail_returns_agent_scores(self, client, sample_run):
+        run = {**sample_run, "issue_fingerprints": [
+            {"fingerprint": "fp-agent-detail", "id": "CQLF-R1-0001",
+             "rule_id": "js/xss", "severity_tier": "high",
+             "cwe_family": "xss", "file": "src/render.js",
+             "start_line": 10, "description": "XSS", "resolution": "Escape",
+             "code_churn": 1},
+        ]}
+        _seed_db(runs=[run])
+        from database import refresh_fingerprint_issues, update_agent_scores
+        conn = get_connection(pathlib.Path(_test_db_path))
+        init_db(conn)
+        refresh_fingerprint_issues(conn)
+        conn.commit()
+        update_agent_scores(conn, [
+            {"fingerprint": "fp-agent-detail", "agent_priority_score": 72.0, "dispatch": True},
+        ])
+        conn.close()
+        resp = client.get("/api/issues/fp-agent-detail/detail")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["agent_priority_score"] == 72.0
+        assert data["agent_dispatch"] is True
 
 
 class TestIssueStatusEndpoint:
