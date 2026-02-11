@@ -1,0 +1,126 @@
+{
+  "target_repo": "https://github.com/marius-posa/codeql-devin-fixer",
+  "fork_url": "https://github.com/marius-posa/codeql-devin-fixer",
+  "run_number": 55,
+  "run_id": "21905769334",
+  "run_url": "https://github.com/marius-posa/codeql-devin-fixer/actions/runs/21905769334",
+  "run_label": "run-55-2026-02-11-125308",
+  "timestamp": "2026-02-11T12:53:12.861749+00:00",
+  "issues_found": 11,
+  "issues_dispatched": 11,
+  "severity_breakdown": {
+    "high": 6,
+    "critical": 1,
+    "medium": 4
+  },
+  "category_breakdown": {
+    "xss": 2,
+    "injection": 1,
+    "info-disclosure": 4,
+    "logging": 4
+  },
+  "batches_created": 4,
+  "sessions": [],
+  "issue_fingerprints": [
+    {
+      "id": "CQLF-ALL-R55-0001",
+      "fingerprint": "4c3cb0aaa0ad6a402aba",
+      "rule_id": "js/xss-through-dom",
+      "severity_tier": "high",
+      "cwe_family": "xss",
+      "file": "docs/index.html",
+      "start_line": 753
+    },
+    {
+      "id": "CQLF-ALL-R55-0002",
+      "fingerprint": "7b51a2af269c811decec",
+      "rule_id": "js/xss-through-dom",
+      "severity_tier": "high",
+      "cwe_family": "xss",
+      "file": "docs/index.html",
+      "start_line": 1267
+    },
+    {
+      "id": "CQLF-ALL-R55-0003",
+      "fingerprint": "73559aa8b9e1fc687fa1",
+      "rule_id": "py/command-line-injection",
+      "severity_tier": "critical",
+      "cwe_family": "injection",
+      "file": "github_app/scan_trigger.py",
+      "start_line": 176
+    },
+    {
+      "id": "CQLF-ALL-R55-0004",
+      "fingerprint": "2f8c4c59f5d27d1354c8",
+      "rule_id": "py/stack-trace-exposure",
+      "severity_tier": "medium",
+      "cwe_family": "info-disclosure",
+      "file": "github_app/app.py",
+      "start_line": 70
+    },
+    {
+      "id": "CQLF-ALL-R55-0005",
+      "fingerprint": "4c735d21d88bf22d43f9",
+      "rule_id": "py/stack-trace-exposure",
+      "severity_tier": "medium",
+      "cwe_family": "info-disclosure",
+      "file": "github_app/app.py",
+      "start_line": 107
+    },
+    {
+      "id": "CQLF-ALL-R55-0006",
+      "fingerprint": "cd72321eda4f0bda5118",
+      "rule_id": "py/stack-trace-exposure",
+      "severity_tier": "medium",
+      "cwe_family": "info-disclosure",
+      "file": "github_app/app.py",
+      "start_line": 145
+    },
+    {
+      "id": "CQLF-ALL-R55-0007",
+      "fingerprint": "59745178434251c8b656",
+      "rule_id": "py/stack-trace-exposure",
+      "severity_tier": "medium",
+      "cwe_family": "info-disclosure",
+      "file": "github_app/app.py",
+      "start_line": 165
+    },
+    {
+      "id": "CQLF-ALL-R55-0008",
+      "fingerprint": "b00fc9763aeface15be8",
+      "rule_id": "py/log-injection",
+      "severity_tier": "high",
+      "cwe_family": "logging",
+      "file": "github_app/app.py",
+      "start_line": 84
+    },
+    {
+      "id": "CQLF-ALL-R55-0009",
+      "fingerprint": "4db8f7f4c892983713df",
+      "rule_id": "py/log-injection",
+      "severity_tier": "high",
+      "cwe_family": "logging",
+      "file": "github_app/app.py",
+      "start_line": 183
+    },
+    {
+      "id": "CQLF-ALL-R55-0010",
+      "fingerprint": "a00ce6d728e6cb41de88",
+      "rule_id": "py/log-injection",
+      "severity_tier": "high",
+      "cwe_family": "logging",
+      "file": "github_app/app.py",
+      "start_line": 198
+    },
+    {
+      "id": "CQLF-ALL-R55-0011",
+      "fingerprint": "a5b290e817f338da5bba",
+      "rule_id": "py/log-injection",
+      "severity_tier": "high",
+      "cwe_family": "logging",
+      "file": "github_app/webhook_handler.py",
+      "start_line": 44
+    }
+  ],
+  "zero_issue_run": false
+}
