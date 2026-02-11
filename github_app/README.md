@@ -227,7 +227,6 @@ github_app/
 +-- log_utils.py        # Log sanitization (CWE-117 prevention)
 +-- main.py             # Server entry point (loads .env, creates app, runs server)
 +-- __main__.py         # Enables `python -m github_app`
-+-- config.py           # Configuration from environment variables
 +-- .env.example        # Example environment file with all available settings
 +-- requirements.txt    # Python dependencies
 +-- Dockerfile          # Container image definition
