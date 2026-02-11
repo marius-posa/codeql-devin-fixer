@@ -15,6 +15,7 @@ import sys
 from contextlib import redirect_stdout
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlparse
 
 from . import state as _state
 from . import alerts as _alerts
@@ -357,8 +358,9 @@ def _print_plan(plan: dict[str, Any]) -> None:
         logger.info("-" * 120)
         for i, d in enumerate(plan["planned_dispatches"], 1):
             repo_short = d.get("target_repo", "")
-            if "github.com/" in repo_short:
-                repo_short = repo_short.split("github.com/")[-1]
+            parsed = urlparse(repo_short)
+            if parsed.hostname == "github.com":
+                repo_short = parsed.path.lstrip("/")
             logger.info(
                 "%-4d %-8.4f %-10s %-20s %-40s %s",
                 i, d.get('priority_score', 0),
@@ -430,8 +432,9 @@ def _print_status(data: dict[str, Any]) -> None:
         logger.info("-" * 100)
         for repo_url, counts in sorted(data["repos"].items()):
             repo_short = repo_url
-            if "github.com/" in repo_short:
-                repo_short = repo_short.split("github.com/")[-1]
+            parsed = urlparse(repo_short)
+            if parsed.hostname == "github.com":
+                repo_short = parsed.path.lstrip("/")
             logger.info(
                 "%-50s %-7d %-7d %-10d %-7d %d",
                 repo_short,
