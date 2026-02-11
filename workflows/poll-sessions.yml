@@ -1,0 +1,61 @@
+name: Poll Devin Sessions
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  poll:
+    name: Poll & Update Session Statuses
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Poll Devin sessions and update telemetry DB
+        working-directory: telemetry
+        env:
+          DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
+        run: |
+          python -c "
+          import sys, os
+          sys.path.insert(0, '.')
+          sys.path.insert(0, os.path.join('..', 'scripts'))
+          from database import get_connection, init_db, query_all_sessions
+          from devin_service import poll_devin_sessions_db
+          from github_service import link_prs_to_sessions_db
+
+          conn = get_connection()
+          init_db(conn)
+          sessions = query_all_sessions(conn)
+          updated, poll_stats = poll_devin_sessions_db(conn, sessions)
+          conn.commit()
+          link_prs_to_sessions_db(conn)
+          conn.commit()
+          conn.close()
+          print(f'Polled {poll_stats[\"polled\"]} session(s), {poll_stats[\"skipped_terminal\"]} skipped (terminal), {len(poll_stats[\"errors\"])} error(s)')
+          "
+
+      - name: Commit and push updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add telemetry/telemetry.db
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: update Devin session statuses via polling"
+            git push
+          fi
