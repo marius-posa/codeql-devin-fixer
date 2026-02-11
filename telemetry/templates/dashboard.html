@@ -421,13 +421,30 @@ function renderCategoryChartJs(container, data) {
   if (!data || typeof Chart === 'undefined') return;
   container.innerHTML = '<canvas></canvas>';
   var canvas = container.querySelector('canvas');
-  var labels = Object.keys(data).slice(0, 10);
-  var values = labels.map(function(k) { return data[k]; });
+  var sorted = Object.entries(data).sort(function(a, b) { return b[1] - a[1]; }).slice(0, 15);
+  var labels = sorted.map(function(e) { return e[0]; });
+  var values = sorted.map(function(e) { return e[1]; });
+  var truncated = labels.map(function(l) { return l.length > 18 ? l.slice(0, 16) + '...' : l; });
   destroyChart('category');
   _chartInstances['category'] = new Chart(canvas, {
     type: 'bar',
-    data: { labels: labels, datasets: [{ data: values, backgroundColor: '#388bfd', borderRadius: 4 }] },
-    options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#8b949e' }, grid: { color: 'rgba(139,148,158,0.1)' } }, y: { ticks: { color: '#8b949e', font: { size: 10 } }, grid: { display: false } } } }
+    data: { labels: truncated, datasets: [{ data: values, backgroundColor: '#388bfd', borderRadius: 4 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: function(items) { return items.length ? labels[items[0].dataIndex] : ''; },
+            label: function(item) { return item.formattedValue + ' issues'; }
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#8b949e' }, grid: { color: 'rgba(139,148,158,0.1)' } },
+        y: { ticks: { color: '#8b949e', font: { size: 11 } }, grid: { display: false } }
+      }
+    }
   });
 }
 

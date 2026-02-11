@@ -547,7 +547,6 @@ def api_dispatch():
 
 
 @api_bp.route("/api/audit-log")
-@require_api_key
 def api_audit_log():
     page, per_page = _get_pagination()
     action_filter = flask_request.args.get("action", "")
