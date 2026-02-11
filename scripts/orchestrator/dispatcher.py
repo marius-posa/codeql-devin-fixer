@@ -314,7 +314,7 @@ def _record_dispatch_session(
     session_id: str,
     session_url: str,
 ) -> None:
-    """Record a dispatched session in the telemetry DB."""
+    """Record a dispatched session in the telemetry DB and as a JSON run file."""
     repo_url = batch["target_repo"]
     now = datetime.now(timezone.utc).isoformat()
 
@@ -346,7 +346,19 @@ def _record_dispatch_session(
                 "pr_url": "",
             }
         ],
-        "issue_fingerprints": [],
+        "issue_fingerprints": [
+            {
+                "fingerprint": i.get("fingerprint", ""),
+                "id": i.get("id", ""),
+                "rule_id": i.get("rule_id", ""),
+                "severity_tier": i.get("severity_tier", ""),
+                "cwe_family": i.get("cwe_family", ""),
+                "file": i.get("file", ""),
+                "start_line": i.get("start_line", 0),
+            }
+            for i in batch.get("issues", [])
+            if i.get("fingerprint")
+        ],
     }
 
     conn = get_connection()
@@ -355,6 +367,18 @@ def _record_dispatch_session(
         conn.commit()
     finally:
         conn.close()
+
+    runs_dir = _state.RUNS_DIR
+    if runs_dir.is_dir():
+        ts_slug = now.replace(":", "").replace("-", "")[:15]
+        safe_repo = repo_url.replace("https://github.com/", "").replace("/", "_")
+        fname = f"{safe_repo}_dispatch_{ts_slug}_{batch['batch_id']}.json"
+        try:
+            with open(runs_dir / fname, "w") as f:
+                json.dump(run_data, f, indent=2)
+                f.write("\n")
+        except OSError:
+            pass
 
 
 def cmd_dispatch(args: argparse.Namespace) -> int:

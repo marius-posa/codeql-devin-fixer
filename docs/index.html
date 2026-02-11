@@ -1488,6 +1488,12 @@ async function fetchAll() {
     orchestratorConfig = buildOrchestratorConfig(registryData);
     fixRatesData = buildFixRates(allIssues, verificationRecords);
 
+    var agentTriage = (_orchestratorState || {}).agent_triage || null;
+    if (agentTriage) {
+      agentPlanData = agentTriage.plan || null;
+      effectivenessData = agentTriage.effectiveness || null;
+    }
+
     renderAll();
     setStatus('Ready');
     setUpdated();
