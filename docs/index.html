@@ -520,8 +520,12 @@ function updateLiveStatus() {
 
 function startLivePolling(intervalMs) {
   if (_livePoller) clearInterval(_livePoller);
-  _livePoller = setInterval(function() {
+  _livePoller = setInterval(async function() {
     updateLiveStatus();
+    var running = (allSessions || []).filter(function(s) { return s.status === 'running' || s.status === 'pending' || s.status === 'created'; });
+    if (running.length > 0) {
+      try { await fetchAll(); } catch (e) {}
+    }
   }, intervalMs || 30000);
 }
 

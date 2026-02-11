@@ -40,12 +40,12 @@ jobs:
           conn = get_connection()
           init_db(conn)
           sessions = query_all_sessions(conn)
-          updated = poll_devin_sessions_db(conn, sessions)
+          updated, poll_stats = poll_devin_sessions_db(conn, sessions)
           conn.commit()
           link_prs_to_sessions_db(conn)
           conn.commit()
           conn.close()
-          print(f'Polled {len(updated)} session(s)')
+          print(f'Polled {poll_stats[\"polled\"]} session(s), {poll_stats[\"skipped_terminal\"]} skipped (terminal), {len(poll_stats[\"errors\"])} error(s)')
           "
 
       - name: Commit and push updates

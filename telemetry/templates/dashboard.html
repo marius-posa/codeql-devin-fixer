@@ -392,8 +392,12 @@ function updateLiveStatus() {
 
 function startLivePolling(intervalMs) {
   if (_livePoller) clearInterval(_livePoller);
-  _livePoller = setInterval(function() {
+  _livePoller = setInterval(async function() {
     updateLiveStatus();
+    var running = (allSessions || []).filter(function(s) { return s.status === 'running' || s.status === 'pending' || s.status === 'created'; });
+    if (running.length > 0) {
+      try { await fetchAll(); } catch (e) {}
+    }
   }, intervalMs || 30000);
 }
 
@@ -1531,7 +1535,11 @@ async function pollSessions() {
   try {
     const res = await _authedFetch(API + '/api/poll', { method: 'POST' });
     const data = await res.json();
-    setStatus('Polled ' + (data.polled || 0) + ' sessions, found ' + (data.prs_found || 0) + ' PRs');
+    var msg = 'Polled ' + (data.polled || 0) + ' sessions';
+    if (data.skipped_terminal) msg += ' (' + data.skipped_terminal + ' skipped, already terminal)';
+    msg += ', found ' + (data.prs_found || 0) + ' PRs';
+    if (data.errors && data.errors.length > 0) msg += ' — ' + data.errors.length + ' error(s)';
+    setStatus(msg);
     await fetchAll();
   } catch (e) {
     setStatus('Poll error: ' + e.message);
