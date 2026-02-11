@@ -1455,6 +1455,55 @@ async function _staticRegistryAdd(url, schedule) {
   }
 }
 
+async function _reloadOrchestratorState(runs) {
+  if (_isDemoActive()) {
+    var demoData = _getLocalDemoData();
+    _orchestratorState = demoData.orchestrator_state || null;
+  } else {
+    _orchestratorState = await fetchOrchestratorState();
+    if (!_orchestratorState) {
+      _orchestratorState = deriveOrchestratorStateFromRuns(runs);
+    }
+  }
+  orchestratorStatus = buildOrchestratorStatus(_orchestratorState, registryData, allIssues, verificationRecords);
+  orchestratorHistory = buildOrchestratorHistory(_orchestratorState);
+  orchestratorPlan = buildOrchestratorPlan(allIssues, _orchestratorState, verificationRecords);
+  orchestratorConfig = buildOrchestratorConfig(registryData);
+  fixRatesData = buildFixRates(allIssues, verificationRecords);
+
+  var agentTriage = (_orchestratorState || {}).agent_triage || null;
+  if (agentTriage) {
+    agentPlanData = agentTriage.plan || null;
+    if (!agentPlanData && agentTriage.decisions && agentTriage.decisions.length > 0) {
+      agentPlanData = {
+        planned_dispatches: agentTriage.decisions.map(function(d) {
+          return {
+            fingerprint: d.fingerprint,
+            agent_priority_score: d.agent_priority_score,
+            agent_reasoning: d.reasoning || '',
+            agent_dispatch: d.dispatch,
+          };
+        }),
+        strategy_notes: agentTriage.strategy_notes || '',
+        timestamp: agentTriage.timestamp || '',
+      };
+    }
+    effectivenessData = agentTriage.effectiveness || null;
+    if (!effectivenessData && agentTriage.decisions && agentTriage.decisions.length > 0) {
+      var recCount = agentTriage.decisions.filter(function(d) { return d.dispatch; }).length;
+      effectivenessData = {
+        agent: { recommended: recCount, not_recommended: agentTriage.decisions.length - recCount, dispatched: 0, fixed: 0, fix_rate: 0 },
+        deterministic: { dispatched: 0, fixed: 0, fix_rate: 0 },
+        has_agent_data: true,
+        timestamp: agentTriage.timestamp || '',
+      };
+    }
+  } else {
+    agentPlanData = null;
+    effectivenessData = null;
+  }
+}
+
 async function fetchAll() {
   showAllSkeletons();
   setStatus('Loading data from GitHub...');
@@ -1481,50 +1530,7 @@ async function fetchAll() {
 
     registryData = await fetchRegistry();
     verificationRecords = await loadVerificationRecords();
-
-    if (_isDemoActive()) {
-      var demoData = _getLocalDemoData();
-      _orchestratorState = demoData.orchestrator_state || null;
-    } else {
-      _orchestratorState = await fetchOrchestratorState();
-      if (!_orchestratorState) {
-        _orchestratorState = deriveOrchestratorStateFromRuns(runs);
-      }
-    }
-    orchestratorStatus = buildOrchestratorStatus(_orchestratorState, registryData, allIssues, verificationRecords);
-    orchestratorHistory = buildOrchestratorHistory(_orchestratorState);
-    orchestratorPlan = buildOrchestratorPlan(allIssues, _orchestratorState, verificationRecords);
-    orchestratorConfig = buildOrchestratorConfig(registryData);
-    fixRatesData = buildFixRates(allIssues, verificationRecords);
-
-    var agentTriage = (_orchestratorState || {}).agent_triage || null;
-    if (agentTriage) {
-      agentPlanData = agentTriage.plan || null;
-      if (!agentPlanData && agentTriage.decisions && agentTriage.decisions.length > 0) {
-        agentPlanData = {
-          planned_dispatches: agentTriage.decisions.map(function(d) {
-            return {
-              fingerprint: d.fingerprint,
-              agent_priority_score: d.agent_priority_score,
-              agent_reasoning: d.reasoning || '',
-              agent_dispatch: d.dispatch,
-            };
-          }),
-          strategy_notes: agentTriage.strategy_notes || '',
-          timestamp: agentTriage.timestamp || '',
-        };
-      }
-      effectivenessData = agentTriage.effectiveness || null;
-      if (!effectivenessData && agentTriage.decisions && agentTriage.decisions.length > 0) {
-        var recCount = agentTriage.decisions.filter(function(d) { return d.dispatch; }).length;
-        effectivenessData = {
-          agent: { recommended: recCount, not_recommended: agentTriage.decisions.length - recCount, dispatched: 0, fixed: 0, fix_rate: 0 },
-          deterministic: { dispatched: 0, fixed: 0, fix_rate: 0 },
-          has_agent_data: true,
-          timestamp: agentTriage.timestamp || '',
-        };
-      }
-    }
+    await _reloadOrchestratorState(runs);
 
     renderAll();
     setStatus('Ready');
@@ -1576,53 +1582,7 @@ async function pollSessions() {
 
     registryData = await fetchRegistry();
     verificationRecords = await loadVerificationRecords();
-
-    if (_isDemoActive()) {
-      var demoData = _getLocalDemoData();
-      _orchestratorState = demoData.orchestrator_state || null;
-    } else {
-      _orchestratorState = await fetchOrchestratorState();
-      if (!_orchestratorState) {
-        _orchestratorState = deriveOrchestratorStateFromRuns(runs);
-      }
-    }
-    orchestratorStatus = buildOrchestratorStatus(_orchestratorState, registryData, allIssues, verificationRecords);
-    orchestratorHistory = buildOrchestratorHistory(_orchestratorState);
-    orchestratorPlan = buildOrchestratorPlan(allIssues, _orchestratorState, verificationRecords);
-    orchestratorConfig = buildOrchestratorConfig(registryData);
-    fixRatesData = buildFixRates(allIssues, verificationRecords);
-
-    var agentTriage = (_orchestratorState || {}).agent_triage || null;
-    if (agentTriage) {
-      agentPlanData = agentTriage.plan || null;
-      if (!agentPlanData && agentTriage.decisions && agentTriage.decisions.length > 0) {
-        agentPlanData = {
-          planned_dispatches: agentTriage.decisions.map(function(d) {
-            return {
-              fingerprint: d.fingerprint,
-              agent_priority_score: d.agent_priority_score,
-              agent_reasoning: d.reasoning || '',
-              agent_dispatch: d.dispatch,
-            };
-          }),
-          strategy_notes: agentTriage.strategy_notes || '',
-          timestamp: agentTriage.timestamp || '',
-        };
-      }
-      effectivenessData = agentTriage.effectiveness || null;
-      if (!effectivenessData && agentTriage.decisions && agentTriage.decisions.length > 0) {
-        var recCount = agentTriage.decisions.filter(function(d) { return d.dispatch; }).length;
-        effectivenessData = {
-          agent: { recommended: recCount, not_recommended: agentTriage.decisions.length - recCount, dispatched: 0, fixed: 0, fix_rate: 0 },
-          deterministic: { dispatched: 0, fixed: 0, fix_rate: 0 },
-          has_agent_data: true,
-          timestamp: agentTriage.timestamp || '',
-        };
-      }
-    } else {
-      agentPlanData = null;
-      effectivenessData = null;
-    }
+    await _reloadOrchestratorState(runs);
 
     renderAll();
     setStatus('Polled ' + sessions.length + ' sessions, found ' + prs.length + ' PRs');
@@ -1660,53 +1620,7 @@ async function refreshData() {
 
     registryData = await fetchRegistry();
     verificationRecords = await loadVerificationRecords();
-
-    if (_isDemoActive()) {
-      var demoData = _getLocalDemoData();
-      _orchestratorState = demoData.orchestrator_state || null;
-    } else {
-      _orchestratorState = await fetchOrchestratorState();
-      if (!_orchestratorState) {
-        _orchestratorState = deriveOrchestratorStateFromRuns(runs);
-      }
-    }
-    orchestratorStatus = buildOrchestratorStatus(_orchestratorState, registryData, allIssues, verificationRecords);
-    orchestratorHistory = buildOrchestratorHistory(_orchestratorState);
-    orchestratorPlan = buildOrchestratorPlan(allIssues, _orchestratorState, verificationRecords);
-    orchestratorConfig = buildOrchestratorConfig(registryData);
-    fixRatesData = buildFixRates(allIssues, verificationRecords);
-
-    var agentTriage = (_orchestratorState || {}).agent_triage || null;
-    if (agentTriage) {
-      agentPlanData = agentTriage.plan || null;
-      if (!agentPlanData && agentTriage.decisions && agentTriage.decisions.length > 0) {
-        agentPlanData = {
-          planned_dispatches: agentTriage.decisions.map(function(d) {
-            return {
-              fingerprint: d.fingerprint,
-              agent_priority_score: d.agent_priority_score,
-              agent_reasoning: d.reasoning || '',
-              agent_dispatch: d.dispatch,
-            };
-          }),
-          strategy_notes: agentTriage.strategy_notes || '',
-          timestamp: agentTriage.timestamp || '',
-        };
-      }
-      effectivenessData = agentTriage.effectiveness || null;
-      if (!effectivenessData && agentTriage.decisions && agentTriage.decisions.length > 0) {
-        var recCount = agentTriage.decisions.filter(function(d) { return d.dispatch; }).length;
-        effectivenessData = {
-          agent: { recommended: recCount, not_recommended: agentTriage.decisions.length - recCount, dispatched: 0, fixed: 0, fix_rate: 0 },
-          deterministic: { dispatched: 0, fixed: 0, fix_rate: 0 },
-          has_agent_data: true,
-          timestamp: agentTriage.timestamp || '',
-        };
-      }
-    } else {
-      agentPlanData = null;
-      effectivenessData = null;
-    }
+    await _reloadOrchestratorState(runs);
 
     renderAll();
     setStatus('Refreshed - ' + runs.length + ' run files, ' + prs.length + ' PRs');
