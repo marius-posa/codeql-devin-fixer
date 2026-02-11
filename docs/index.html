@@ -609,13 +609,19 @@ function renderCategoryChartJs(container, data) {
 
 function renderTrendChartJs(container, runs) {
   if (!runs || !runs.length || typeof Chart === 'undefined') return;
+  var safeRuns = runs.map(function(r) {
+    return Object.assign({}, r, {
+      timestamp: String(r.timestamp || ''),
+      run_number: parseInt(r.run_number, 10) || 0
+    });
+  });
   while (container.firstChild) container.removeChild(container.firstChild);
   var wrap = document.createElement('div');
   wrap.className = 'chart-canvas-wrap';
   var canvas = document.createElement('canvas');
   wrap.appendChild(canvas);
   container.appendChild(wrap);
-  var sorted = runs.slice().sort(function(a, b) { return (a.timestamp || '').localeCompare(b.timestamp || ''); });
+  var sorted = safeRuns.slice().sort(function(a, b) { return (a.timestamp || '').localeCompare(b.timestamp || ''); });
   var labels = sorted.map(function(r) { return r.timestamp ? new Date(r.timestamp).toLocaleDateString() : '#' + (r.run_number || '?'); });
   var issuesData = sorted.map(function(r) { return r.issues_found || 0; });
   var sessionsData = sorted.map(function(r) { return (r.sessions || []).length; });
@@ -924,12 +930,14 @@ function renderPrsTabPending(prs) {
     var sessionLink = '-';
     if (p.session_id) {
       var sid = p.session_id.slice(0, 8);
-      sessionLink = p.session_url ? '<a href="'+escapeHtml(p.session_url)+'" target="_blank">'+escapeHtml(sid)+'...</a>' : escapeHtml(sid);
+      var safeSessionUrl = sanitizeUrl(p.session_url);
+      sessionLink = safeSessionUrl ? '<a href="'+escapeHtml(safeSessionUrl)+'" target="_blank">'+escapeHtml(sid)+'...</a>' : escapeHtml(sid);
     }
     var verified = (p._verification_label === 'verified-fix');
     var verBadge = verified ? ' <span class="badge badge-verified">verified</span>' : '';
+    var safePrUrl = sanitizeUrl(p.html_url);
     return '<tr>'
-      + '<td><a href="'+escapeHtml(p.html_url)+'" target="_blank">#'+escapeHtml(String(p.pr_number))+'</a>'+verBadge+'</td>'
+      + '<td>' + (safePrUrl ? '<a href="'+escapeHtml(safePrUrl)+'" target="_blank">#'+escapeHtml(String(p.pr_number))+'</a>' : '#'+escapeHtml(String(p.pr_number))) + verBadge+'</td>'
       + '<td>'+escapeHtml(p.title)+'</td>'
       + '<td>'+escapeHtml(p.repo || '')+'</td>'
       + '<td>'+sessionLink+'</td>'

@@ -44,9 +44,19 @@ function _promptApiKey() {
 
 function escapeHtml(str) {
   if (!str) return '';
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function sanitizeUrl(url) {
+  if (!url) return '';
+  var s = String(url).trim();
+  if (/^https?:\/\//i.test(s)) return s;
+  return '';
 }
 
 function setStatus(msg) { document.getElementById('status-text').textContent = msg; }
