@@ -371,7 +371,7 @@ async function fetchPrsFromGitHub(runs) {
   const sessionIds = collectSessionIds(runs);
   const prs = [];
   const seenUrls = new Set();
-  const issueRefRe = /CQLF-R\d+-\d+/gi;
+  const issueRefRe = /CQLF-(?:[A-Z]+-)?R\d+-\d+/gi;
 
   for (const repoFull of searchRepos) {
     let ghPage = 1;
@@ -398,7 +398,7 @@ async function fetchPrsFromGitHub(runs) {
 
           const issueIds = [];
           let m;
-          const re = /CQLF-R\d+-\d+/gi;
+          const re = /CQLF-(?:[A-Z]+-)?R\d+-\d+/gi;
           while ((m = re.exec(title)) !== null) issueIds.push(m[0]);
           const uniqueIds = [...new Set(issueIds)];
 
@@ -851,6 +851,59 @@ async function fetchOrchestratorState() {
   } catch (e) {
     return null;
   }
+}
+
+function deriveOrchestratorStateFromRuns(runs) {
+  var dispatchRuns = (runs || []).filter(function(r) {
+    return (r._file || '').indexOf('_dispatch_') !== -1;
+  });
+  if (dispatchRuns.length === 0) return null;
+
+  var dispatchHistory = {};
+  var createdTimestamps = [];
+  var lastCycleTs = '';
+
+  for (var i = 0; i < dispatchRuns.length; i++) {
+    var run = dispatchRuns[i];
+    var ts = run.timestamp || '';
+    if (ts > lastCycleTs) lastCycleTs = ts;
+
+    var idToFp = {};
+    for (var f = 0; f < (run.issue_fingerprints || []).length; f++) {
+      var iss = run.issue_fingerprints[f];
+      if (iss.fingerprint && iss.id) idToFp[iss.id] = iss.fingerprint;
+    }
+
+    for (var s = 0; s < (run.sessions || []).length; s++) {
+      var session = run.sessions[s];
+      var sid = session.session_id || '';
+      if (sid) createdTimestamps.push(ts);
+
+      var sessionFps = {};
+      for (var k = 0; k < (session.issue_ids || []).length; k++) {
+        var iid = session.issue_ids[k];
+        if (idToFp[iid]) sessionFps[idToFp[iid]] = true;
+      }
+
+      var fpKeys = Object.keys(sessionFps);
+      for (var p = 0; p < fpKeys.length; p++) {
+        var fp = fpKeys[p];
+        if (!dispatchHistory[fp]) dispatchHistory[fp] = [];
+        dispatchHistory[fp].push({
+          dispatched_at: ts,
+          session_id: sid,
+          status: session.status || 'created',
+          pr_url: session.pr_url || '',
+        });
+      }
+    }
+  }
+
+  return {
+    dispatch_history: dispatchHistory,
+    last_cycle: lastCycleTs,
+    rate_limiter: { created_timestamps: createdTimestamps },
+  };
 }
 
 function buildOrchestratorStatus(state, registry, issues, verificationRecords) {
