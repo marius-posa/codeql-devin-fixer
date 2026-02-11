@@ -1106,7 +1106,7 @@ function renderOrchestratorPriorityTable() {
   el.innerHTML = '<table><thead><tr><th>#</th><th>Fingerprint</th><th>Repo</th><th>Rule</th><th>Severity</th><th>Det. Score</th><th>Agent Score</th></tr></thead><tbody>' + rows + '</tbody></table>';
 }
 
-async function triggerAgentTriage(){
+async function triggerAgentTriage() {
   var btn = document.getElementById('btn-orch-agent');
   if (btn) { btn.disabled = true; btn.textContent = 'Triaging...'; }
   setStatus('Running agent triage...');

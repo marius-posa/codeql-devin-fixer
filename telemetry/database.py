@@ -1273,7 +1273,7 @@ def update_agent_scores(
     return updated
 
 
-_VALID_ISSUE_STATUSES= {"false_positive", "wont_fix", "new", "recurring"}
+_VALID_ISSUE_STATUSES = {"false_positive", "wont_fix", "new", "recurring"}
 
 
 def update_issue_status(conn: sqlite3.Connection, fingerprint: str, new_status: str) -> bool:
