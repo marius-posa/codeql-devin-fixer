@@ -312,7 +312,7 @@ See [`github_app/README.md`](github_app/README.md) for the full setup guide.
 1. [Create a GitHub App](https://docs.github.com/en/apps/creating-github-apps) in your org/account settings:
    - **Webhook URL**: `https://your-server.com/api/github/webhook`
    - **Permissions**: `contents: read`, `pull_requests: write`, `security_events: read`
-   - **Events**: `installation`, `push`
+   - **Events**: `installation`, `installation_repositories`, `push`
 2. Generate a private key (`.pem` file) and note the App ID
 3. Set environment variables (see [`.env.example`](github_app/.env.example) for all options):
    ```bash

@@ -30,6 +30,7 @@ Go to **GitHub Settings > Developer settings > GitHub Apps > New GitHub App** an
 ### Subscribe to Events
 
 - **Installation** -- track when the app is installed/uninstalled
+- **Installation repositories** -- track when repos are added to or removed from the installation
 - **Push** -- trigger scans when code is pushed to default branches
 
 After creating the app:
@@ -105,8 +106,12 @@ The server starts on `http://0.0.0.0:3000` by default.
 
 ```bash
 docker build -f github_app/Dockerfile -t codeql-fixer-app .
-docker run -p 3000:3000 --env-file github_app/.env codeql-fixer-app
+docker run -p 3000:3000 --env-file github_app/.env \
+  -v /path/to/private-key.pem:/app/private-key.pem \
+  codeql-fixer-app
 ```
+
+Note: Mount the private key file into the container. Update `GITHUB_APP_PRIVATE_KEY_PATH` in your `.env` to match the container path (e.g., `/app/private-key.pem`).
 
 ## 4. Verify the Setup
 

@@ -143,6 +143,29 @@ class TestWebhookEndpoint:
         data = resp.get_json()
         assert data["status"] == "installed"
 
+    def test_accepts_installation_repositories_event(self, app_client):
+        client, config = app_client
+        payload = json.dumps({
+            "action": "added",
+            "installation": {"id": 10},
+            "repositories_added": [{"full_name": "org/new-repo"}],
+        }).encode()
+        sig = _sign_payload(payload, config.webhook_secret)
+        resp = client.post(
+            "/api/github/webhook",
+            data=payload,
+            content_type="application/json",
+            headers={
+                "X-Hub-Signature-256": sig,
+                "X-GitHub-Event": "installation_repositories",
+                "X-GitHub-Delivery": "test-delivery-repos",
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["status"] == "repos_added"
+        assert "org/new-repo" in data["repositories"]
+
     def test_ignores_unhandled_event(self, app_client):
         client, config = app_client
         payload = json.dumps({"action": "starred"}).encode()
@@ -200,6 +223,28 @@ class TestManualScanEndpoint:
         call_args = mock_scan.call_args[0][0]
         assert call_args["target_repo"] == "https://github.com/owner/repo"
         assert call_args["dry_run"] is True
+
+    @patch("github_app.app.trigger_scan")
+    @patch("github_app.auth.GitHubAppAuth.get_installation_token")
+    def test_passes_optional_overrides(self, mock_token, mock_scan, app_client):
+        client, _ = app_client
+        mock_token.return_value = "ghs_test"
+        mock_scan.return_value = {"status": "completed", "steps": []}
+        resp = client.post(
+            "/api/github/scan",
+            json={
+                "repository": "owner/repo",
+                "installation_id": 42,
+                "batch_size": 10,
+                "severity_threshold": "high",
+                "default_branch": "develop",
+            },
+        )
+        assert resp.status_code == 200
+        call_args = mock_scan.call_args[0][0]
+        assert call_args["batch_size"] == 10
+        assert call_args["severity_threshold"] == "high"
+        assert call_args["default_branch"] == "develop"
 
     @patch("github_app.auth.GitHubAppAuth.get_installation_token")
     def test_handles_token_error(self, mock_token, app_client):
