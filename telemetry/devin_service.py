@@ -39,13 +39,13 @@ def _extract_pr_url(data: dict, so: dict) -> str:
 
 def poll_devin_sessions_db(
     conn: sqlite3.Connection, sessions: list[dict]
-) -> list[dict]:
+) -> tuple[list[dict], dict]:
     from database import update_session
 
     key = os.environ.get("DEVIN_API_KEY", "")
     if not key:
         logger.warning("DEVIN_API_KEY not set, skipping session polling")
-        return sessions
+        return sessions, {"polled": 0, "skipped_terminal": 0, "errors": []}
 
     updated: list[dict] = []
     errors: list[dict] = []
