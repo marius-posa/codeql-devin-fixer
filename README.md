@@ -305,33 +305,42 @@ This creates the workflow file, prompts for secrets, and runs a dry-run verifica
 
 The GitHub App enables webhook-driven automation: scans trigger automatically on push events to default branches, and events are processed without manual workflow dispatch.
 
-### Installation
+See [`github_app/README.md`](github_app/README.md) for the full setup guide.
 
-1. Create a GitHub App in your org/account settings:
-   - **Webhook URL**: Point to your GitHub App server (e.g., `https://your-server.com/webhook`)
+### Quick Start
+
+1. [Create a GitHub App](https://docs.github.com/en/apps/creating-github-apps) in your org/account settings:
+   - **Webhook URL**: `https://your-server.com/api/github/webhook`
    - **Permissions**: `contents: read`, `pull_requests: write`, `security_events: read`
-   - **Events**: `push`, `pull_request`, `code_scanning_alert`
-2. Generate a private key and note the App ID
-3. Set environment variables:
+   - **Events**: `installation`, `installation_repositories`, `push`
+2. Generate a private key (`.pem` file) and note the App ID
+3. Set environment variables (see [`.env.example`](github_app/.env.example) for all options):
    ```bash
    export GITHUB_APP_ID=<your-app-id>
-   export GITHUB_APP_PRIVATE_KEY=<path-to-private-key.pem>
-   export GITHUB_WEBHOOK_SECRET=<your-webhook-secret>
+   export GITHUB_APP_PRIVATE_KEY_PATH=<path-to-private-key.pem>
+   export GITHUB_APP_WEBHOOK_SECRET=<your-webhook-secret>
+   export DEVIN_API_KEY=<your-devin-api-key>
    ```
 4. Run the GitHub App server:
    ```bash
-   cd github_app
-   pip install -r requirements.txt
-   python main.py
+   pip install -r github_app/requirements.txt
+   python -m github_app
+   ```
+5. Or via Docker:
+   ```bash
+   docker build -f github_app/Dockerfile -t codeql-fixer-app .
+   docker run -p 3000:3000 --env-file github_app/.env codeql-fixer-app
    ```
 
 ### Features
 
 - **Scan on push**: Automatically triggers CodeQL analysis when code is pushed to default branches
 - **Webhook signature verification**: HMAC-SHA256 verification of all incoming webhooks
-- **Installation token management**: JWT-based authentication with automatic token refresh
-- **Health endpoint**: `/healthz` for container orchestration probes
-- **Alert processing**: Webhook delivery for scan lifecycle events
+- **Installation token management**: JWT-based authentication with automatic token refresh and caching
+- **Health endpoint**: `GET /healthz` for container orchestration probes
+- **Manual scan**: `POST /api/github/scan` to trigger scans on demand
+- **Installation management**: `GET /api/github/installations` and `GET /api/github/installations/<id>/repos`
+- **Alert processing**: Webhook delivery for scan lifecycle events (verified fixes, SLA breaches, cycle summaries)
 
 ---
 
