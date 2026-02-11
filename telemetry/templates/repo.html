@@ -332,8 +332,10 @@ async function fetchRepoData() {
     renderSessionsTable(data.sessions.items || [], 'sessions-table-container', 'sessions-count');
     renderPrsTable(data.prs.items || [], 'prs-table-container', 'prs-count');
     renderIssuesTable(data.issues.items || [], 'issues-table-container', 'issues-count');
-    var registry = await fetchRegistry();
-    if (registry) renderRepoConfig(registry, REPO_URL);
+    if (typeof fetchRegistry === 'function') {
+      var registry = await fetchRegistry();
+      if (registry) renderRepoConfig(registry, REPO_URL);
+    }
     setStatus('Ready');
     setUpdated();
   } catch (e) {
