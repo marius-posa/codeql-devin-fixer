@@ -48,7 +48,7 @@ def fetch_prs_from_github_to_db(conn: sqlite3.Connection) -> int:
                     body = pr.get("body", "") or ""
                     html_url = pr.get("html_url", "")
 
-                    has_issue_ref_in_title = bool(re.search(r"CQLF-R\d+-\d+", title, re.IGNORECASE))
+                    has_issue_ref_in_title = bool(re.search(r"CQLF-(?:[A-Z]+-)?R\d+-\d+", title, re.IGNORECASE))
                     matched_session = match_pr_to_session(title + body, session_ids)
 
                     if not has_issue_ref_in_title and not matched_session:
@@ -57,7 +57,7 @@ def fetch_prs_from_github_to_db(conn: sqlite3.Connection) -> int:
                         continue
                     seen_urls.add(html_url)
 
-                    issue_ids = re.findall(r"CQLF-R\d+-\d+", title, re.IGNORECASE)
+                    issue_ids = re.findall(r"CQLF-(?:[A-Z]+-)?R\d+-\d+", title, re.IGNORECASE)
                     pr_data = {
                         "pr_number": pr.get("number"),
                         "title": title,
