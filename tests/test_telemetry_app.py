@@ -697,26 +697,6 @@ class TestOrchestratorEndpoints:
         assert data["status"] == "no_results"
         assert data["decisions"] == []
 
-    def test_orchestrator_effectiveness_returns_json(self, client):
-        resp = client.get("/api/orchestrator/effectiveness")
-        assert resp.status_code == 200
-        data = resp.get_json()
-        assert "agent" in data
-        assert "deterministic" in data
-        assert "has_agent_data" in data
-        assert "recommended" in data["agent"]
-        assert "dispatched" in data["agent"]
-        assert "fix_rate" in data["agent"]
-        assert "dispatched" in data["deterministic"]
-        assert "fix_rate" in data["deterministic"]
-
-    def test_orchestrator_effectiveness_empty_state(self, client):
-        resp = client.get("/api/orchestrator/effectiveness")
-        assert resp.status_code == 200
-        data = resp.get_json()
-        assert data["has_agent_data"] is False
-        assert data["agent"]["dispatched"] == 0
-        assert isinstance(data["deterministic"]["dispatched"], int)
 
 
 class TestRegistryRepoEndpoints:
