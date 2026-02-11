@@ -15,6 +15,7 @@ on:
           - dispatch
           - scan
           - status
+          - agent-triage
 
 permissions:
   contents: read
