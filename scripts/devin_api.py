@@ -55,6 +55,16 @@ def request_with_retry(
         json=json_data,
         timeout=30,
     )
+    if resp.status_code >= 400:
+        error_body = ""
+        try:
+            error_body = resp.text[:2000]
+        except Exception:
+            pass
+        logger.error(
+            "Devin API %s %s returned %d: %s",
+            method, url, resp.status_code, error_body,
+        )
     resp.raise_for_status()
     if resp.status_code == 204:
         return {}
