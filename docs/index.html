@@ -609,8 +609,12 @@ function renderCategoryChartJs(container, data) {
 
 function renderTrendChartJs(container, runs) {
   if (!runs || !runs.length || typeof Chart === 'undefined') return;
-  container.innerHTML = '<div class="chart-canvas-wrap"><canvas></canvas></div>';
-  var canvas = container.querySelector('canvas');
+  while (container.firstChild) container.removeChild(container.firstChild);
+  var wrap = document.createElement('div');
+  wrap.className = 'chart-canvas-wrap';
+  var canvas = document.createElement('canvas');
+  wrap.appendChild(canvas);
+  container.appendChild(wrap);
   var sorted = runs.slice().sort(function(a, b) { return (a.timestamp || '').localeCompare(b.timestamp || ''); });
   var labels = sorted.map(function(r) { return r.timestamp ? new Date(r.timestamp).toLocaleDateString() : '#' + (r.run_number || '?'); });
   var issuesData = sorted.map(function(r) { return r.issues_found || 0; });
@@ -925,15 +929,18 @@ function renderPrsTabPending(prs) {
     var verified = (p._verification_label === 'verified-fix');
     var verBadge = verified ? ' <span class="badge badge-verified">verified</span>' : '';
     return '<tr>'
-      + '<td><a href="'+escapeHtml(p.html_url)+'" target="_blank">#'+p.pr_number+'</a>'+verBadge+'</td>'
+      + '<td><a href="'+escapeHtml(p.html_url)+'" target="_blank">#'+escapeHtml(String(p.pr_number))+'</a>'+verBadge+'</td>'
       + '<td>'+escapeHtml(p.title)+'</td>'
       + '<td>'+escapeHtml(p.repo || '')+'</td>'
       + '<td>'+sessionLink+'</td>'
       + '<td>'+((p.issue_ids || []).map(function(id) { return '<span class="issue-id">'+escapeHtml(id)+'</span>'; }).join(' ') || '-')+'</td>'
-      + '<td>'+formatDate(p.created_at)+'</td>'
+      + '<td>'+escapeHtml(formatDate(p.created_at))+'</td>'
       + '</tr>';
   }).join('');
-  el.innerHTML = '<table><thead><tr><th>PR</th><th>Title</th><th>Repo</th><th>Devin Session</th><th>Issues</th><th>Created</th></tr></thead><tbody>'+rows+'</tbody></table>';
+  var safeTable = document.createElement('table');
+  safeTable.innerHTML = '<thead><tr><th>PR</th><th>Title</th><th>Repo</th><th>Devin Session</th><th>Issues</th><th>Created</th></tr></thead><tbody>'+rows+'</tbody>';
+  while (el.firstChild) el.removeChild(el.firstChild);
+  el.appendChild(safeTable);
 }
 
 function renderPrsTabRepoStats(prs) {
