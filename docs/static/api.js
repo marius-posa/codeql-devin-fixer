@@ -839,7 +839,18 @@ async function updateRegistryOnGitHub(registry) {
 }
 
 async function fetchOrchestratorState() {
-  return null;
+  var cfg = getConfig();
+  var repo = cfg.actionRepo || ACTION_REPO_DEFAULT;
+  try {
+    var url = GH_API + '/repos/' + repo + '/contents/telemetry/orchestrator_state.json';
+    var resp = await fetch(url, { headers: ghHeaders() });
+    if (!resp.ok) return null;
+    var meta = await resp.json();
+    var raw = atob(meta.content);
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
 }
 
 function buildOrchestratorStatus(state, registry, issues, verificationRecords) {

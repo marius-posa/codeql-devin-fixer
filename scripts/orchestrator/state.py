@@ -170,6 +170,12 @@ def save_state(state: dict[str, Any]) -> None:
         save_orchestrator_state(conn, state)
     finally:
         conn.close()
+    try:
+        with open(STATE_PATH, "w") as f:
+            json.dump(state, f, indent=2)
+            f.write("\n")
+    except OSError:
+        pass
 
 
 def get_repo_config(registry: dict[str, Any], repo_url: str) -> dict[str, Any]:
