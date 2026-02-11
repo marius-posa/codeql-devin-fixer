@@ -415,6 +415,45 @@ def compute_issue_priority(
     return round(score, 4)
 
 
+def apply_agent_scores(
+    eligible: list[dict[str, Any]],
+    agent_decisions: list[dict[str, Any]],
+    mode: str = "deterministic",
+    agent_weight: float = 0.5,
+) -> None:
+    """Blend agent scores into eligible issues based on dispatch_scoring_mode.
+
+    Modes:
+      deterministic -- keep existing priority_score unchanged (default)
+      agent         -- replace priority_score with agent score (normalised 0-1)
+      weighted      -- weighted average of deterministic and agent scores
+    """
+    if mode == "deterministic" or not agent_decisions:
+        return
+
+    agent_map = {d["fingerprint"]: d for d in agent_decisions}
+
+    for issue in eligible:
+        fp = issue.get("fingerprint", "")
+        agent = agent_map.get(fp)
+        if not agent:
+            continue
+
+        agent_raw = float(agent.get("agent_priority_score", 0))
+        agent_norm = agent_raw / 100.0
+        det_score = issue.get("priority_score", 0)
+
+        if mode == "agent":
+            issue["priority_score"] = round(agent_norm, 4)
+        elif mode == "weighted":
+            blended = (1.0 - agent_weight) * det_score + agent_weight * agent_norm
+            issue["priority_score"] = round(blended, 4)
+
+        issue["agent_priority_score"] = agent_raw
+        issue["agent_dispatch"] = agent.get("dispatch", True)
+        issue["recommendation_source"] = mode
+
+
 def _ensure_db_hydrated(conn: sqlite3.Connection) -> None:
     if is_db_empty(conn) and RUNS_DIR.is_dir():
         migrate_json_files(RUNS_DIR, conn)
@@ -498,6 +537,12 @@ def _compute_eligible_issues(repo_filter: str = "") -> dict[str, Any]:
             issue, repo_config, objectives, fl,
         )
 
+    scoring_mode = orch_config.get("dispatch_scoring_mode", "deterministic")
+    agent_weight = orch_config.get("agent_score_weight", 0.5)
+    agent_triage = state.get("agent_triage", {})
+    agent_decisions = agent_triage.get("decisions", [])
+    apply_agent_scores(eligible, agent_decisions, scoring_mode, agent_weight)
+
     eligible.sort(key=lambda x: x.get("priority_score", 0), reverse=True)
 
     global_limit = orch_config.get("global_session_limit", 20)
@@ -515,6 +560,7 @@ def _compute_eligible_issues(repo_filter: str = "") -> dict[str, Any]:
         "skipped": skipped,
         "global_limit": global_limit,
         "remaining_capacity": remaining_capacity,
+        "dispatch_scoring_mode": scoring_mode,
     }
 
 

@@ -26,6 +26,7 @@ except ImportError:
 from database import get_connection, init_db, insert_audit_log, auto_export_audit_log  # noqa: E402
 from fix_learning import FixLearning  # noqa: E402
 from issue_tracking import DEFAULT_SLA_HOURS  # noqa: E402
+from verification import load_verification_records, build_fingerprint_fix_map  # noqa: E402
 
 logger = setup_logging(__name__)
 
@@ -316,14 +317,56 @@ def save_agent_triage_results(
     decisions: list[dict[str, Any]],
     session_id: str,
     strategy_notes: str = "",
+    eligible_issues: list[dict[str, Any]] | None = None,
 ) -> None:
-    """Persist agent triage results in orchestrator state."""
+    """Persist agent triage results with pre-computed plan and effectiveness."""
     state = _state.load_state()
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    agent_map = {d["fingerprint"]: d for d in decisions}
+    plan_dispatches: list[dict[str, Any]] = []
+    for issue in (eligible_issues or []):
+        fp = issue.get("fingerprint", "")
+        entry: dict[str, Any] = {
+            "fingerprint": fp,
+            "target_repo": issue.get("target_repo", ""),
+            "rule_id": issue.get("rule_id", ""),
+            "severity_tier": issue.get("severity_tier", ""),
+            "cwe_family": issue.get("cwe_family", ""),
+            "priority_score": issue.get("priority_score", 0),
+        }
+        agent = agent_map.get(fp)
+        if agent:
+            entry["agent_priority_score"] = agent["agent_priority_score"]
+            entry["agent_reasoning"] = agent.get("reasoning", "")
+            entry["agent_dispatch"] = agent.get("dispatch", True)
+        else:
+            entry["agent_priority_score"] = None
+            entry["agent_reasoning"] = ""
+            entry["agent_dispatch"] = None
+        plan_dispatches.append(entry)
+
+    dispatch_history = state.get("dispatch_history", {})
+    verification_records = load_verification_records(_state.RUNS_DIR)
+    fp_fix_map = build_fingerprint_fix_map(verification_records)
+    effectiveness = _build_effectiveness_snapshot(
+        dispatch_history, decisions, fp_fix_map, timestamp,
+    )
+
     state["agent_triage"] = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": timestamp,
         "session_id": session_id,
         "decisions": decisions,
         "strategy_notes": strategy_notes,
+        "plan": {
+            "timestamp": timestamp,
+            "session_id": session_id,
+            "strategy_notes": strategy_notes,
+            "planned_dispatches": plan_dispatches,
+            "total_issues": len(eligible_issues or []),
+            "eligible_issues": len(eligible_issues or []),
+        },
+        "effectiveness": effectiveness,
     }
     _state.save_state(state)
 
@@ -334,15 +377,15 @@ def load_agent_triage_results() -> dict[str, Any]:
     return state.get("agent_triage", {})
 
 
-def build_effectiveness_report(
+def _build_effectiveness_snapshot(
     dispatch_history: dict[str, Any],
-    agent_triage: dict[str, Any],
+    decisions: list[dict[str, Any]],
     fp_fix_map: dict[str, Any],
+    timestamp: str,
 ) -> dict[str, Any]:
-    """Compare effectiveness of agent vs deterministic recommendations."""
-    agent_decisions = agent_triage.get("decisions", [])
-    agent_fps = {d["fingerprint"] for d in agent_decisions if d.get("dispatch")}
-    all_agent_fps = {d["fingerprint"] for d in agent_decisions}
+    """Build an effectiveness snapshot from raw decisions and dispatch history."""
+    agent_fps = {d["fingerprint"] for d in decisions if d.get("dispatch")}
+    all_agent_fps = {d["fingerprint"] for d in decisions}
 
     agent_dispatched = 0
     agent_fixed = 0
@@ -367,13 +410,10 @@ def build_effectiveness_report(
             if is_fixed:
                 det_fixed += 1
 
-    agent_recommended = len(agent_fps)
-    agent_not_recommended = len(all_agent_fps) - agent_recommended
-
     return {
         "agent": {
-            "recommended": agent_recommended,
-            "not_recommended": agent_not_recommended,
+            "recommended": len(agent_fps),
+            "not_recommended": len(all_agent_fps) - len(agent_fps),
             "dispatched": agent_dispatched,
             "fixed": agent_fixed,
             "fix_rate": round(agent_fixed / max(agent_dispatched, 1) * 100, 1),
@@ -383,8 +423,22 @@ def build_effectiveness_report(
             "fixed": det_fixed,
             "fix_rate": round(det_fixed / max(det_dispatched, 1) * 100, 1),
         },
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "has_agent_data": len(decisions) > 0,
+        "timestamp": timestamp,
     }
+
+
+def build_effectiveness_report(
+    dispatch_history: dict[str, Any],
+    agent_triage: dict[str, Any],
+    fp_fix_map: dict[str, Any],
+) -> dict[str, Any]:
+    """Compare effectiveness of agent vs deterministic recommendations."""
+    decisions = agent_triage.get("decisions", [])
+    timestamp = datetime.now(timezone.utc).isoformat()
+    return _build_effectiveness_snapshot(
+        dispatch_history, decisions, fp_fix_map, timestamp,
+    )
 
 
 def cmd_agent_triage(args: argparse.Namespace) -> int:
@@ -479,7 +533,7 @@ def cmd_agent_triage(args: argparse.Namespace) -> int:
     if structured_output:
         strategy_notes = structured_output.get("strategy_notes", "")
 
-    save_agent_triage_results(decisions, session_id, strategy_notes)
+    save_agent_triage_results(decisions, session_id, strategy_notes, eligible_issues=eligible)
 
     conn = get_connection()
     try:
