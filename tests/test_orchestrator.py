@@ -45,6 +45,7 @@ from scripts.orchestrator import (
     save_agent_triage_results,
     load_agent_triage_results,
     cmd_agent_triage,
+    create_agent_triage_session,
 )
 from scripts.fix_learning import FixLearning
 import database as database_mod
@@ -1426,3 +1427,22 @@ class TestCmdAgentTriage:
 
         result = cmd_agent_triage(Args())
         assert result == 1
+
+
+class TestCreateAgentTriageSession:
+    @patch("scripts.orchestrator.agent.request_with_retry")
+    def test_payload_uses_max_acu_limit(self, mock_request):
+        mock_request.return_value = {"session_id": "s1", "url": "u1"}
+        triage_input = {"total_issues": 3, "issues": [], "fix_rates": {}, "acu_budget": 10}
+        create_agent_triage_session("key", triage_input, max_acu=5)
+        payload = mock_request.call_args[1].get("json_data") or mock_request.call_args.kwargs.get("json_data")
+        assert payload["max_acu_limit"] == 5
+        assert "max_acu" not in payload
+
+    @patch("scripts.orchestrator.agent.request_with_retry")
+    def test_payload_omits_max_acu_limit_when_zero(self, mock_request):
+        mock_request.return_value = {"session_id": "s1", "url": "u1"}
+        triage_input = {"total_issues": 3, "issues": [], "fix_rates": {}, "acu_budget": 10}
+        create_agent_triage_session("key", triage_input, max_acu=0)
+        payload = mock_request.call_args[1].get("json_data") or mock_request.call_args.kwargs.get("json_data")
+        assert "max_acu_limit" not in payload
