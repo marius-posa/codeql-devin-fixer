@@ -81,7 +81,9 @@ def create_app(config: AppConfig | None = None) -> Flask:
         delivery_id = flask_request.headers.get("X-GitHub-Delivery", "")
         payload = flask_request.get_json(silent=True) or {}
 
-        log.info("Webhook: event=%s delivery=%s", sanitize_log(event_type), sanitize_log(delivery_id))
+        safe_event = sanitize_log(event_type)
+        safe_delivery = sanitize_log(delivery_id)
+        log.info("Webhook: event=%s delivery=%s", safe_event, safe_delivery)
 
         result = route_event(event_type, payload)
 
@@ -180,7 +182,9 @@ def _maybe_trigger_scan(
     try:
         token = auth.get_installation_token(installation_id)
     except Exception as exc:
-        log.error("Failed to get token for installation %s: %s", sanitize_log(installation_id), sanitize_log(exc))
+        safe_id = sanitize_log(installation_id)
+        safe_exc = sanitize_log(exc)
+        log.error("Failed to get token for installation %s: %s", safe_id, safe_exc)
         return
 
     scan_config = {
@@ -195,5 +199,7 @@ def _maybe_trigger_scan(
         "dry_run": False,
     }
 
-    log.info("Auto-triggering scan for %s (installation %s)", sanitize_log(repo), sanitize_log(installation_id))
+    safe_repo = sanitize_log(repo)
+    safe_id = sanitize_log(installation_id)
+    log.info("Auto-triggering scan for %s (installation %s)", safe_repo, safe_id)
     trigger_scan(scan_config)
