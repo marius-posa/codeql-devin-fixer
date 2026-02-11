@@ -135,11 +135,30 @@ function renderBarChart(container, data) {
   `).join('') + '</div>';
 }
 
+function _detectTriggerType(run) {
+  var label = run.run_label || '';
+  if (label.indexOf('orchestrator_dispatch') !== -1) return 'orchestrator';
+  if (label.indexOf('orchestrator') !== -1) return 'orchestrator';
+  return 'manual';
+}
+
+var VALID_SESSION_STATUSES = ['created', 'started', 'running', 'finished', 'stopped'];
+
+function _normalizeSessionStatus(status) {
+  var s = (status || '').toLowerCase();
+  if (VALID_SESSION_STATUSES.indexOf(s) !== -1) return s;
+  if (s.startsWith('error')) return 'error';
+  return 'error';
+}
+
 function renderSessionsTable(sessions, containerId, countId) {
   const el = document.getElementById(containerId);
   const countEl = document.getElementById(countId);
-  if (countEl) countEl.textContent = sessions.length;
-  if (sessions.length === 0) {
+  var normalized = sessions.map(function(s) {
+    return Object.assign({}, s, { status: _normalizeSessionStatus(s.status) });
+  });
+  if (countEl) countEl.textContent = normalized.length;
+  if (normalized.length === 0) {
     el.innerHTML = '<div class="empty-state"><span class="empty-state-icon">&#x1F916;</span><div class="empty-state-text">No Devin sessions created yet.</div></div>';
     return;
   }
@@ -148,7 +167,7 @@ function renderSessionsTable(sessions, containerId, countId) {
       <th>Session</th><th>Status</th><th>Target</th><th>Run</th>
       <th>Batch</th><th>Issues</th><th>PR</th>
     </tr></thead>
-    <tbody>${sessions.map(s => `<tr>
+    <tbody>${normalized.map(s => `<tr>
       <td>${s.session_url ? '<a href="'+escapeHtml(s.session_url)+'" target="_blank">'+escapeHtml(s.session_id.slice(0,8))+'...</a>' : escapeHtml(s.session_id) || '-'}</td>
       <td><span class="badge ${badgeClass(s.status)}">${escapeHtml(s.status)}</span></td>
       <td><a href="${escapeHtml(s.target_repo)}" target="_blank">${escapeHtml(repoShort(s.target_repo))}</a></td>
@@ -284,9 +303,12 @@ function _renderIssuesContent(filtered, allIssues, containerId, countId) {
   var showRepo = repos.length > 1;
   html += '<table><thead><tr>';
   html += '<th><input type="checkbox" class="bulk-checkbox" onchange="_toggleBulkAll(this.checked)"></th>';
+  var hasPriority = filtered.some(function(i) { return i.priority_score != null; });
   html += '<th>Status</th><th>Rule</th><th>Severity</th><th>Category</th>';
   if (showRepo) html += '<th>Repo</th>';
-  html += '<th>File</th><th>Line</th><th>SLA</th><th>First Seen</th><th>Last Seen</th><th>Runs</th>';
+  html += '<th>File</th><th>Line</th>';
+  if (hasPriority) html += '<th>Priority</th>';
+  html += '<th>SLA</th><th>First Seen</th><th>Last Seen</th><th>Runs</th>';
   html += '</tr></thead><tbody>';
   filtered.forEach(function(i, idx) {
     var firstDate = i.first_seen_date ? formatDate(i.first_seen_date) : 'Run #' + i.first_seen_run;
@@ -301,6 +323,10 @@ function _renderIssuesContent(filtered, allIssues, containerId, countId) {
     if (showRepo) html += '<td>' + escapeHtml(repoShort(i.target_repo)) + '</td>';
     html += '<td style="font-family:monospace;font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtml(i.file) + '">' + (i.file ? escapeHtml(i.file.split('/').pop()) : '-') + '</td>';
     html += '<td>' + (i.start_line || '-') + '</td>';
+    if (hasPriority) {
+      var ps = i.priority_score != null ? i.priority_score : '-';
+      html += '<td>' + ps + '</td>';
+    }
     var slaLabel = i.sla_status || 'unknown';
     html += '<td><span class="badge ' + badgeClass(slaLabel) + '">' + escapeHtml(slaLabel) + '</span></td>';
     html += '<td title="Run #' + i.first_seen_run + '">' + firstDate + '</td>';

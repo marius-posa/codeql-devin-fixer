@@ -39,13 +39,21 @@
 
   <div class="grid-2">
     <div class="panel">
-      <div class="panel-header">Severity Breakdown</div>
+      <div class="panel-header">Severity Breakdown across Scans</div>
       <div class="panel-body" id="severity-chart"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
     </div>
     <div class="panel">
       <div class="panel-header">Category Breakdown</div>
       <div class="panel-body" id="category-chart"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
     </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      Pull Requests
+      <span id="prs-count" class="panel-header-count"></span>
+    </div>
+    <div class="panel-body table-scroll-wrapper" id="prs-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
   </div>
 
   <div class="panel">
@@ -66,19 +74,16 @@
 
   <div class="panel">
     <div class="panel-header">
-      Pull Requests
-      <span id="prs-count" class="panel-header-count"></span>
-    </div>
-    <div class="panel-body table-scroll-wrapper" id="prs-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-header">
       Issue Tracking
       <span id="issues-count" class="panel-header-count"></span>
       <button class="btn btn-sm ml-auto" onclick="exportAllIssuesCsv()">Export CSV</button>
     </div>
     <div class="panel-body table-scroll-wrapper" id="issues-table-container"><div class="table-loading"><span class="spinner"></span> Loading...</div></div>
+  </div>
+
+  <div class="panel" id="repo-config-panel" style="display:none">
+    <div class="panel-header">Repository Configuration</div>
+    <div class="panel-body" id="repo-config-container"></div>
   </div>
 </div>
 
@@ -136,16 +141,21 @@ function renderRunsTable(runs) {
   });
   let rows = '';
   sorted.forEach(function(r) {
+    var trigger = _detectTriggerType(r);
+    var triggerBadge = trigger === 'orchestrator'
+      ? '<span class="badge badge-running">orchestrator</span>'
+      : '<span class="badge badge-unknown">manual</span>';
     rows += '<tr>'
       + '<td><strong>#' + (r.run_number || '-') + '</strong></td>'
       + '<td>' + (r.issues_found || 0) + '</td>'
       + '<td>' + (r.batches_created || 0) + '</td>'
       + '<td>' + (r.sessions || []).length + '</td>'
+      + '<td>' + triggerBadge + '</td>'
       + '<td>' + formatDate(r.timestamp) + '</td>'
       + '</tr>';
   });
   el.innerHTML = '<table><thead><tr>'
-    + '<th>Run</th><th>Issues</th><th>Batches</th><th>Sessions</th><th>Timestamp</th>'
+    + '<th>Run</th><th>Issues</th><th>Batches</th><th>Sessions</th><th>Trigger</th><th>Timestamp</th>'
     + '</tr></thead><tbody>' + rows + '</tbody></table>';
 }
 
@@ -272,6 +282,31 @@ function openDispatchModalRepo() {
   openDispatchModal(REPO_URL);
 }
 
+function renderRepoConfig(registryData, repoUrl) {
+  var panel = document.getElementById('repo-config-panel');
+  var el = document.getElementById('repo-config-container');
+  if (!panel || !el || !registryData || !registryData.repos) return;
+  var repoShortName = REPO_SHORT;
+  var config = null;
+  for (var i = 0; i < registryData.repos.length; i++) {
+    var r = registryData.repos[i];
+    if (r.repo === repoUrl || (r.repo && r.repo.indexOf(repoShortName) !== -1)) { config = r; break; }
+  }
+  if (!config) return;
+  panel.style.display = '';
+  var rows = '';
+  rows += '<tr><td><strong>Enabled</strong></td><td>' + (config.enabled !== false ? '<span class="badge badge-on-track">Yes</span>' : '<span class="badge badge-breached">No</span>') + '</td></tr>';
+  rows += '<tr><td><strong>Schedule</strong></td><td>' + escapeHtml(config.schedule || 'default') + '</td></tr>';
+  if (config.importance) rows += '<tr><td><strong>Importance</strong></td><td>' + escapeHtml(config.importance) + '</td></tr>';
+  if (config.importance_score != null) rows += '<tr><td><strong>Priority Score</strong></td><td>' + config.importance_score + '</td></tr>';
+  if (config.max_sessions_per_cycle != null) rows += '<tr><td><strong>Max Sessions/Cycle</strong></td><td>' + config.max_sessions_per_cycle + '</td></tr>';
+  if (config.auto_scan != null) rows += '<tr><td><strong>Auto Scan</strong></td><td>' + (config.auto_scan ? 'Yes' : 'No') + '</td></tr>';
+  if (config.auto_dispatch != null) rows += '<tr><td><strong>Auto Dispatch</strong></td><td>' + (config.auto_dispatch ? 'Yes' : 'No') + '</td></tr>';
+  if (config.tags && config.tags.length) rows += '<tr><td><strong>Tags</strong></td><td>' + config.tags.map(function(t) { return '<span class="badge badge-unknown">' + escapeHtml(t) + '</span>'; }).join(' ') + '</td></tr>';
+  if (config.overrides && Object.keys(config.overrides).length) rows += '<tr><td><strong>Overrides</strong></td><td><code>' + escapeHtml(JSON.stringify(config.overrides)) + '</code></td></tr>';
+  el.innerHTML = '<table><tbody>' + rows + '</tbody></table>';
+}
+
 async function fetchRepoData() {
   showSkeletonMetrics('metrics-grid', 5);
   showSkeletonChart('trend-chart');
@@ -290,6 +325,10 @@ async function fetchRepoData() {
     renderSessionsTable(data.sessions.items || [], 'sessions-table-container', 'sessions-count');
     renderPrsTable(data.prs.items || [], 'prs-table-container', 'prs-count');
     renderIssuesTable(data.issues.items || [], 'issues-table-container', 'issues-count');
+    if (typeof fetchRegistry === 'function') {
+      var registry = await fetchRegistry();
+      if (registry) renderRepoConfig(registry, REPO_URL);
+    }
     setStatus('Ready');
     setUpdated();
   } catch (e) {
