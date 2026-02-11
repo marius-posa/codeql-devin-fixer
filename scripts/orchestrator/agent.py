@@ -201,7 +201,7 @@ def create_agent_triage_session(
         "structured_output_schema": AGENT_TRIAGE_OUTPUT_SCHEMA,
     }
     if max_acu:
-        payload["max_acu"] = max_acu
+        payload["max_acu_limit"] = max_acu
 
     url = f"{DEVIN_API_BASE}/sessions"
     resp = request_with_retry("POST", url, api_key, json_data=payload)
