@@ -450,9 +450,15 @@ function renderCategoryChartJs(container, data) {
 
 function renderTrendChartJs(container, runs) {
   if (!runs || !runs.length || typeof Chart === 'undefined') return;
+  var safeRuns = runs.map(function(r) {
+    return Object.assign({}, r, {
+      timestamp: String(r.timestamp || ''),
+      run_number: parseInt(r.run_number, 10) || 0
+    });
+  });
   container.innerHTML = '<div class="chart-canvas-wrap"><canvas></canvas></div>';
   var canvas = container.querySelector('canvas');
-  var sorted = runs.slice().sort(function(a, b) { return (a.timestamp || '').localeCompare(b.timestamp || ''); });
+  var sorted = safeRuns.slice().sort(function(a, b) { return (a.timestamp || '').localeCompare(b.timestamp || ''); });
   var labels = sorted.map(function(r) { return r.timestamp ? new Date(r.timestamp).toLocaleDateString() : '#' + (r.run_number || '?'); });
   var issuesData = sorted.map(function(r) { return r.issues_found || 0; });
   var sessionsData = sorted.map(function(r) { return (r.sessions || []).length; });
