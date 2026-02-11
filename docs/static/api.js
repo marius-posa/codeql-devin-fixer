@@ -952,6 +952,8 @@ function buildOrchestratorConfig(registry) {
     alert_webhook_url: orch.alert_webhook_url || '',
     alert_on_verified_fix: orch.alert_on_verified_fix !== false,
     alert_severities: orch.alert_severities || ['critical', 'high'],
+    dispatch_scoring_mode: orch.dispatch_scoring_mode || 'deterministic',
+    agent_score_weight: orch.agent_score_weight != null ? orch.agent_score_weight : 0.5,
   };
 }
 

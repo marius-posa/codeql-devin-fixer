@@ -68,8 +68,9 @@ def _serialize_orch_config(orch_config: dict) -> dict:
         "alert_webhook_url": orch_config.get("alert_webhook_url", ""),
         "alert_on_verified_fix": orch_config.get("alert_on_verified_fix", True),
         "alert_severities": orch_config.get("alert_severities", ["critical", "high"]),
+        "dispatch_scoring_mode": orch_config.get("dispatch_scoring_mode", "deterministic"),
+        "agent_score_weight": orch_config.get("agent_score_weight", 0.5),
     }
-
 
 
 def _normalize_dispatch_entry(entry: dict) -> dict:
@@ -311,6 +312,8 @@ def api_orchestrator_config_update():
         "alert_webhook_url",
         "alert_on_verified_fix",
         "alert_severities",
+        "dispatch_scoring_mode",
+        "agent_score_weight",
     )
     for key in allowed_keys:
         if key in body:

@@ -414,6 +414,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     fl = data["fl"]
     state = data["state"]
     remaining = data["remaining_capacity"]
+    scoring_mode = data.get("dispatch_scoring_mode", "deterministic")
 
     if max_sessions_override is not None:
         remaining = min(remaining, max_sessions_override)
@@ -502,6 +503,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
                 dispatch_history[fp]["last_dispatched"] = datetime.now(timezone.utc).isoformat()
                 dispatch_history[fp]["last_session_id"] = session_id
                 dispatch_history[fp]["consecutive_failures"] = 0
+                dispatch_history[fp]["recommendation_source"] = scoring_mode
 
             results.append({
                 "batch_id": batch["batch_id"],
