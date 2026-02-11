@@ -189,7 +189,9 @@ CREATE TABLE IF NOT EXISTS fingerprint_issues (
     last_seen_date    TEXT    NOT NULL DEFAULT '',
     appearances       INTEGER NOT NULL DEFAULT 1,
     latest_issue_id   TEXT    NOT NULL DEFAULT '',
-    fix_duration_hours REAL
+    fix_duration_hours REAL,
+    agent_priority_score REAL,
+    agent_dispatch      INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_fp_issues_status       ON fingerprint_issues(status);
@@ -256,11 +258,21 @@ def db_connection(db_path: pathlib.Path | None = None):
         conn.close()
 
 
+def _migrate_add_agent_score_columns(conn: sqlite3.Connection) -> None:
+    """Add agent_priority_score and agent_dispatch columns if missing."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(fingerprint_issues)").fetchall()}
+    if "agent_priority_score" not in cols:
+        conn.execute("ALTER TABLE fingerprint_issues ADD COLUMN agent_priority_score REAL")
+    if "agent_dispatch" not in cols:
+        conn.execute("ALTER TABLE fingerprint_issues ADD COLUMN agent_dispatch INTEGER")
+
+
 def init_db(conn: sqlite3.Connection | None = None) -> None:
     own_conn = conn is None
     if own_conn:
         conn = get_connection()
     conn.executescript(SCHEMA_SQL)
+    _migrate_add_agent_score_columns(conn)
     if _has_fts5(conn):
         conn.executescript(_FTS_SCHEMA_SQL)
     if own_conn:
@@ -963,6 +975,13 @@ def refresh_fingerprint_issues(conn: sqlite3.Connection, target_repo: str = "") 
         for fr in fp_rows:
             latest_fps.add(fr["fingerprint"])
 
+    existing_agent_scores: dict[str, tuple] = {}
+    score_rows = conn.execute(
+        "SELECT fingerprint, agent_priority_score, agent_dispatch FROM fingerprint_issues WHERE agent_priority_score IS NOT NULL"
+    ).fetchall()
+    for sr in score_rows:
+        existing_agent_scores[sr["fingerprint"]] = (sr["agent_priority_score"], sr["agent_dispatch"])
+
     if target_repo:
         conn.execute(
             "DELETE FROM fingerprint_issues WHERE target_repo = ?",
@@ -999,13 +1018,18 @@ def refresh_fingerprint_issues(conn: sqlite3.Connection, target_repo: str = "") 
                 delta = latest_ts - first_ts
                 fix_duration_hours = round(delta.total_seconds() / 3600, 1)
 
+        saved_scores = existing_agent_scores.get(fp)
+        agent_score = saved_scores[0] if saved_scores else None
+        agent_disp = saved_scores[1] if saved_scores else None
+
         conn.execute(
             """INSERT OR REPLACE INTO fingerprint_issues
                (fingerprint, rule_id, severity_tier, cwe_family, file, start_line,
                 description, resolution, code_churn, target_repo, status,
                 first_seen_run, first_seen_date, last_seen_run, last_seen_date,
-                appearances, latest_issue_id, fix_duration_hours)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                appearances, latest_issue_id, fix_duration_hours,
+                agent_priority_score, agent_dispatch)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 fp,
                 meta.get("rule_id", ""),
@@ -1025,6 +1049,8 @@ def refresh_fingerprint_issues(conn: sqlite3.Connection, target_repo: str = "") 
                 len(appearances),
                 latest["issue_id"],
                 fix_duration_hours,
+                agent_score,
+                agent_disp,
             ),
         )
         upserted += 1
@@ -1101,6 +1127,8 @@ def query_issues(conn: sqlite3.Connection, target_repo: str = "") -> list[dict]:
             "sla_limit_hours": sla["sla_limit_hours"],
             "sla_hours_elapsed": sla["sla_hours_elapsed"],
             "sla_hours_remaining": sla["sla_hours_remaining"],
+            "agent_priority_score": row["agent_priority_score"],
+            "agent_dispatch": bool(row["agent_dispatch"]) if row["agent_dispatch"] is not None else None,
         })
 
     return result
@@ -1217,10 +1245,35 @@ def query_issue_detail(conn: sqlite3.Connection, fingerprint: str) -> dict | Non
         "sla_limit_hours": sla["sla_limit_hours"],
         "sla_hours_elapsed": sla["sla_hours_elapsed"],
         "sla_hours_remaining": sla["sla_hours_remaining"],
+        "agent_priority_score": row["agent_priority_score"],
+        "agent_dispatch": bool(row["agent_dispatch"]) if row["agent_dispatch"] is not None else None,
     }
 
 
-_VALID_ISSUE_STATUSES = {"false_positive", "wont_fix", "new", "recurring"}
+def update_agent_scores(
+    conn: sqlite3.Connection,
+    decisions: list[dict],
+) -> int:
+    """Persist agent triage scores to fingerprint_issues rows."""
+    updated = 0
+    for d in decisions:
+        fp = d.get("fingerprint", "")
+        if not fp:
+            continue
+        score = d.get("agent_priority_score")
+        dispatch = d.get("dispatch")
+        if score is None:
+            continue
+        conn.execute(
+            "UPDATE fingerprint_issues SET agent_priority_score = ?, agent_dispatch = ? WHERE fingerprint = ?",
+            (float(score), int(dispatch) if dispatch is not None else None, fp),
+        )
+        updated += 1
+    conn.commit()
+    return updated
+
+
+_VALID_ISSUE_STATUSES= {"false_positive", "wont_fix", "new", "recurring"}
 
 
 def update_issue_status(conn: sqlite3.Connection, fingerprint: str, new_status: str) -> bool:

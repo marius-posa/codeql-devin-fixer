@@ -23,7 +23,7 @@ try:
 except ImportError:
     from scripts.logging_config import setup_logging
 
-from database import get_connection, init_db, insert_audit_log, auto_export_audit_log  # noqa: E402
+from database import get_connection, init_db, insert_audit_log, auto_export_audit_log, update_agent_scores  # noqa: E402
 from fix_learning import FixLearning  # noqa: E402
 from issue_tracking import DEFAULT_SLA_HOURS  # noqa: E402
 from verification import load_verification_records, build_fingerprint_fix_map  # noqa: E402
@@ -319,7 +319,7 @@ def save_agent_triage_results(
     strategy_notes: str = "",
     eligible_issues: list[dict[str, Any]] | None = None,
 ) -> None:
-    """Persist agent triage results with pre-computed plan and effectiveness."""
+    """Persist agent triage results to orchestrator state and telemetry DB."""
     state = _state.load_state()
     timestamp = datetime.now(timezone.utc).isoformat()
 
@@ -346,13 +346,6 @@ def save_agent_triage_results(
             entry["agent_dispatch"] = None
         plan_dispatches.append(entry)
 
-    dispatch_history = state.get("dispatch_history", {})
-    verification_records = load_verification_records(_state.RUNS_DIR)
-    fp_fix_map = build_fingerprint_fix_map(verification_records)
-    effectiveness = _build_effectiveness_snapshot(
-        dispatch_history, decisions, fp_fix_map, timestamp,
-    )
-
     state["agent_triage"] = {
         "timestamp": timestamp,
         "session_id": session_id,
@@ -366,79 +359,23 @@ def save_agent_triage_results(
             "total_issues": len(eligible_issues or []),
             "eligible_issues": len(eligible_issues or []),
         },
-        "effectiveness": effectiveness,
     }
     _state.save_state(state)
+
+    conn = get_connection()
+    try:
+        init_db(conn)
+        update_agent_scores(conn, decisions)
+    except Exception:
+        logger.warning("Failed to persist agent scores to telemetry DB", exc_info=True)
+    finally:
+        conn.close()
 
 
 def load_agent_triage_results() -> dict[str, Any]:
     """Load the most recent agent triage results from state."""
     state = _state.load_state()
     return state.get("agent_triage", {})
-
-
-def _build_effectiveness_snapshot(
-    dispatch_history: dict[str, Any],
-    decisions: list[dict[str, Any]],
-    fp_fix_map: dict[str, Any],
-    timestamp: str,
-) -> dict[str, Any]:
-    """Build an effectiveness snapshot from raw decisions and dispatch history."""
-    agent_fps = {d["fingerprint"] for d in decisions if d.get("dispatch")}
-    all_agent_fps = {d["fingerprint"] for d in decisions}
-
-    agent_dispatched = 0
-    agent_fixed = 0
-    det_dispatched = 0
-    det_fixed = 0
-
-    for fp, history in dispatch_history.items():
-        source = "deterministic"
-        if isinstance(history, dict):
-            source = history.get("recommendation_source", "deterministic")
-        elif isinstance(history, list) and history:
-            last = history[-1] if history else {}
-            source = last.get("recommendation_source", "deterministic")
-        is_fixed = fp in fp_fix_map
-
-        if source == "agent":
-            agent_dispatched += 1
-            if is_fixed:
-                agent_fixed += 1
-        else:
-            det_dispatched += 1
-            if is_fixed:
-                det_fixed += 1
-
-    return {
-        "agent": {
-            "recommended": len(agent_fps),
-            "not_recommended": len(all_agent_fps) - len(agent_fps),
-            "dispatched": agent_dispatched,
-            "fixed": agent_fixed,
-            "fix_rate": round(agent_fixed / max(agent_dispatched, 1) * 100, 1),
-        },
-        "deterministic": {
-            "dispatched": det_dispatched,
-            "fixed": det_fixed,
-            "fix_rate": round(det_fixed / max(det_dispatched, 1) * 100, 1),
-        },
-        "has_agent_data": len(decisions) > 0,
-        "timestamp": timestamp,
-    }
-
-
-def build_effectiveness_report(
-    dispatch_history: dict[str, Any],
-    agent_triage: dict[str, Any],
-    fp_fix_map: dict[str, Any],
-) -> dict[str, Any]:
-    """Compare effectiveness of agent vs deterministic recommendations."""
-    decisions = agent_triage.get("decisions", [])
-    timestamp = datetime.now(timezone.utc).isoformat()
-    return _build_effectiveness_snapshot(
-        dispatch_history, decisions, fp_fix_map, timestamp,
-    )
 
 
 def cmd_agent_triage(args: argparse.Namespace) -> int:
