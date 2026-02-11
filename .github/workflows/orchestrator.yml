@@ -18,7 +18,7 @@ on:
           - agent-triage
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   orchestrate:
@@ -29,6 +29,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT || github.token }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -45,3 +47,12 @@ jobs:
           GH_PAT: ${{ secrets.GH_PAT }}
           ACTION_REPO: ${{ github.repository }}
         run: python -m scripts.orchestrator ${{ inputs.command || 'cycle' }} --json
+
+      - name: Persist orchestrator data
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add telemetry/orchestrator_state.json telemetry/runs/*.json 2>/dev/null || true
+          git diff --cached --quiet || git commit -m "chore: update orchestrator data [skip ci]"
+          git push || true
