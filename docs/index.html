@@ -716,13 +716,6 @@ function renderReposTable(repos) {
     + '</tr></thead><tbody>' + rows + '</tbody></table>';
 }
 
-function _detectTriggerType(run) {
-  var label = run.run_label || '';
-  if (label.indexOf('orchestrator_dispatch') !== -1) return 'orchestrator';
-  if (label.indexOf('orchestrator') !== -1) return 'orchestrator';
-  return 'manual';
-}
-
 function renderRunsTable(runs) {
   const el = document.getElementById('runs-table-container');
   document.getElementById('runs-count').textContent = runs.length;
@@ -936,7 +929,7 @@ function renderPrsTabPending(prs) {
       + '<td>'+escapeHtml(p.title)+'</td>'
       + '<td>'+escapeHtml(p.repo || '')+'</td>'
       + '<td>'+sessionLink+'</td>'
-      + '<td>'+(p.issue_ids || []).map(function(id) { return '<span class="issue-id">'+escapeHtml(id)+'</span>'; }).join(' ') || '-'+'</td>'
+      + '<td>'+((p.issue_ids || []).map(function(id) { return '<span class="issue-id">'+escapeHtml(id)+'</span>'; }).join(' ') || '-')+'</td>'
       + '<td>'+formatDate(p.created_at)+'</td>'
       + '</tr>';
   }).join('');

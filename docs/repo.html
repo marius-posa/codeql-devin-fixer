@@ -256,13 +256,6 @@ function renderMetrics(s) {
   }).join('');
 }
 
-function _detectTriggerType(run) {
-  var label = run.run_label || '';
-  if (label.indexOf('orchestrator_dispatch') !== -1) return 'orchestrator';
-  if (label.indexOf('orchestrator') !== -1) return 'orchestrator';
-  return 'manual';
-}
-
 function renderRunsTable(runs) {
   const el = document.getElementById('runs-table-container');
   document.getElementById('runs-count').textContent = runs.length;

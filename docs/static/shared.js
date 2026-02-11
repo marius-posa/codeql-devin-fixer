@@ -91,6 +91,13 @@ function renderBarChart(container, data) {
   `).join('') + '</div>';
 }
 
+function _detectTriggerType(run) {
+  var label = run.run_label || '';
+  if (label.indexOf('orchestrator_dispatch') !== -1) return 'orchestrator';
+  if (label.indexOf('orchestrator') !== -1) return 'orchestrator';
+  return 'manual';
+}
+
 var VALID_SESSION_STATUSES = ['created', 'started', 'running', 'finished', 'stopped'];
 
 function _normalizeSessionStatus(status) {
