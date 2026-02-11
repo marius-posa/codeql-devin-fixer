@@ -9,9 +9,9 @@ except ImportError:
     from scripts.logging_config import setup_logging
 
 try:
-    from retry_utils import request_with_retry as _retry_request
+    from retry_utils import request_with_retry as _retry_request, MAX_RETRIES  # noqa: F401
 except ImportError:
-    from scripts.retry_utils import request_with_retry as _retry_request
+    from scripts.retry_utils import request_with_retry as _retry_request, MAX_RETRIES  # noqa: F401
 
 logger = setup_logging(__name__)
 
