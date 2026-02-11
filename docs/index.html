@@ -1267,7 +1267,7 @@ async function triggerAgentTriage() {
   btn.innerHTML = '<span class="spinner"></span> Triaging...';
   setStatus('Dispatching agent triage workflow...');
   _logAuditEntry('agent_triage', 'orchestrator', 'Triggered agent triage from dashboard');
-  var result = await triggerOrchestratorWorkflow();
+  var result = await triggerOrchestratorWorkflow('agent-triage');
   if (result.error) {
     setStatus('Triage error: ' + result.error);
   } else {
@@ -1313,7 +1313,7 @@ async function triggerOrchestratorCycleStatic() {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Running...';
   setStatus('Dispatching orchestrator workflow...');
-  var result = await triggerOrchestratorWorkflow();
+  var result = await triggerOrchestratorWorkflow('cycle');
   if (result.error) {
     setStatus('Orchestrator error: ' + result.error);
   } else {

@@ -1021,16 +1021,20 @@ function buildOrchestratorPlan(issues, state, verificationRecords) {
   return { planned_dispatches: dispatches };
 }
 
-async function triggerOrchestratorWorkflow() {
+async function triggerOrchestratorWorkflow(command) {
   var cfg = getConfig();
   if (!cfg.githubToken) return { error: 'GitHub token not configured. Open Settings to add it.' };
   if (!cfg.actionRepo) return { error: 'Action repo not configured. Open Settings to add it.' };
   var url = GH_API + '/repos/' + cfg.actionRepo + '/actions/workflows/orchestrator.yml/dispatches';
+  var payload = { ref: 'main' };
+  if (command) {
+    payload.inputs = { command: command };
+  }
   try {
     var resp = await fetch(url, {
       method: 'POST',
       headers: ghHeaders(),
-      body: JSON.stringify({ ref: 'main' }),
+      body: JSON.stringify(payload),
     });
     if (resp.status === 204) return { success: true };
     var errMsg = 'GitHub API error (' + resp.status + ')';
