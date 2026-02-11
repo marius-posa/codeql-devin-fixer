@@ -17,14 +17,16 @@
     "delay_seconds": 30
   },
   "orchestrator": {
-    "global_session_limit": 8,
+    "global_session_limit": 3,
     "global_session_limit_period_hours": 24,
     "objectives": [],
     "alert_on_verified_fix": true,
     "alert_severities": [
       "critical",
       "high"
-    ]
+    ],
+    "dispatch_scoring_mode": "agent",
+    "agent_score_weight": 0.5
   },
   "repos": [
     {
