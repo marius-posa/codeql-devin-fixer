@@ -14,8 +14,6 @@ telemetry/telemetry.db-shm
 *.db-wal
 *.db-shm
 
-# Orchestrator state (migrated to SQLite)
-telemetry/orchestrator_state.json
 
 # Server-side session files
 telemetry/flask_session/

@@ -794,20 +794,7 @@ function renderOrchestratorPanel() {
   html += '<span class="progress-label">' + used + ' / ' + max + ' used (' + remaining + ' remaining)</span>';
   html += '</div></div>';
 
-  var objectives = s.objective_progress || [];
-  if (objectives.length > 0) {
-    html += '<div class="mb-12"><div class="section-label">Objectives</div>';
-    objectives.forEach(function(obj) {
-      var pct = obj.target_count > 0 ? Math.round((obj.current_count / obj.target_count) * 100) : 0;
-      var barColor = obj.met ? 'var(--accent-green)' : 'var(--accent-blue, #58a6ff)';
-      html += '<div class="mb-6"><div class="font-12 mb-2">' + escapeHtml(obj.objective) + ' <span class="text-muted">' + obj.current_count + '/' + obj.target_count;
-      if (obj.met) html += ' (met)';
-      html += '</span></div>';
-      html += '<div class="progress-track progress-track-sm">';
-      html += '<div class="progress-fill" style="background:' + barColor + ';width:' + Math.min(pct, 100) + '%"></div></div></div>';
-    });
-    html += '</div>';
-  }
+
 
   var dispatches = (orchestratorPlan || {}).planned_dispatches || [];
   if (dispatches.length > 0) {
@@ -940,22 +927,10 @@ function renderOrchestratorConfigPanel() {
   html += '<div id="orch-config-display">';
   html += '<div class="config-grid">';
   html += '<div><span class="text-muted">Session limit:</span> ' + (c.global_session_limit || 20) + ' / ' + (c.global_session_limit_period_hours || 24) + 'h</div>';
-  html += '<div><span class="text-muted">Alert on objective met:</span> ' + (c.alert_on_objective_met ? 'Yes' : 'No') + '</div>';
   html += '<div><span class="text-muted">Alert on verified fix:</span> ' + (c.alert_on_verified_fix ? 'Yes' : 'No') + '</div>';
   html += '<div><span class="text-muted">Alert severities:</span> ' + (alertSevs.length > 0 ? alertSevs.join(', ') : 'none') + '</div>';
   html += '<div><span class="text-muted">Webhook:</span> ' + (c.alert_webhook_url ? '<span title="' + escapeHtml(c.alert_webhook_url) + '">configured</span>' : 'not set') + '</div>';
   html += '</div>';
-  var objs = c.objectives || [];
-  if (objs.length > 0) {
-    html += '<div class="mt-8 font-12"><span class="text-muted">Objectives:</span></div>';
-    html += '<table class="mt-4 font-12"><thead><tr><th>Objective</th><th>Target</th><th>Severity Filter</th></tr></thead><tbody>';
-    objs.forEach(function(o) {
-      html += '<tr><td>' + escapeHtml(o.objective || '') + '</td><td>' + (o.target_count || 0) + '</td><td>' + escapeHtml(o.severity || 'any') + '</td></tr>';
-    });
-    html += '</tbody></table>';
-  } else {
-    html += '<div class="mt-6 font-12 text-muted">No objectives configured</div>';
-  }
   html += '</div>';
   html += '<div id="orch-config-form" style="display:none">';
   html += '<div class="config-grid-2 mb-8">';
@@ -965,7 +940,6 @@ function renderOrchestratorConfigPanel() {
   html += '<input class="form-input form-input-sm" id="orch-cfg-period" type="number" value="' + (c.global_session_limit_period_hours || 24) + '"></div>';
   html += '</div>';
   html += '<div class="config-grid-2 mb-8">';
-  html += '<div class="form-group form-group-compact"><label class="form-check"><input type="checkbox" id="orch-cfg-alert-obj"' + (c.alert_on_objective_met ? ' checked' : '') + '><span class="font-11">Alert on objective met</span></label></div>';
   html += '<div class="form-group form-group-compact"><label class="form-check"><input type="checkbox" id="orch-cfg-alert-fix"' + (c.alert_on_verified_fix ? ' checked' : '') + '><span class="font-11">Alert on verified fix</span></label></div>';
   html += '</div>';
   html += '<div class="form-group form-group-compact mb-8"><label class="form-label-sm">Alert Severities</label>';
@@ -977,22 +951,6 @@ function renderOrchestratorConfigPanel() {
   html += '</div></div>';
   html += '<div class="form-group form-group-compact mb-8"><label class="form-label-sm">Webhook URL</label>';
   html += '<input class="form-input form-input-sm" id="orch-cfg-webhook" type="text" value="' + escapeHtml(c.alert_webhook_url || '') + '" placeholder="https://hooks.slack.com/..."></div>';
-  html += '<div id="orch-obj-editor" class="mb-8">';
-  html += '<div class="form-label-sm mb-4">Objectives</div>';
-  html += '<div id="orch-obj-list">';
-  objs.forEach(function(o, i) {
-    html += '<div class="orch-obj-row">';
-    html += '<input class="form-input form-input-sm font-12 orch-obj-name" value="' + escapeHtml(o.objective || '') + '" placeholder="Objective name">';
-    html += '<input class="form-input form-input-sm font-12 orch-obj-target" type="number" value="' + (o.target_count || 0) + '" placeholder="Target">';
-    html += '<select class="form-input form-input-sm font-12 orch-obj-sev"><option value="">any</option>';
-    sevAll.forEach(function(s) { html += '<option value="' + s + '"' + (o.severity === s ? ' selected' : '') + '>' + s + '</option>'; });
-    html += '</select>';
-    html += '<button class="btn btn-sm btn-remove-sm" onclick="this.parentElement.remove()">&times;</button>';
-    html += '</div>';
-  });
-  html += '</div>';
-  html += '<button class="btn btn-sm font-11 mt-2" onclick="_addObjectiveRow()">+ Add Objective</button>';
-  html += '</div>';
   html += '<div class="flex-row-tight">';
   html += '<button class="btn btn-sm btn-primary" onclick="_saveOrchestratorConfig()">Save</button>';
   html += '<button class="btn btn-sm" onclick="_toggleOrchestratorConfigEdit()">Cancel</button>';
@@ -1002,6 +960,7 @@ function renderOrchestratorConfigPanel() {
 
 function _addObjectiveRow() {
   var list = document.getElementById('orch-obj-list');
+  if (!list) return;
   var div = document.createElement('div');
   div.className = 'orch-obj-row';
   div.innerHTML = '<input class="form-input form-input-sm font-12 orch-obj-name" value="" placeholder="Objective name">'
@@ -1027,22 +986,10 @@ async function _saveOrchestratorConfig() {
   var period = parseInt(document.getElementById('orch-cfg-period').value, 10);
   if (isNaN(limit) || limit < 1) { setStatus('Invalid session limit'); return; }
   if (isNaN(period) || period < 1) { setStatus('Invalid period'); return; }
-  var alertObj = document.getElementById('orch-cfg-alert-obj').checked;
   var alertFix = document.getElementById('orch-cfg-alert-fix').checked;
   var alertSevs = [];
   document.querySelectorAll('.orch-cfg-sev:checked').forEach(function(cb) { alertSevs.push(cb.value); });
   var webhook = (document.getElementById('orch-cfg-webhook').value || '').trim();
-  var objectives = [];
-  document.querySelectorAll('.orch-obj-row').forEach(function(row) {
-    var name = row.querySelector('.orch-obj-name').value.trim();
-    var target = parseInt(row.querySelector('.orch-obj-target').value, 10);
-    var sev = row.querySelector('.orch-obj-sev').value;
-    if (name && target > 0) {
-      var o = { objective: name, target_count: target };
-      if (sev) o.severity = sev;
-      objectives.push(o);
-    }
-  });
   setStatus('Saving orchestrator config...');
   try {
     var res = await _authedFetch(API + '/api/orchestrator/config', {
@@ -1051,11 +998,9 @@ async function _saveOrchestratorConfig() {
       body: JSON.stringify({
         global_session_limit: limit,
         global_session_limit_period_hours: period,
-        alert_on_objective_met: alertObj,
         alert_on_verified_fix: alertFix,
         alert_severities: alertSevs,
         alert_webhook_url: webhook,
-        objectives: objectives,
       }),
     });
     if (!res.ok) { setStatus('Config save failed: ' + res.status); return; }

@@ -1026,7 +1026,7 @@ function renderOrchestratorPanel() {
   var labelEl = document.getElementById('orchestrator-status-label');
   var histEl = document.getElementById('orchestrator-history-container');
   if (!orchestratorStatus) {
-    el.innerHTML = '<div class="empty-state">Orchestrator rate-limit and dispatch history require the telemetry server. Issue counts and objectives are shown below.</div>';
+    el.innerHTML = '<div class="empty-state">Orchestrator rate-limit and dispatch history require the telemetry server. Issue counts are shown below.</div>';
     if (histEl) histEl.innerHTML = '';
     return;
   }
@@ -1050,19 +1050,6 @@ function renderOrchestratorPanel() {
       html += '<span class="badge font-12 badge-pill">' + escapeHtml(k) + ': ' + breakdown[k] + '</span>';
     });
     html += '</div></div>';
-  }
-  var objectives = s.objective_progress || [];
-  if (objectives.length > 0) {
-    html += '<div class="mb-12"><div class="section-label mb-6">Objective Progress</div>';
-    objectives.forEach(function(obj) {
-      var pct = Math.round(obj.current_count / Math.max(obj.target_count, 1) * 100);
-      var color = obj.met ? 'var(--accent-green)' : pct >= 50 ? 'var(--accent-orange)' : 'var(--accent-red)';
-      html += '<div class="mb-6 font-13"><span>' + escapeHtml(obj.objective) + '</span>';
-      html += ' <span class="fw-600">' + obj.current_count + '/' + obj.target_count + '</span>';
-      html += ' <span style="color:' + color + '" class="font-11">' + (obj.met ? 'MET' : pct + '%') + '</span>';
-      html += '<div class="progress-track-bar mt-2" style="height:8px"><div class="progress-fill" style="background:' + color + ';width:' + Math.min(pct, 100) + '%"></div></div></div>';
-    });
-    html += '</div>';
   }
   el.innerHTML = html;
   if (histEl && orchestratorHistory) {
@@ -1095,8 +1082,6 @@ function renderOrchestratorConfigPanel() {
   html += '<div class="config-grid font-13">';
   html += '<div><span class="text-muted">Session limit:</span> ' + c.global_session_limit + '</div>';
   html += '<div><span class="text-muted">Period:</span> ' + c.global_session_limit_period_hours + 'h</div>';
-  html += '<div><span class="text-muted">Objectives:</span> ' + (c.objectives || []).length + '</div>';
-  html += '<div><span class="text-muted">Alert on objective met:</span> ' + (c.alert_on_objective_met ? 'yes' : 'no') + '</div>';
   html += '<div><span class="text-muted">Alert on verified fix:</span> ' + (c.alert_on_verified_fix ? 'yes' : 'no') + '</div>';
   html += '<div><span class="text-muted">Alert severities:</span> ' + (c.alert_severities || []).join(', ') + '</div>';
   html += '<div><span class="text-muted">Scoring mode:</span> ' + (c.dispatch_scoring_mode || 'deterministic') + '</div>';
