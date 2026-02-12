@@ -1,0 +1,77 @@
+{
+  "target_repo": "https://github.com/marius-posa/juice-shop",
+  "fork_url": "",
+  "run_number": 0,
+  "run_id": "",
+  "run_url": "",
+  "run_label": "orchestrator_dispatch_2026-02-12T18-52-43.631411+00-00_3",
+  "timestamp": "2026-02-12T18:52:43.631411+00:00",
+  "issues_found": 0,
+  "batches_created": 1,
+  "zero_issue_run": true,
+  "severity_breakdown": {},
+  "category_breakdown": {},
+  "sessions": [
+    {
+      "session_id": "devin-d5e61012e7294d62a365a7a6631d229d",
+      "session_url": "https://app.devin.ai/sessions/d5e61012e7294d62a365a7a6631d229d",
+      "batch_id": 3,
+      "status": "created",
+      "issue_ids": [
+        "CQLF-ALL-R54-0041",
+        "CQLF-ALL-R54-0042",
+        "CQLF-ALL-R54-0043",
+        "CQLF-ALL-R54-0044",
+        "CQLF-ALL-R54-0045"
+      ],
+      "pr_url": ""
+    }
+  ],
+  "issue_fingerprints": [
+    {
+      "fingerprint": "22c0b9568b7c1e68010a",
+      "id": "CQLF-ALL-R54-0041",
+      "rule_id": "js/template-object-injection",
+      "severity_tier": "critical",
+      "cwe_family": "path-traversal",
+      "file": "",
+      "start_line": 0
+    },
+    {
+      "fingerprint": "0c2a6c2b67c016284bab",
+      "id": "CQLF-ALL-R54-0042",
+      "rule_id": "js/template-object-injection",
+      "severity_tier": "critical",
+      "cwe_family": "path-traversal",
+      "file": "",
+      "start_line": 0
+    },
+    {
+      "fingerprint": "efe60dfc730fb6034892",
+      "id": "CQLF-ALL-R54-0043",
+      "rule_id": "js/zipslip",
+      "severity_tier": "high",
+      "cwe_family": "path-traversal",
+      "file": "",
+      "start_line": 0
+    },
+    {
+      "fingerprint": "b407a2987ad458672a3b",
+      "id": "CQLF-ALL-R54-0044",
+      "rule_id": "js/path-injection",
+      "severity_tier": "high",
+      "cwe_family": "path-traversal",
+      "file": "",
+      "start_line": 0
+    },
+    {
+      "fingerprint": "359c6ab0586a028f3828",
+      "id": "CQLF-ALL-R54-0045",
+      "rule_id": "js/path-injection",
+      "severity_tier": "high",
+      "cwe_family": "path-traversal",
+      "file": "",
+      "start_line": 0
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+{
+  "target_repo": "https://github.com/marius-posa/codeql-devin-fixer",
+  "fork_url": "",
+  "run_number": 0,
+  "run_id": "",
+  "run_url": "",
+  "run_label": "orchestrator_dispatch_2026-02-12T18-52-41.089938+00-00_2",
+  "timestamp": "2026-02-12T18:52:41.089938+00:00",
+  "issues_found": 0,
+  "batches_created": 1,
+  "zero_issue_run": true,
+  "severity_breakdown": {},
+  "category_breakdown": {},
+  "sessions": [
+    {
+      "session_id": "devin-5ebe52e6fac647e3b54032370cf64913",
+      "session_url": "https://app.devin.ai/sessions/5ebe52e6fac647e3b54032370cf64913",
+      "batch_id": 2,
+      "status": "created",
+      "issue_ids": [
+        "CQLF-ALL-R55-0008",
+        "CQLF-ALL-R55-0009",
+        "CQLF-ALL-R55-0010",
+        "CQLF-ALL-R55-0011"
+      ],
+      "pr_url": ""
+    }
+  ],
+  "issue_fingerprints": [
+    {
+      "fingerprint": "b00fc9763aeface15be8",
+      "id": "CQLF-ALL-R55-0008",
+      "rule_id": "py/log-injection",
+      "severity_tier": "high",
+      "cwe_family": "logging",
+      "file": "",
+      "start_line": 0
+    },
+    {
+      "fingerprint": "4db8f7f4c892983713df",
+      "id": "CQLF-ALL-R55-0009",
+      "rule_id": "py/log-injection",
+      "severity_tier": "high",
+      "cwe_family": "logging",
+      "file": "",
+      "start_line": 0
+    },
+    {
+      "fingerprint": "a00ce6d728e6cb41de88",
+      "id": "CQLF-ALL-R55-0010",
+      "rule_id": "py/log-injection",
+      "severity_tier": "high",
+      "cwe_family": "logging",
+      "file": "",
+      "start_line": 0
+    },
+    {
+      "fingerprint": "a5b290e817f338da5bba",
+      "id": "CQLF-ALL-R55-0011",
+      "rule_id": "py/log-injection",
+      "severity_tier": "high",
+      "cwe_family": "logging",
+      "file": "",
+      "start_line": 0
+    }
+  ]
+}
