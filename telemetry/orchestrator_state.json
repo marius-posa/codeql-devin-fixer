@@ -99,27 +99,27 @@
     }
   },
   "agent_triage": {
-    "timestamp": "2026-02-13T00:05:41.961520+00:00",
-    "session_id": "devin-4faa79d696b04f7389763797f5a7172e",
+    "timestamp": "2026-02-13T00:17:47.672196+00:00",
+    "session_id": "devin-206b400c37b54825a56e7e0d2c10006d",
     "decisions": [
       {
         "fingerprint": "4c3cb0aaa0ad6a402aba",
-        "agent_priority_score": 72.0,
-        "reasoning": "High-severity XSS (js/xss-through-dom) in codeql-devin-fixer; deterministic score 0.65 and XSS family has 28.6% historical fix rate. SLA is at-risk but ACU budget is exhausted (0/3), so cannot dispatch now; recommend first dispatch when sessions available.",
+        "agent_priority_score": 75.0,
+        "reasoning": "High-severity JS XSS (score 0.72), at-risk SLA, moderate historical fix rate (28.6%) \u2192 highest urgency but ACU budget exhausted so cannot dispatch now.",
         "dispatch": false
       },
       {
         "fingerprint": "4c61cb3f3f1109b4d403",
-        "agent_priority_score": 45.0,
-        "reasoning": "High-severity Python crypto issue (py/weak-sensitive-data-hashing) in dvpwa; deterministic score 0.4 and crypto family has 0% prior fix rate (no sessions), lowering feasibility. SLA is at-risk but ACU budget is exhausted (0/3), so do not dispatch now; schedule as secondary after XSS.",
+        "agent_priority_score": 55.0,
+        "reasoning": "High-severity Python crypto hashing issue (score 0.45), at-risk SLA, no historical fixes for crypto family \u2192 lower priority and exploratory; ACU budget exhausted so cannot dispatch now.",
         "dispatch": false
       }
     ],
-    "strategy_notes": "ACU budget is 0/3 remaining for the 24h window; both issues are SLA at-risk and currently blocked from dispatch. Prioritise the XSS issue first when budget replenishes due to higher score and non-zero historical fix rate; dispatch the crypto issue second as an exploratory session to establish fix feasibility. If SLA breach becomes imminent before ACU replenishment, escalate for additional sessions or manual intervention.",
+    "strategy_notes": "ACU budget is 0/3 remaining; no issues can be dispatched until budget refreshes. Prioritise XSS issue first when resources available, then crypto. No cross-repo pattern linkage detected between these two issues.",
     "plan": {
-      "timestamp": "2026-02-13T00:05:41.961520+00:00",
-      "session_id": "devin-4faa79d696b04f7389763797f5a7172e",
-      "strategy_notes": "ACU budget is 0/3 remaining for the 24h window; both issues are SLA at-risk and currently blocked from dispatch. Prioritise the XSS issue first when budget replenishes due to higher score and non-zero historical fix rate; dispatch the crypto issue second as an exploratory session to establish fix feasibility. If SLA breach becomes imminent before ACU replenishment, escalate for additional sessions or manual intervention.",
+      "timestamp": "2026-02-13T00:17:47.672196+00:00",
+      "session_id": "devin-206b400c37b54825a56e7e0d2c10006d",
+      "strategy_notes": "ACU budget is 0/3 remaining; no issues can be dispatched until budget refreshes. Prioritise XSS issue first when resources available, then crypto. No cross-repo pattern linkage detected between these two issues.",
       "planned_dispatches": [
         {
           "fingerprint": "4c3cb0aaa0ad6a402aba",
@@ -127,9 +127,9 @@
           "rule_id": "js/xss-through-dom",
           "severity_tier": "high",
           "cwe_family": "xss",
-          "priority_score": 0.65,
-          "agent_priority_score": 72.0,
-          "agent_reasoning": "High-severity XSS (js/xss-through-dom) in codeql-devin-fixer; deterministic score 0.65 and XSS family has 28.6% historical fix rate. SLA is at-risk but ACU budget is exhausted (0/3), so cannot dispatch now; recommend first dispatch when sessions available.",
+          "priority_score": 0.72,
+          "agent_priority_score": 75.0,
+          "agent_reasoning": "High-severity JS XSS (score 0.72), at-risk SLA, moderate historical fix rate (28.6%) \u2192 highest urgency but ACU budget exhausted so cannot dispatch now.",
           "agent_dispatch": false
         },
         {
@@ -138,9 +138,9 @@
           "rule_id": "py/weak-sensitive-data-hashing",
           "severity_tier": "high",
           "cwe_family": "crypto",
-          "priority_score": 0.4,
-          "agent_priority_score": 45.0,
-          "agent_reasoning": "High-severity Python crypto issue (py/weak-sensitive-data-hashing) in dvpwa; deterministic score 0.4 and crypto family has 0% prior fix rate (no sessions), lowering feasibility. SLA is at-risk but ACU budget is exhausted (0/3), so do not dispatch now; schedule as secondary after XSS.",
+          "priority_score": 0.45,
+          "agent_priority_score": 55.0,
+          "agent_reasoning": "High-severity Python crypto hashing issue (score 0.45), at-risk SLA, no historical fixes for crypto family \u2192 lower priority and exploratory; ACU budget exhausted so cannot dispatch now.",
           "agent_dispatch": false
         }
       ],
