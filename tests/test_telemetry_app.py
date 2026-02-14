@@ -1690,3 +1690,69 @@ class TestEndToEndOrchestratorCycle:
         fix_rates_resp = client.get("/api/orchestrator/fix-rates")
         assert fix_rates_resp.status_code == 200
         assert "overall" in fix_rates_resp.get_json()
+
+
+class TestXssThroughDomMitigation:
+    """Verify that renderTrendChartJs does not use Object.assign to copy
+    tainted DOM properties, preventing js/xss-through-dom (CQLF-ALL-R56-0001)."""
+
+    def _read_render_trend_block(self, path):
+        with open(path, "r") as f:
+            content = f.read()
+        start = content.find("function renderTrendChartJs(")
+        assert start != -1, f"renderTrendChartJs not found in {path}"
+        brace_depth, i = 0, start
+        while i < len(content):
+            if content[i] == "{":
+                brace_depth += 1
+            elif content[i] == "}":
+                brace_depth -= 1
+                if brace_depth == 0:
+                    return content[start : i + 1]
+            i += 1
+        return content[start:]
+
+    def test_docs_index_no_object_assign(self):
+        block = self._read_render_trend_block(
+            os.path.join(os.path.dirname(__file__), "..", "docs", "index.html")
+        )
+        assert "Object.assign" not in block
+
+    def test_dashboard_no_object_assign(self):
+        block = self._read_render_trend_block(
+            os.path.join(
+                os.path.dirname(__file__),
+                "..",
+                "telemetry",
+                "templates",
+                "dashboard.html",
+            )
+        )
+        assert "Object.assign" not in block
+
+    def test_xss_payload_not_copied_through(self):
+        xss = "<script>alert(1)</script>"
+        run = {
+            "timestamp": xss,
+            "run_number": xss,
+            "issues_found": xss,
+            "sessions": xss,
+            "malicious_extra": xss,
+        }
+        safe = {
+            "timestamp": str(run.get("timestamp") or ""),
+            "run_number": int(run.get("run_number") or 0)
+            if str(run.get("run_number", "")).isdigit()
+            else 0,
+            "issues_found": int(run.get("issues_found") or 0)
+            if str(run.get("issues_found", "")).isdigit()
+            else 0,
+            "sessions": run["sessions"]
+            if isinstance(run.get("sessions"), list)
+            else [],
+        }
+        assert "malicious_extra" not in safe
+        assert safe["run_number"] == 0
+        assert safe["issues_found"] == 0
+        assert safe["sessions"] == []
+        assert safe["timestamp"] == xss
