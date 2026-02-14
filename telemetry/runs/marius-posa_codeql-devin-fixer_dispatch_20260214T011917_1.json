@@ -1,0 +1,37 @@
+{
+  "target_repo": "https://github.com/marius-posa/codeql-devin-fixer",
+  "fork_url": "",
+  "run_number": 0,
+  "run_id": "",
+  "run_url": "",
+  "run_label": "orchestrator_dispatch_2026-02-14T01-19-17.523536+00-00_1",
+  "timestamp": "2026-02-14T01:19:17.523536+00:00",
+  "issues_found": 0,
+  "batches_created": 1,
+  "zero_issue_run": true,
+  "severity_breakdown": {},
+  "category_breakdown": {},
+  "sessions": [
+    {
+      "session_id": "devin-88cb736c1a50419f889124e499f34494",
+      "session_url": "https://app.devin.ai/sessions/88cb736c1a50419f889124e499f34494",
+      "batch_id": 1,
+      "status": "created",
+      "issue_ids": [
+        "CQLF-ALL-R56-0001"
+      ],
+      "pr_url": ""
+    }
+  ],
+  "issue_fingerprints": [
+    {
+      "fingerprint": "4c3cb0aaa0ad6a402aba",
+      "id": "CQLF-ALL-R56-0001",
+      "rule_id": "js/xss-through-dom",
+      "severity_tier": "high",
+      "cwe_family": "xss",
+      "file": "",
+      "start_line": 0
+    }
+  ]
+}

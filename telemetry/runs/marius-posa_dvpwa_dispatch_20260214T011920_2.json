@@ -1,0 +1,37 @@
+{
+  "target_repo": "https://github.com/marius-posa/dvpwa",
+  "fork_url": "",
+  "run_number": 0,
+  "run_id": "",
+  "run_url": "",
+  "run_label": "orchestrator_dispatch_2026-02-14T01-19-20.341176+00-00_2",
+  "timestamp": "2026-02-14T01:19:20.341176+00:00",
+  "issues_found": 0,
+  "batches_created": 1,
+  "zero_issue_run": true,
+  "severity_breakdown": {},
+  "category_breakdown": {},
+  "sessions": [
+    {
+      "session_id": "devin-c39202283c524c8bb45485ba39d2ac61",
+      "session_url": "https://app.devin.ai/sessions/c39202283c524c8bb45485ba39d2ac61",
+      "batch_id": 2,
+      "status": "created",
+      "issue_ids": [
+        "CQLF-ALL-R37-0001"
+      ],
+      "pr_url": ""
+    }
+  ],
+  "issue_fingerprints": [
+    {
+      "fingerprint": "4c61cb3f3f1109b4d403",
+      "id": "CQLF-ALL-R37-0001",
+      "rule_id": "py/weak-sensitive-data-hashing",
+      "severity_tier": "high",
+      "cwe_family": "crypto",
+      "file": "",
+      "start_line": 0
+    }
+  ]
+}
