@@ -609,10 +609,12 @@ function renderCategoryChartJs(container, data) {
 function renderTrendChartJs(container, runs) {
   if (!runs || !runs.length || typeof Chart === 'undefined') return;
   var safeRuns = runs.map(function(r) {
-    return Object.assign({}, r, {
+    return {
       timestamp: String(r.timestamp || ''),
-      run_number: parseInt(r.run_number, 10) || 0
-    });
+      run_number: parseInt(r.run_number, 10) || 0,
+      issues_found: parseInt(r.issues_found, 10) || 0,
+      sessions: Array.isArray(r.sessions) ? r.sessions : []
+    };
   });
   while (container.firstChild) container.removeChild(container.firstChild);
   var wrap = document.createElement('div');
@@ -740,13 +742,13 @@ function renderRunsTable(runs) {
       ? '<span class="badge badge-running">orchestrator</span>'
       : '<span class="badge badge-unknown">manual</span>';
     rows += '<tr>'
-      + '<td><strong>#' + (r.run_number || '-') + '</strong></td>'
+      + '<td><strong>#' + escapeHtml(String(r.run_number || '-')) + '</strong></td>'
       + '<td><a href="' + escapeHtml(r.target_repo) + '" target="_blank">' + escapeHtml(repoShort(r.target_repo)) + '</a></td>'
-      + '<td>' + (r.issues_found || 0) + '</td>'
-      + '<td>' + (r.batches_created || 0) + '</td>'
-      + '<td>' + (r.sessions || []).length + '</td>'
+      + '<td>' + escapeHtml(String(r.issues_found || 0)) + '</td>'
+      + '<td>' + escapeHtml(String(r.batches_created || 0)) + '</td>'
+      + '<td>' + escapeHtml(String((r.sessions || []).length)) + '</td>'
       + '<td>' + triggerBadge + '</td>'
-      + '<td>' + formatDate(r.timestamp) + '</td>'
+      + '<td>' + escapeHtml(formatDate(r.timestamp)) + '</td>'
       + '</tr>';
   });
   el.innerHTML = '<table><thead><tr>'
@@ -1231,17 +1233,21 @@ function renderOrchestratorPriorityTable() {
 async function triggerAgentTriage(){
   var btn = document.getElementById('btn-orch-agent');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Triaging...';
+  btn.textContent = '';
+  var spinner = document.createElement('span');
+  spinner.className = 'spinner';
+  btn.appendChild(spinner);
+  btn.appendChild(document.createTextNode(' Triaging...'));
   setStatus('Dispatching agent triage workflow...');
   _logAuditEntry('agent_triage', 'orchestrator', 'Triggered agent triage from dashboard');
   var result = await triggerOrchestratorWorkflow('agent-triage');
   if (result.error) {
-    setStatus('Triage error: ' + result.error);
+    setStatus('Triage error: ' + String(result.error).replace(/[<>"'&]/g, ''));
   } else {
     setStatus('Agent triage workflow dispatched successfully');
   }
   btn.disabled = false;
-  btn.innerHTML = '&#x1F916; Triage with Devin';
+  btn.textContent = '\u{1F916} Triage with Devin';
 }
 
 function renderFixRatesPanel() {
@@ -1278,11 +1284,15 @@ function renderFixRatesPanel() {
 async function triggerOrchestratorCycleStatic() {
   var btn = document.getElementById('btn-orch-cycle');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Running...';
+  btn.textContent = '';
+  var cycleSpinner = document.createElement('span');
+  cycleSpinner.className = 'spinner';
+  btn.appendChild(cycleSpinner);
+  btn.appendChild(document.createTextNode(' Running...'));
   setStatus('Dispatching orchestrator workflow...');
   var result = await triggerOrchestratorWorkflow('cycle');
   if (result.error) {
-    setStatus('Orchestrator error: ' + result.error);
+    setStatus('Orchestrator error: ' + String(result.error).replace(/[<>"'&]/g, ''));
   } else {
     setStatus('Orchestrator workflow dispatched successfully');
   }
@@ -1494,7 +1504,11 @@ async function fetchAll() {
 async function pollSessions() {
   const btn = document.getElementById('btn-poll');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Polling...';
+  btn.textContent = '';
+  var pollSpinner = document.createElement('span');
+  pollSpinner.className = 'spinner';
+  btn.appendChild(pollSpinner);
+  btn.appendChild(document.createTextNode(' Polling...'));
   setStatus('Triggering server-side session poll...');
   try {
     const result = await triggerPollWorkflow();
@@ -1547,7 +1561,11 @@ async function pollSessions() {
 async function refreshData() {
   const btn = document.getElementById('btn-refresh');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Refreshing...';
+  btn.textContent = '';
+  var refreshSpinner = document.createElement('span');
+  refreshSpinner.className = 'spinner';
+  btn.appendChild(refreshSpinner);
+  btn.appendChild(document.createTextNode(' Refreshing...'));
   setStatus('Pulling latest telemetry data...');
   try {
     _runsCache = null;
@@ -1624,10 +1642,102 @@ function updateDemoUI() {
   }
 }
 
+function _sanitizeDemoRun(r) {
+  if (!r || typeof r !== 'object') return null;
+  var safe = {
+    target_repo: String(r.target_repo || ''),
+    fork_url: String(r.fork_url || ''),
+    run_number: parseInt(r.run_number, 10) || 0,
+    run_id: String(r.run_id || ''),
+    run_url: sanitizeUrl(String(r.run_url || '')),
+    run_label: String(r.run_label || ''),
+    timestamp: String(r.timestamp || ''),
+    issues_found: parseInt(r.issues_found, 10) || 0,
+    severity_breakdown: {},
+    category_breakdown: {},
+    batches_created: parseInt(r.batches_created, 10) || 0,
+    sessions: [],
+    issue_fingerprints: []
+  };
+  if (r.severity_breakdown && typeof r.severity_breakdown === 'object') {
+    Object.keys(r.severity_breakdown).forEach(function(k) {
+      safe.severity_breakdown[String(k)] = parseInt(r.severity_breakdown[k], 10) || 0;
+    });
+  }
+  if (r.category_breakdown && typeof r.category_breakdown === 'object') {
+    Object.keys(r.category_breakdown).forEach(function(k) {
+      safe.category_breakdown[String(k)] = parseInt(r.category_breakdown[k], 10) || 0;
+    });
+  }
+  if (Array.isArray(r.sessions)) {
+    safe.sessions = r.sessions.map(function(s) {
+      if (!s || typeof s !== 'object') return null;
+      return {
+        session_id: String(s.session_id || ''),
+        session_url: sanitizeUrl(String(s.session_url || '')),
+        batch_id: parseInt(s.batch_id, 10) || 0,
+        status: String(s.status || ''),
+        issue_ids: Array.isArray(s.issue_ids) ? s.issue_ids.map(String) : [],
+        pr_url: sanitizeUrl(String(s.pr_url || ''))
+      };
+    }).filter(Boolean);
+  }
+  if (Array.isArray(r.issue_fingerprints)) {
+    safe.issue_fingerprints = r.issue_fingerprints.map(function(fp) {
+      if (!fp || typeof fp !== 'object') return null;
+      return {
+        id: String(fp.id || ''),
+        fingerprint: String(fp.fingerprint || ''),
+        rule_id: String(fp.rule_id || ''),
+        severity_tier: String(fp.severity_tier || ''),
+        cwe_family: String(fp.cwe_family || ''),
+        file: String(fp.file || ''),
+        start_line: parseInt(fp.start_line, 10) || 0,
+        description: String(fp.description || ''),
+        resolution: String(fp.resolution || ''),
+        code_churn: parseInt(fp.code_churn, 10) || 0
+      };
+    }).filter(Boolean);
+  }
+  return safe;
+}
+
+function _sanitizeDemoPr(p) {
+  if (!p || typeof p !== 'object') return null;
+  return {
+    pr_number: parseInt(p.pr_number, 10) || 0,
+    title: String(p.title || ''),
+    html_url: sanitizeUrl(String(p.html_url || '')),
+    state: String(p.state || ''),
+    merged: !!p.merged,
+    created_at: String(p.created_at || ''),
+    repo: String(p.repo || ''),
+    issue_ids: Array.isArray(p.issue_ids) ? p.issue_ids.map(String) : [],
+    user: String(p.user || ''),
+    session_id: String(p.session_id || ''),
+    session_url: sanitizeUrl(String(p.session_url || ''))
+  };
+}
+
+function _sanitizeDemoData(data) {
+  if (!data || typeof data !== 'object') return { runs: [], prs: [] };
+  var safe = { runs: [], prs: [] };
+  if (Array.isArray(data.runs)) {
+    safe.runs = data.runs.map(_sanitizeDemoRun).filter(Boolean);
+  }
+  if (Array.isArray(data.prs)) {
+    safe.prs = data.prs.map(_sanitizeDemoPr).filter(Boolean);
+  }
+  if (data.orchestrator_state && typeof data.orchestrator_state === 'object') {
+    safe.orchestrator_state = data.orchestrator_state;
+  }
+  return safe;
+}
+
 function _getLocalDemoData() {
   var custom = localStorage.getItem('demo_data_custom');
   if (custom) {
-    try { return JSON.parse(custom); } catch (e) {}
+    try { return _sanitizeDemoData(JSON.parse(custom)); } catch (e) {}
   }
   return typeof DEMO_DATA !== 'undefined' ? DEMO_DATA : { runs: [], prs: [] };
 }
