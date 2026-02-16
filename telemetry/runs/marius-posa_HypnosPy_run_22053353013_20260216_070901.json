@@ -1,0 +1,17 @@
+{
+  "target_repo": "https://github.com/marius-posa/HypnosPy",
+  "fork_url": "https://github.com/marius-posa/HypnosPy",
+  "run_number": 63,
+  "run_id": "22053353013",
+  "run_url": "https://github.com/marius-posa/codeql-devin-fixer/actions/runs/22053353013",
+  "run_label": "run-63-2026-02-16-070850",
+  "timestamp": "2026-02-16T07:09:01.709698+00:00",
+  "issues_found": 0,
+  "issues_dispatched": 0,
+  "severity_breakdown": {},
+  "category_breakdown": {},
+  "batches_created": 0,
+  "sessions": [],
+  "issue_fingerprints": [],
+  "zero_issue_run": true
+}
