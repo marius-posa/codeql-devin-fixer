@@ -73,3 +73,34 @@ class TestRunCloneRejectsInvalidUrl:
         )
         assert result["status"] == "failed"
         assert "Invalid repository URL" in result["error"]
+
+
+class TestHostAllowlistPreventsInjection:
+    """CQLF-R62-0001: ensure repo_url is reconstructed from validated parts."""
+
+    def test_rejects_unknown_host(self):
+        with pytest.raises(ValueError, match="not in the allowlist"):
+            _validate_repo_url("https://evil.example.com/owner/repo")
+
+    def test_rejects_http_scheme(self):
+        with pytest.raises(ValueError, match="Invalid repository URL"):
+            _validate_repo_url("http://github.com/owner/repo")
+
+    def test_reconstructed_url_strips_query_and_fragment(self):
+        safe = _validate_repo_url("https://github.com/owner/repo")
+        assert safe == "https://github.com/owner/repo"
+        assert "?" not in safe
+        assert "#" not in safe
+
+    def test_rejects_path_traversal(self):
+        with pytest.raises(ValueError):
+            _validate_repo_url("https://github.com/owner/repo/../../etc/passwd")
+
+    def test_clone_with_disallowed_host_returns_error(self):
+        result = _run_clone(
+            "https://attacker.com/malicious/repo",
+            "/tmp/clone-target",
+            "",
+        )
+        assert result["status"] == "failed"
+        assert "not in the allowlist" in result["error"]

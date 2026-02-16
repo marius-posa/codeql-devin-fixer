@@ -15,21 +15,47 @@ import re
 import subprocess
 import sys
 import tempfile
+import urllib.parse
 from pathlib import Path
 
 log = logging.getLogger(__name__)
 
 _SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
 
-_SAFE_REPO_URL_RE = re.compile(
-    r"^https://[a-zA-Z0-9._-]+(?:\.[a-zA-Z]{2,})+/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+(?:\.git)?$"
+_SAFE_PATH_RE = re.compile(
+    r"^/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+(?:\.git)?$"
 )
+
+_ALLOWED_HOSTS: frozenset[str] = frozenset({
+    "github.com",
+    "gitlab.com",
+    "bitbucket.org",
+})
 
 
 def _validate_repo_url(url: str) -> str:
-    if not _SAFE_REPO_URL_RE.match(url):
+    """Validate and reconstruct a repository URL from parsed components.
+
+    Only HTTPS URLs pointing to hosts in ``_ALLOWED_HOSTS`` with a valid
+    ``owner/repo`` path are accepted.  The URL is **reconstructed** from
+    the parsed parts so the returned string is never the raw user input.
+    """
+    parsed = urllib.parse.urlparse(url)
+
+    if parsed.scheme != "https":
         raise ValueError(f"Invalid repository URL format: {url}")
-    return url
+
+    hostname = (parsed.hostname or "").lower()
+    if hostname not in _ALLOWED_HOSTS:
+        raise ValueError(
+            f"Invalid repository URL: host '{hostname}' is not in the allowlist. "
+            f"Allowed hosts: {', '.join(sorted(_ALLOWED_HOSTS))}"
+        )
+
+    if not _SAFE_PATH_RE.match(parsed.path):
+        raise ValueError(f"Invalid repository URL: bad path format: {parsed.path}")
+
+    return f"https://{hostname}{parsed.path}"
 
 
 def trigger_scan(scan_config: dict) -> dict:
