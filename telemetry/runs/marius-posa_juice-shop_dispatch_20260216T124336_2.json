@@ -1,0 +1,67 @@
+{
+  "target_repo": "https://github.com/marius-posa/juice-shop",
+  "fork_url": "",
+  "run_number": 0,
+  "run_id": "",
+  "run_url": "",
+  "run_label": "orchestrator_dispatch_2026-02-16T12-43-36.888386+00-00_2",
+  "timestamp": "2026-02-16T12:43:36.888386+00:00",
+  "issues_found": 0,
+  "batches_created": 1,
+  "zero_issue_run": true,
+  "severity_breakdown": {},
+  "category_breakdown": {},
+  "sessions": [
+    {
+      "session_id": "devin-0628f8bc19b64b0281b62618d58d1d4f",
+      "session_url": "https://app.devin.ai/sessions/0628f8bc19b64b0281b62618d58d1d4f",
+      "batch_id": 2,
+      "status": "created",
+      "issue_ids": [
+        "CQLF-ALL-R61-0040",
+        "CQLF-ALL-R61-0041",
+        "CQLF-ALL-R61-0042",
+        "CQLF-ALL-R61-0053"
+      ],
+      "pr_url": ""
+    }
+  ],
+  "issue_fingerprints": [
+    {
+      "fingerprint": "1923400ada1b5d5d47db",
+      "id": "CQLF-ALL-R61-0040",
+      "rule_id": "js/sql-injection",
+      "severity_tier": "high",
+      "cwe_family": "injection",
+      "file": "",
+      "start_line": 0
+    },
+    {
+      "fingerprint": "4f2a7426facc31325fbb",
+      "id": "CQLF-ALL-R61-0041",
+      "rule_id": "js/sql-injection",
+      "severity_tier": "high",
+      "cwe_family": "injection",
+      "file": "",
+      "start_line": 0
+    },
+    {
+      "fingerprint": "5922cdbafaa141ab3657",
+      "id": "CQLF-ALL-R61-0042",
+      "rule_id": "js/sql-injection",
+      "severity_tier": "high",
+      "cwe_family": "injection",
+      "file": "",
+      "start_line": 0
+    },
+    {
+      "fingerprint": "ed2fe77bb8bfb338c692",
+      "id": "CQLF-ALL-R61-0053",
+      "rule_id": "js/prototype-polluting-assignment",
+      "severity_tier": "medium",
+      "cwe_family": "injection",
+      "file": "",
+      "start_line": 0
+    }
+  ]
+}

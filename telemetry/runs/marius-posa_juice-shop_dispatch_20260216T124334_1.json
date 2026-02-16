@@ -1,0 +1,77 @@
+{
+  "target_repo": "https://github.com/marius-posa/juice-shop",
+  "fork_url": "",
+  "run_number": 0,
+  "run_id": "",
+  "run_url": "",
+  "run_label": "orchestrator_dispatch_2026-02-16T12-43-34.353462+00-00_1",
+  "timestamp": "2026-02-16T12:43:34.353462+00:00",
+  "issues_found": 0,
+  "batches_created": 1,
+  "zero_issue_run": true,
+  "severity_breakdown": {},
+  "category_breakdown": {},
+  "sessions": [
+    {
+      "session_id": "devin-40d9664dbabe4da9a4746f5de4a35e3b",
+      "session_url": "https://app.devin.ai/sessions/40d9664dbabe4da9a4746f5de4a35e3b",
+      "batch_id": 1,
+      "status": "created",
+      "issue_ids": [
+        "CQLF-ALL-R61-0002",
+        "CQLF-ALL-R61-0046",
+        "CQLF-ALL-R61-0047",
+        "CQLF-ALL-R61-0048",
+        "CQLF-ALL-R61-0049"
+      ],
+      "pr_url": ""
+    }
+  ],
+  "issue_fingerprints": [
+    {
+      "fingerprint": "0673162993c308c72864",
+      "id": "CQLF-ALL-R61-0002",
+      "rule_id": "js/clear-text-logging",
+      "severity_tier": "high",
+      "cwe_family": "info-disclosure",
+      "file": "",
+      "start_line": 0
+    },
+    {
+      "fingerprint": "166655a553deb08e6df9",
+      "id": "CQLF-ALL-R61-0046",
+      "rule_id": "js/stack-trace-exposure",
+      "severity_tier": "medium",
+      "cwe_family": "info-disclosure",
+      "file": "",
+      "start_line": 0
+    },
+    {
+      "fingerprint": "1097c1f653e16a6aa604",
+      "id": "CQLF-ALL-R61-0047",
+      "rule_id": "js/stack-trace-exposure",
+      "severity_tier": "medium",
+      "cwe_family": "info-disclosure",
+      "file": "",
+      "start_line": 0
+    },
+    {
+      "fingerprint": "8e49c4c9bf27640ff9ea",
+      "id": "CQLF-ALL-R61-0048",
+      "rule_id": "js/stack-trace-exposure",
+      "severity_tier": "medium",
+      "cwe_family": "info-disclosure",
+      "file": "",
+      "start_line": 0
+    },
+    {
+      "fingerprint": "d33303da768c094f8a35",
+      "id": "CQLF-ALL-R61-0049",
+      "rule_id": "js/stack-trace-exposure",
+      "severity_tier": "medium",
+      "cwe_family": "info-disclosure",
+      "file": "",
+      "start_line": 0
+    }
+  ]
+}
