@@ -1,0 +1,19 @@
+{
+  "verified_at": "2026-02-16T07:17:45.218221+00:00",
+  "pr_number": "153",
+  "pr_url": "https://github.com/marius-posa/codeql-devin-fixer/pull/153",
+  "pr_title": "fix(CQLF-R62-0006): resolve xss security issues",
+  "session_id": "df9b145b97564d708be07492c6df8b99",
+  "source_run_number": "62",
+  "cwe_family": "xss",
+  "summary": {
+    "total_original": 10,
+    "total_targeted": 0,
+    "fixed_count": 0,
+    "remaining_count": 0,
+    "fix_rate": 0.0,
+    "new_issues_in_scan": 0
+  },
+  "verified_fixed": [],
+  "still_present": []
+}
