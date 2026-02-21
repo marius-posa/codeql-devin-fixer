@@ -450,10 +450,12 @@ function renderCategoryChartJs(container, data) {
 function renderTrendChartJs(container, runs) {
   if (!runs || !runs.length || typeof Chart === 'undefined') return;
   var safeRuns = runs.map(function(r) {
-    return Object.assign({}, r, {
+    return {
       timestamp: String(r.timestamp || ''),
-      run_number: parseInt(r.run_number, 10) || 0
-    });
+      run_number: parseInt(r.run_number, 10) || 0,
+      issues_found: parseInt(r.issues_found, 10) || 0,
+      sessions: Array.isArray(r.sessions) ? r.sessions : []
+    };
   });
   container.innerHTML = '<div class="chart-canvas-wrap"><canvas></canvas></div>';
   var canvas = container.querySelector('canvas');
