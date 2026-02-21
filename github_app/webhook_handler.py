@@ -41,7 +41,8 @@ def verify_signature(payload_body: bytes, signature: str, secret: str) -> bool:
 def route_event(event_type: str, payload: dict) -> dict:
     handler = _EVENT_HANDLERS.get(event_type)
     if handler is None:
-        log.debug("Ignoring unhandled event: %s", sanitize_log(event_type))
+        safe_event = sanitize_log(event_type)
+        log.debug("Ignoring unhandled event: %s", safe_event)
         return {"status": "ignored", "event": event_type}
     return handler(payload)
 

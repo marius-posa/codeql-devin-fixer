@@ -12,5 +12,8 @@ def sanitize_log(value: object) -> str:
 
     Strips newlines and other ASCII control characters that could be
     used to forge log entries (CWE-117 / py/log-injection).
+    Returns a new plain string that is safe for logging.
     """
-    return _CONTROL_CHAR_RE.sub("", str(value))
+    text = str(value)
+    cleaned = _CONTROL_CHAR_RE.sub("", text)
+    return "".join(cleaned)
