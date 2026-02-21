@@ -28,7 +28,6 @@ from flask import Flask, jsonify, request as flask_request
 from github_app.auth import GitHubAppAuth
 from github_app.webhook_handler import verify_signature, route_event
 from github_app.config import AppConfig
-from github_app.log_utils import sanitize_log
 from github_app.scan_trigger import trigger_scan
 
 log = logging.getLogger(__name__)
@@ -81,7 +80,9 @@ def create_app(config: AppConfig | None = None) -> Flask:
         delivery_id = flask_request.headers.get("X-GitHub-Delivery", "")
         payload = flask_request.get_json(silent=True) or {}
 
-        log.info("Webhook: event=%s delivery=%s", sanitize_log(event_type), sanitize_log(delivery_id))
+        safe_event = str(event_type).replace("\n", "").replace("\r", "")
+        safe_delivery = str(delivery_id).replace("\n", "").replace("\r", "")
+        log.info("Webhook: event=%s delivery=%s", safe_event, safe_delivery)
 
         result = route_event(event_type, payload)
 
@@ -180,7 +181,9 @@ def _maybe_trigger_scan(
     try:
         token = auth.get_installation_token(installation_id)
     except Exception as exc:
-        log.error("Failed to get token for installation %s: %s", sanitize_log(installation_id), sanitize_log(exc))
+        safe_inst_id = str(installation_id).replace("\n", "").replace("\r", "")
+        safe_exc = str(exc).replace("\n", "").replace("\r", "")
+        log.error("Failed to get token for installation %s: %s", safe_inst_id, safe_exc)
         return
 
     scan_config = {
@@ -195,5 +198,7 @@ def _maybe_trigger_scan(
         "dry_run": False,
     }
 
-    log.info("Auto-triggering scan for %s (installation %s)", sanitize_log(repo), sanitize_log(installation_id))
+    safe_repo = str(repo).replace("\n", "").replace("\r", "")
+    safe_inst_id = str(installation_id).replace("\n", "").replace("\r", "")
+    log.info("Auto-triggering scan for %s (installation %s)", safe_repo, safe_inst_id)
     trigger_scan(scan_config)
