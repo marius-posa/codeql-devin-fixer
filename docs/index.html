@@ -740,13 +740,13 @@ function renderRunsTable(runs) {
       ? '<span class="badge badge-running">orchestrator</span>'
       : '<span class="badge badge-unknown">manual</span>';
     rows += '<tr>'
-      + '<td><strong>#' + (r.run_number || '-') + '</strong></td>'
+      + '<td><strong>#' + escapeHtml(String(r.run_number || '-')) + '</strong></td>'
       + '<td><a href="' + escapeHtml(r.target_repo) + '" target="_blank">' + escapeHtml(repoShort(r.target_repo)) + '</a></td>'
-      + '<td>' + (r.issues_found || 0) + '</td>'
-      + '<td>' + (r.batches_created || 0) + '</td>'
-      + '<td>' + (r.sessions || []).length + '</td>'
+      + '<td>' + escapeHtml(String(r.issues_found || 0)) + '</td>'
+      + '<td>' + escapeHtml(String(r.batches_created || 0)) + '</td>'
+      + '<td>' + escapeHtml(String((r.sessions || []).length)) + '</td>'
       + '<td>' + triggerBadge + '</td>'
-      + '<td>' + formatDate(r.timestamp) + '</td>'
+      + '<td>' + escapeHtml(formatDate(r.timestamp)) + '</td>'
       + '</tr>';
   });
   el.innerHTML = '<table><thead><tr>'
