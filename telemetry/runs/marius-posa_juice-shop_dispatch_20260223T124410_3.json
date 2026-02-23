@@ -1,0 +1,77 @@
+{
+  "target_repo": "https://github.com/marius-posa/juice-shop",
+  "fork_url": "",
+  "run_number": 0,
+  "run_id": "",
+  "run_url": "",
+  "run_label": "orchestrator_dispatch_2026-02-23T12-44-10.033554+00-00_3",
+  "timestamp": "2026-02-23T12:44:10.033554+00:00",
+  "issues_found": 0,
+  "batches_created": 1,
+  "zero_issue_run": true,
+  "severity_breakdown": {},
+  "category_breakdown": {},
+  "sessions": [
+    {
+      "session_id": "devin-69f02abca15c4255abcb224e402a95f1",
+      "session_url": "https://app.devin.ai/sessions/69f02abca15c4255abcb224e402a95f1",
+      "batch_id": 3,
+      "status": "created",
+      "issue_ids": [
+        "CQLF-ALL-R72-0004",
+        "CQLF-ALL-R72-0005",
+        "CQLF-ALL-R72-0006",
+        "CQLF-ALL-R72-0007",
+        "CQLF-ALL-R72-0008"
+      ],
+      "pr_url": ""
+    }
+  ],
+  "issue_fingerprints": [
+    {
+      "fingerprint": "12966a0839db4c4ba4e6",
+      "id": "CQLF-ALL-R72-0004",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "",
+      "start_line": 0
+    },
+    {
+      "fingerprint": "04e4e1e9cef47d7b84de",
+      "id": "CQLF-ALL-R72-0005",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "",
+      "start_line": 0
+    },
+    {
+      "fingerprint": "0d0654ac15b577cf5865",
+      "id": "CQLF-ALL-R72-0006",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "",
+      "start_line": 0
+    },
+    {
+      "fingerprint": "514e523d4e7c44d1b23e",
+      "id": "CQLF-ALL-R72-0007",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "",
+      "start_line": 0
+    },
+    {
+      "fingerprint": "dde866604dc63e34a898",
+      "id": "CQLF-ALL-R72-0008",
+      "rule_id": "js/missing-rate-limiting",
+      "severity_tier": "high",
+      "cwe_family": "missing-rate-limiting",
+      "file": "",
+      "start_line": 0
+    }
+  ]
+}
