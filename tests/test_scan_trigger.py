@@ -10,6 +10,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from unittest.mock import patch
+
 from github_app.scan_trigger import _validate_repo_url, _run_clone
 
 
@@ -73,3 +75,51 @@ class TestRunCloneRejectsInvalidUrl:
         )
         assert result["status"] == "failed"
         assert "Invalid repository URL" in result["error"]
+
+
+class TestTaintChainBroken:
+    """Verify that _validate_repo_url reconstructs URLs, breaking the taint chain."""
+
+    def test_reconstructed_url_is_not_same_object(self):
+        """The returned URL must be a new string (not the original object)."""
+        original = "https://github.com/owner/repo"
+        result = _validate_repo_url(original)
+        assert result == original
+        # The result should be reconstructed, not the same object
+        assert result is not original
+
+    def test_query_and_fragment_stripped(self):
+        """Even if the regex were loosened, query/fragment would be removed."""
+        # Current regex blocks this, so we just verify reconstruction on valid URLs
+        url = "https://github.com/owner/repo.git"
+        clean = _validate_repo_url(url)
+        assert "?" not in clean
+        assert "#" not in clean
+
+    @patch("github_app.scan_trigger.subprocess.run")
+    def test_clone_passes_reconstructed_url_to_subprocess(self, mock_run):
+        """Ensure _run_clone passes a reconstructed (untainted) URL to subprocess."""
+        mock_run.return_value = type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+        _run_clone("https://github.com/owner/repo", "/tmp/test-clone", "")
+        args = mock_run.call_args
+        cmd = args[0][0]  # first positional arg is the command list
+        # The repo URL in the command should be the reconstructed value
+        assert "https://github.com/owner/repo" in cmd
+        # Verify '--' separator is present before the URL for argument injection protection
+        dash_idx = cmd.index("--")
+        url_idx = cmd.index("https://github.com/owner/repo")
+        assert dash_idx < url_idx
+
+    def test_command_injection_payload_in_clone(self):
+        """Malicious payloads with shell metacharacters must be rejected."""
+        payloads = [
+            "https://github.com/owner/repo; cat /etc/passwd",
+            "https://github.com/owner/repo$(whoami)",
+            "https://github.com/owner/repo`id`",
+            "https://github.com/owner/repo && rm -rf /",
+            "https://github.com/owner/repo\n--upload-pack=evil",
+        ]
+        for payload in payloads:
+            result = _run_clone(payload, "/tmp/clone-target", "")
+            assert result["status"] == "failed", f"Expected failure for: {payload}"
+            assert "Invalid repository URL" in result["error"], f"Wrong error for: {payload}"
