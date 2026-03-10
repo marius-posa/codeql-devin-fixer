@@ -1690,3 +1690,63 @@ class TestEndToEndOrchestratorCycle:
         fix_rates_resp = client.get("/api/orchestrator/fix-rates")
         assert fix_rates_resp.status_code == 200
         assert "overall" in fix_rates_resp.get_json()
+
+
+class TestXssEscaping:
+    """Verify that renderRunsTable in docs/index.html and dashboard.html
+    escape all dynamic values with escapeHtml to prevent XSS (CQLF-R62-0006)."""
+
+    DOCS_HTML = os.path.join(os.path.dirname(__file__), "..", "docs", "index.html")
+    DASH_HTML = os.path.join(
+        os.path.dirname(__file__), "..", "telemetry", "templates", "dashboard.html"
+    )
+
+    def _extract_render_runs_table(self, path):
+        with open(path) as f:
+            src = f.read()
+        start = src.index("function renderRunsTable(")
+        brace = src.index("{", start)
+        depth, i = 1, brace + 1
+        while depth > 0:
+            if src[i] == "{":
+                depth += 1
+            elif src[i] == "}":
+                depth -= 1
+            i += 1
+        return src[start:i]
+
+    def test_docs_renders_run_number_escaped(self):
+        body = self._extract_render_runs_table(self.DOCS_HTML)
+        assert "escapeHtml(String(r.run_number" in body
+
+    def test_docs_renders_issues_found_escaped(self):
+        body = self._extract_render_runs_table(self.DOCS_HTML)
+        assert "escapeHtml(String(r.issues_found" in body
+
+    def test_docs_renders_batches_created_escaped(self):
+        body = self._extract_render_runs_table(self.DOCS_HTML)
+        assert "escapeHtml(String(r.batches_created" in body
+
+    def test_docs_renders_sessions_length_escaped(self):
+        body = self._extract_render_runs_table(self.DOCS_HTML)
+        assert "escapeHtml(String((r.sessions" in body
+
+    def test_docs_renders_timestamp_escaped(self):
+        body = self._extract_render_runs_table(self.DOCS_HTML)
+        assert "escapeHtml(formatDate(r.timestamp))" in body
+
+    def test_docs_no_raw_script_payload_in_output(self):
+        body = self._extract_render_runs_table(self.DOCS_HTML)
+        assert "r.run_number || '-')" not in body or "escapeHtml" in body.split("r.run_number")[0].split("\n")[-1]
+
+    def test_dashboard_renders_run_number_escaped(self):
+        body = self._extract_render_runs_table(self.DASH_HTML)
+        assert "escapeHtml(String(r.run_number" in body
+
+    def test_dashboard_renders_issues_found_escaped(self):
+        body = self._extract_render_runs_table(self.DASH_HTML)
+        assert "escapeHtml(String(r.issues_found" in body
+
+    def test_dashboard_renders_timestamp_escaped(self):
+        body = self._extract_render_runs_table(self.DASH_HTML)
+        assert "escapeHtml(formatDate(r.timestamp))" in body
